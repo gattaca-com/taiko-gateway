@@ -1,0 +1,25 @@
+app_id = "taiko_helder"
+
+[l1]
+name = "helder"
+chain_id = 7014190335
+rpc_url = "https://rpc.helder-devnets.xyz"
+ws_url = ""
+
+[l2]
+name = "taiko"
+chain_id = 167010
+rpc_url = ""                                               # non-preconf rpc
+ws_url = ""                                                # non-preconf ws
+taiko_token = "0x6afE5A43f88aeB35ADeb49C1952B3c1B21dFcdb2"
+l1_contract = "0x68E0355959b68B12AdA9D4769D8DbD77f9Eb7560"
+l2_contract = "0x1670100000000000000000000000000000010001"
+
+[gateway]
+rpc_port = 10000
+simulator_url = "http://0.0.0.0:8545"
+l2_target_block_time_ms = 2_000
+coinbase = "0xB851706411c088A2c43e6AfCb2794be5dd2f2A51"
+dry_run = true
+use_blobs = false
+use_batch = true

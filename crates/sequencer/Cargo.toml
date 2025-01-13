@@ -1,0 +1,24 @@
+[package]
+name = "pc-sequencer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+pc-common.workspace = true
+
+
+serde_json.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus.workspace = true
+alloy-rpc-types.workspace = true
+
+
+jsonrpsee.workspace = true
+crossbeam-channel.workspace = true
+tracing.workspace = true
+
+eyre.workspace = true
+
+thiserror.workspace = true

@@ -1,0 +1,52 @@
+[package]
+name = "pc-common"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# Ethereum
+alloy-primitives.workspace = true
+alloy-rpc-types.workspace = true
+alloy-rlp.workspace = true
+alloy-network.workspace = true
+alloy-provider.workspace = true
+alloy-signer.workspace = true
+alloy-signer-local.workspace = true
+alloy-eips.workspace = true
+alloy-consensus.workspace = true
+alloy-serde.workspace = true
+alloy-sol-types.workspace = true
+alloy-sol-macro.workspace = true
+alloy-contract.workspace = true
+
+# Networking
+reqwest.workspace = true
+url.workspace = true
+jsonrpsee.workspace = true
+axum.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+# Async / Threads
+tokio.workspace = true
+crossbeam-channel.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+
+# Misc
+thiserror.workspace = true
+ecdsa.workspace = true
+eyre.workspace = true
+backtrace.workspace = true
+libflate.workspace = true
+c-kzg.workspace = true
+lazy_static.workspace = true
+prometheus.workspace = true

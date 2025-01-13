@@ -1,0 +1,9 @@
+source .env.example
+
+CONFIG_FILE="config.toml"
+
+PROPOSER_SIGNER_KEY=$PROPOSER_SIGNER_KEY \
+RUST_BACKTRACE=$RUST_BACKTRACE \
+RUST_LOG=$RUST_LOG \
+METRICS_PORT=$METRICS_PORT \
+cargo run --bin gateway -- "$CONFIG_FILE"

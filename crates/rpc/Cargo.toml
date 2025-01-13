@@ -1,0 +1,32 @@
+[package]
+name = "pc-rpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+pc-common.workspace = true
+eyre.workspace = true
+
+# Ethereum Types
+alloy-primitives.workspace = true
+alloy-rpc-types.workspace = true
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-provider.workspace = true
+alloy-rpc-types-txpool.workspace = true
+
+# Networking
+jsonrpsee.workspace = true
+reqwest.workspace = true
+
+
+# Async / Threads
+async-trait.workspace = true
+crossbeam-channel.workspace = true
+tokio.workspace = true
+
+# Logging
+tracing.workspace = true
+thiserror.workspace = true

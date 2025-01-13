@@ -1,0 +1,68 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+rust-version = "1.82.0"
+edition = "2021"
+
+[workspace.dependencies]
+pc-common = { path = "crates/common" }
+pc-rpc = { path = "crates/rpc" }
+pc-sequencer = { path = "crates/sequencer" }
+pc-proposer = { path = "crates/proposer" }
+pc-driver = { path = "crates/driver" }
+
+alloy-primitives = { version = "0.8.14", features = ["k256", "getrandom"] }
+alloy-rpc-types = { version = "0.7.2", features = ["beacon"] }
+alloy-rpc-types-txpool = "0.7.2"
+alloy-rlp = "0.3.9"
+alloy-network = "0.7.2"
+alloy-provider = { version = "0.7.2", features = ["ws"] }
+alloy-signer = "0.7.2"
+alloy-signer-local = "0.7.2"
+alloy-eips = { version = "0.7.2", features = ["kzg"] }
+alloy-consensus = { version = "0.7.2", features = ["k256"] }
+alloy-serde = "0.7.2"
+alloy-sol-types = "0.8.14"
+alloy-sol-macro = { version = "0.8.14", features = ["json"] }
+alloy-contract = "0.7.2"
+alloy-transport-http = "0.7.2"
+
+# Networking
+axum = { version = "0.7.5", features = ["tokio"] }
+jsonrpsee = { version = "0.24", features = ["full"] }
+reqwest = { version = "0.12.4", features = ["blocking", "json"] }
+url = { version = "2.5.0", features = ["serde"] }
+
+# Async / Threads
+async-trait = "0.1.80"
+tokio = { version = "1.38.0", features = ["full"] }
+crossbeam-channel = "0.5.11"
+
+# Serialization
+serde = { version = "1.0.203", features = ["derive", "rc"] }
+serde_json = "1.0.117"
+toml = "0.8.14"
+
+# Logging
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-appender = "0.2.3"
+
+# Misc
+thiserror = "1.0.61"
+eyre = "0.6.12"
+lazy_static = "1.5.0"
+backtrace = "0.3.74"
+c-kzg = { version = "1.0", default-features = false }
+prometheus = "0.13.4"
+ecdsa = "0.16.9"
+libflate = "2.1.0"
+
+[profile.release]
+panic = 'abort'
+
+[profile.dev]
+panic = 'abort'
