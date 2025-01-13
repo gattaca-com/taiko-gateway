@@ -1,13 +1,12 @@
-use alloy_consensus::{SignableTransaction, TxEnvelope, TypedTransaction};
-use alloy_network::TransactionBuilder;
+use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_primitives::{B256, U256};
 use alloy_provider::ProviderBuilder;
-use alloy_signer_local::PrivateKeySigner;
-use eyre::eyre;
+use alloy_sol_types::SolCall;
 
 use super::{
-    fixed_signer::sign_fixed_k, l2::TaikoL2, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
-    GOLDEN_TOUCH_PRIVATE_KEY,
+    fixed_signer::sign_fixed_k,
+    l2::TaikoL2::{self, anchorV2Call},
+    ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_SIGNER,
 };
 use crate::config::{TaikoChainConfig, TaikoConfig};
 
@@ -67,42 +66,69 @@ pub fn assemble_anchor_v2(
     parent_gas_used: u32,
     l2_parent_block_number: u64,
     l2_base_fee: u128, // base fee where this tx will be included
-) -> eyre::Result<TxEnvelope> {
-    let l2_provider = ProviderBuilder::new().on_http("http://never-call-me.xyz".parse().unwrap());
+) -> TxEnvelope {
+    let input = anchorV2Call::new((
+        anchor_block_id,
+        anchor_state_root,
+        parent_gas_used,
+        chain_config.base_fee_config.clone(),
+    ))
+    .abi_encode();
 
-    let taiko_l2 = TaikoL2::new(config.l2_contract_address, l2_provider);
+    let tx = TxEip1559 {
+        chain_id: config.chain_id,
+        nonce: l2_parent_block_number, // one anchor tx per L2 block -> block number = nonce
+        gas_limit: ANCHOR_GAS_LIMIT,
+        max_fee_per_gas: l2_base_fee,
+        max_priority_fee_per_gas: 0,
+        to: config.l2_contract_address.into(),
+        value: U256::ZERO,
+        access_list: Default::default(),
+        input: input.into(),
+    };
 
-    let tx_request = taiko_l2
-        .anchorV2(
+    let signature = sign_fixed_k(tx.signature_hash(), GOLDEN_TOUCH_SIGNER.as_nonzero_scalar())
+        .expect("failed golden touch signature");
+    let signed = tx.into_signed(signature);
+
+    signed.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::{address, b256, Bytes};
+    use alloy_sol_types::SolCall;
+    use TaikoL2::anchorV2Call;
+
+    use super::*;
+    use crate::config::TaikoChainConfig;
+
+    #[test]
+    fn test_input() {
+        let anchor_block_id = 1;
+        let anchor_state_root =
+            b256!("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+        let parent_gas_used = 100;
+        let base_fee_config = TaikoChainConfig::new_helder().base_fee_config;
+
+        let l2_provider = ProviderBuilder::new().on_http("http://abc.xyz".parse().unwrap());
+        let taiko_l2 = address!("1234567890abcdef1234567890abcdef12345678");
+
+        let taiko_l2 = TaikoL2::new(taiko_l2, l2_provider);
+
+        let input = taiko_l2
+            .anchorV2(anchor_block_id, anchor_state_root, parent_gas_used, base_fee_config.clone())
+            .calldata()
+            .clone();
+
+        let input_check = anchorV2Call::new((
             anchor_block_id,
             anchor_state_root,
             parent_gas_used,
-            chain_config.base_fee_config.clone(),
-        )
-        .into_transaction_request()
-        .with_chain_id(config.chain_id)
-        .with_nonce(l2_parent_block_number) // one anchor tx per L2 block -> block number = nonce
-        .with_to(config.l2_contract_address)
-        .with_value(U256::ZERO)
-        .with_gas_limit(ANCHOR_GAS_LIMIT)
-        .with_max_fee_per_gas(l2_base_fee)
-        .with_max_priority_fee_per_gas(0)
-        .with_from(GOLDEN_TOUCH_ADDRESS);
+            base_fee_config,
+        ))
+        .abi_encode();
 
-    tx_request.complete_1559().map_err(|err| eyre!("missing 1559 keys {err:?}"))?;
-
-    let unsigned = tx_request.build_unsigned().unwrap();
-
-    let private = PrivateKeySigner::from_bytes(&GOLDEN_TOUCH_PRIVATE_KEY)?;
-    let scalar = private.as_nonzero_scalar();
-
-    match unsigned {
-        TypedTransaction::Eip1559(tx) => {
-            let signature = sign_fixed_k(tx.signature_hash(), scalar).expect("failed signature");
-            let signed = tx.into_signed(signature);
-
-            Ok(signed.into())
-        }
-        _ => unreachable!(),
+        assert_eq!(input, Bytes::from(input_check));
     }
 }

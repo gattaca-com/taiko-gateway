@@ -257,7 +257,7 @@ async fn compute_and_send_anchor(
         parent.gas_used.try_into()?,
         parent.block_number,
         base_fee,
-    )?;
+    );
 
     let anchor_data = AnchorData {
         block_id: anchor.block_id,

@@ -1,4 +1,7 @@
+use std::sync::LazyLock;
+
 use alloy_primitives::{address, b256, keccak256, Address, Bytes, B256, U256};
+use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::{sol, SolValue};
 
 mod anchor;
@@ -53,6 +56,9 @@ pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 =
     b256!("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38");
 pub const GOLDEN_TOUCH_ADDRESS: Address = address!("0000777735367b36bC9B61C50022d9D0700dB4Ec");
 
+pub static GOLDEN_TOUCH_SIGNER: LazyLock<PrivateKeySigner> =
+    LazyLock::new(|| PrivateKeySigner::from_bytes(&GOLDEN_TOUCH_PRIVATE_KEY).unwrap());
+
 /// Gas limit of the anchor tx
 // this is not really on-chain so we need to hardcode it for now
 pub const ANCHOR_GAS_LIMIT: u64 = 250_000;
@@ -71,15 +77,14 @@ pub fn get_extra_data(sharing_pct: u8) -> Bytes {
 
 #[cfg(test)]
 mod tests {
+
     use alloy_primitives::bytes;
-    use alloy_signer_local::PrivateKeySigner;
 
     use super::*;
 
     #[test]
     fn test_golden_touch() {
-        let private_key = PrivateKeySigner::from_bytes(&GOLDEN_TOUCH_PRIVATE_KEY).unwrap();
-        assert_eq!(private_key.address(), GOLDEN_TOUCH_ADDRESS);
+        assert_eq!(GOLDEN_TOUCH_SIGNER.address(), GOLDEN_TOUCH_ADDRESS);
     }
 
     #[test]
