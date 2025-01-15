@@ -1,13 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
-use alloy_primitives::B256;
 use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::{Receiver, Sender};
 use pc_common::{
     config::{TaikoChainConfig, TaikoConfig},
     driver::{DriverRequest, DriverResponse},
     runtime::spawn,
-    taiko::{assemble_anchor_v2, compute_next_base_fee},
+    taiko::{assemble_anchor_v2, compute_next_base_fee, l2, AnchorParams, ParentParams},
     types::{AnchorData, DuplexChannel},
     utils::verify_and_log_block,
 };
@@ -197,7 +196,7 @@ impl TaikoDriver {
         // parent
         let parent = ParentParams {
             timestamp: self.last_l2_header.timestamp,
-            gas_used: self.last_l2_header.gas_used,
+            gas_used: self.last_l2_header.gas_used.try_into().unwrap(),
             block_number: self.last_l2_header.number,
         };
 
@@ -210,8 +209,14 @@ impl TaikoDriver {
         );
 
         spawn(async move {
-            if let Err(err) =
-                compute_and_send_anchor(res_tx, config, chain_config, anchor, parent).await
+            if let Err(err) = compute_and_send_anchor(
+                res_tx,
+                config,
+                chain_config.base_fee_config.clone(),
+                anchor,
+                parent,
+            )
+            .await
             {
                 error!(%err, "failed assembling anchor tx");
             }
@@ -219,50 +224,22 @@ impl TaikoDriver {
     }
 }
 
-#[derive(Debug)]
-struct AnchorParams {
-    block_id: u64,
-    state_root: B256,
-    timestamp: u64,
-}
-
-#[derive(Debug)]
-struct ParentParams {
-    timestamp: u64,
-    gas_used: u64,
-    block_number: u64,
-}
-
 async fn compute_and_send_anchor(
     res_tx: Sender<DriverResponse>,
     config: TaikoConfig,
-    chain_config: TaikoChainConfig,
+    base_fee_config: l2::TaikoData::BaseFeeConfig,
     anchor: AnchorParams,
     parent: ParentParams,
 ) -> eyre::Result<()> {
-    let base_fee = compute_next_base_fee(
-        &config,
-        &chain_config,
-        parent.gas_used,
-        parent.timestamp,
-        anchor.timestamp,
-    )
-    .await?;
+    let l2_base_fee =
+        compute_next_base_fee(&config, base_fee_config.clone(), &parent, &anchor).await?;
 
-    let anchor_tx = assemble_anchor_v2(
-        &config,
-        &chain_config,
-        anchor.block_id,
-        anchor.state_root,
-        parent.gas_used.try_into()?,
-        parent.block_number,
-        base_fee,
-    );
+    let anchor_tx = assemble_anchor_v2(&config, base_fee_config, &parent, &anchor, l2_base_fee);
 
     let anchor_data = AnchorData {
         block_id: anchor.block_id,
         timestamp: anchor.timestamp,
-        base_fee,
+        base_fee: l2_base_fee,
         state_root: anchor.state_root,
     };
 
