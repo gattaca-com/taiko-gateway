@@ -1,16 +1,14 @@
 use pc_common::{
-    config::{load_env_vars, load_static_config, EnvConfig, StaticConfig},
+    config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
     metrics::start_metrics_server,
     runtime::init_runtime,
     taiko::get_and_validate_config,
-    types::DuplexChannel,
     utils::{initialize_panic_hook, initialize_tracing_log},
 };
-use pc_driver::start_driver;
 use pc_proposer::start_proposer;
 use pc_rpc::start_rpc;
 use pc_sequencer::start_sequencer;
-use tokio::signal::unix::SignalKind;
+use tokio::{signal::unix::SignalKind, sync::mpsc};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -38,17 +36,18 @@ async fn main() {
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
 
-    let chain_config = get_and_validate_config(config.l1.clone(), (&config).into()).await?;
+    let chain_config = get_and_validate_config(config.l1.clone(), config.l2.clone()).await?;
     info!("initial checks ok");
 
-    let (to_proposer, to_sequencer) = DuplexChannel::new();
-    start_proposer(&config, chain_config.clone(), envs.proposer_signer_key, to_sequencer).await?;
+    let taiko_config = TaikoConfig::new(&config, chain_config);
+
+    let (new_blocks_tx, new_blocks_rx) = mpsc::unbounded_channel();
+    start_proposer(&config, taiko_config.clone(), envs.proposer_signer_key, new_blocks_rx).await?;
 
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
-    let (to_driver, to_sequencer) = DuplexChannel::new();
-    start_sequencer(&config, chain_config.clone(), rpc_rx, mempool_rx, to_proposer, to_driver);
-    start_driver(&config, chain_config, to_sequencer);
+
+    start_sequencer(&config, taiko_config, rpc_rx, mempool_rx, new_blocks_tx);
     start_rpc(&config, rpc_tx, mempool_tx);
 
     // Wait for SIGTERM

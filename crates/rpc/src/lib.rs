@@ -24,7 +24,7 @@ pub fn start_rpc(
 ) {
     let rpc_config: RpcConfig = config.into();
 
-    info!(chain_id = rpc_config.chain_id, port = rpc_config.port, "starting RPC server");
+    info!(port = rpc_config.port, "starting RPC server");
 
     spawn(start_mempool_subscription(
         rpc_config.rpc_url.clone(),

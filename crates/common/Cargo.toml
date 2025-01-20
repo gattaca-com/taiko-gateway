@@ -10,7 +10,6 @@ publish = false
 alloy-primitives.workspace = true
 alloy-rpc-types.workspace = true
 alloy-rlp.workspace = true
-alloy-network.workspace = true
 alloy-provider.workspace = true
 alloy-signer.workspace = true
 alloy-signer-local.workspace = true
@@ -20,6 +19,7 @@ alloy-serde.workspace = true
 alloy-sol-types.workspace = true
 alloy-sol-macro.workspace = true
 alloy-contract.workspace = true
+alloy-transport-http.workspace = true
 
 # Networking
 reqwest.workspace = true

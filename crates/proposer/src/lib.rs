@@ -1,71 +1,50 @@
 //! Handles creating and landing L1 blockPropose transactions.
 
-use std::sync::Arc;
-
 use alloy_signer_local::PrivateKeySigner;
-use includer::L1Includer;
-use manager::{propose_pending_blocks, resync_blocks, Proposer};
+use client::L1Client;
+use manager::ProposerManager;
 use pc_common::{
-    config::{StaticConfig, TaikoChainConfig, TaikoConfig},
-    proposer::ProposerRequest,
+    config::{StaticConfig, TaikoConfig},
+    proposer::{NewSealedBlock, ProposerContext},
     runtime::spawn,
-    sequencer::SequenceLoop,
-    types::DuplexChannel,
 };
+use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::info;
-use types::{Propose, ProposeData};
 
-mod includer;
+mod client;
 mod manager;
-mod taiko;
-mod types;
 
 pub async fn start_proposer(
     config: &StaticConfig,
-    chain_config: TaikoChainConfig,
+    taiko_config: TaikoConfig,
     signer: PrivateKeySigner,
-    to_sequencer: DuplexChannel<SequenceLoop, ProposerRequest>,
+    new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
 ) -> eyre::Result<()> {
     let proposer_config = config.into();
-    let taiko_config: TaikoConfig = config.into();
-    let use_blobs = config.gateway.use_blobs;
-    let force_reorgs = config.gateway.force_reorgs;
-    let propose_data = ProposeData::new(config.gateway.coinbase);
 
     info!(proposer_address = %signer.address(), "starting l1 proposer");
 
-    let includer = Arc::new(L1Includer::new(config.l1.rpc_url.clone(), signer));
-    let propose = Propose::new_contract(taiko_config, propose_data);
-    let taiko_proposer = Arc::new(propose);
+    let context = ProposerContext {
+        proposer: signer.address(),
+        coinbase: config.gateway.coinbase,
+        anchor_input: taiko_config.anchor_input,
+    };
+
+    let includer =
+        L1Client::new(config.l1.rpc_url.clone(), taiko_config.l1_contract, signer).await?;
 
     // Stale block sync
-    resync_blocks(
-        config.l1.rpc_url.clone(),
-        config.gateway.simulator_url.clone(),
-        config.l2.rpc_url.clone(),
-        chain_config,
-        taiko_proposer.clone(),
-        includer.clone(),
-        force_reorgs,
-    )
-    .await?;
+    // resync_blocks(
+    //     config.l1.rpc_url.clone(),
+    //     taiko_config,
+    //     taiko_proposer.clone(),
+    //     includer.clone(),
+    // )
+    // .await?;
 
     // Start proposer
-    let (block_tx, block_rx) = tokio::sync::mpsc::unbounded_channel();
-    spawn(propose_pending_blocks(
-        block_rx,
-        taiko_proposer,
-        includer,
-        use_blobs,
-        config.gateway.use_batch,
-    ));
-    let proposer = Proposer::new(proposer_config, block_tx, to_sequencer);
-    std::thread::Builder::new()
-        .name("proposer".to_string())
-        .spawn(move || {
-            proposer.run();
-        })
-        .expect("failed to start proposer thread");
+    let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);
+    spawn(proposer.run());
 
     Ok(())
 }

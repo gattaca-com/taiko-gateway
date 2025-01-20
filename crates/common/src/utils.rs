@@ -1,20 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ::backtrace::Backtrace;
-use alloy_consensus::TxEnvelope;
-use alloy_eips::eip2718::Encodable2718;
-use alloy_primitives::Bytes;
 use alloy_rpc_types::Header;
 use tracing::{error, info};
 use tracing_appender::{non_blocking::WorkerGuard, rolling::Rotation};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
-
-/// Convert a TxEnvelope to raw RLP bytes as encoded in eth_sendRawTransaction
-pub fn envelope_to_raw_btyes(tx: &TxEnvelope) -> Bytes {
-    let mut encoded = Vec::new();
-    tx.network_encode(&mut encoded);
-    encoded.into()
-}
 
 // Time
 
@@ -115,7 +105,7 @@ pub fn initialize_tracing_log() -> WorkerGuard {
     guard
 }
 
-pub const OUR_CRATES: [&str; 5] = ["common", "proposer", "rpc", "sequencer", "driver"];
+pub const OUR_CRATES: [&str; 4] = ["common", "proposer", "rpc", "sequencer"];
 
 /// Make sure we only get logs for our crates and exlude the others
 fn get_crate_filter(crates_level: tracing::Level) -> EnvFilter {

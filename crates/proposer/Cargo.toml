@@ -13,14 +13,13 @@ alloy-primitives.workspace = true
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
 alloy-provider.workspace = true
-alloy-sol-types.workspace = true
 alloy-signer-local.workspace = true
 alloy-rpc-types.workspace = true
 alloy-network.workspace = true
 alloy-transport-http.workspace = true
+alloy-signer.workspace = true
 
 url.workspace = true
-crossbeam-channel.workspace = true
 tracing.workspace = true
 
 reqwest.workspace = true

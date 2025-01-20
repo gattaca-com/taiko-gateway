@@ -2,54 +2,19 @@ use std::sync::LazyLock;
 
 use alloy_primitives::{address, b256, keccak256, Address, Bytes, B256, U256};
 use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{sol, SolValue};
-
-mod anchor;
+use alloy_sol_types::SolValue;
+mod blob;
 mod checks;
 mod fixed_signer;
-mod propose;
-
-pub use anchor::*;
+pub mod pacaya;
+use alloy_transport_http::Http;
 pub use checks::get_and_validate_config;
-pub use propose::*;
+use pacaya::{l1::TaikoL1::TaikoL1Instance, l2::TaikoL2::TaikoL2Instance};
 
-// need to namespace to avoid clashing of some types with the same name
-pub mod l1 {
-    use alloy_sol_types::sol;
-    sol!(
-        #[derive(Debug, Eq, PartialEq)]
-        #[sol(rpc)]
-        #[allow(missing_docs)]
-        TaikoL1,
-        "../../abi/TaikoL1.json"
-    );
-}
-
-pub mod l2 {
-    use alloy_sol_types::sol;
-    sol!(
-        #[derive(Debug, Eq, PartialEq)]
-        #[sol(rpc)]
-        #[allow(missing_docs)]
-        TaikoL2,
-        "../../abi/TaikoL2.json"
-    );
-}
-
-// From TaikoData.BlockParamsV2
-sol! {
-    #[derive(Debug, Default)]
-    struct BlockParamsV2 {
-        address proposer;
-        address coinbase;
-        bytes32 parentMetaHash;
-        uint64 anchorBlockId; // NEW
-        uint64 timestamp; // NEW
-        uint32 blobTxListOffset; // NEW
-        uint32 blobTxListLength; // NEW
-        uint8 blobIndex; // NEW
-    }
-}
+pub type TaikoL1Client =
+    TaikoL1Instance<Http<reqwest::Client>, alloy_provider::RootProvider<Http<reqwest::Client>>>;
+pub type TaikoL2Client =
+    TaikoL2Instance<Http<reqwest::Client>, alloy_provider::RootProvider<Http<reqwest::Client>>>;
 
 /// Golden touch is the key that needs to propose the anchor tx in every block
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 =
@@ -73,6 +38,29 @@ pub fn get_difficulty(bn: u64) -> B256 {
 pub fn get_extra_data(sharing_pct: u8) -> Bytes {
     let a: [u8; 32] = U256::from(sharing_pct).to_be_bytes();
     Bytes::from(a)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BaseFeeConfig {
+    pub adjustment_quotient: u8,
+    pub sharing_pctg: u8,
+    pub gas_issuance_per_second: u32,
+    pub min_gas_excess: u64,
+    pub max_gas_issuance_per_block: u32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AnchorParams {
+    pub block_id: u64,
+    pub state_root: B256,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ParentParams {
+    pub timestamp: u64,
+    pub gas_used: u32,
+    pub block_number: u64,
 }
 
 #[cfg(test)]

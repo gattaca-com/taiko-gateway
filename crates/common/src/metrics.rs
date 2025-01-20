@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 use axum::{
     body::Body,
@@ -9,8 +9,8 @@ use axum::{
 use eyre::bail;
 use lazy_static::lazy_static;
 use prometheus::{
-    register_histogram_vec, register_int_counter_vec, Encoder, HistogramVec, IntCounterVec,
-    TextEncoder,
+    register_histogram_vec, register_int_counter_vec, Encoder, HistogramTimer, HistogramVec,
+    IntCounterVec, TextEncoder,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, trace};
@@ -36,8 +36,8 @@ impl MetricsProvider {
         info!("starting metrics server on port {}", self.port);
 
         let router = axum::Router::new()
-            .route("/metrics", get(handle_metrics))
-            .route("/status", get(handle_status));
+            .route("/status", get(|| async { StatusCode::OK }))
+            .route("/metrics", get(handle_metrics));
         let address = SocketAddr::from(([0, 0, 0, 0], self.port));
         let listener = TcpListener::bind(&address).await?;
 
@@ -45,12 +45,6 @@ impl MetricsProvider {
 
         bail!("metrics server stopped")
     }
-}
-
-async fn handle_status() -> Response {
-    trace!("handling status request");
-
-    StatusCode::OK.into_response()
 }
 
 async fn handle_metrics() -> Response {
@@ -102,13 +96,25 @@ lazy_static! {
 pub struct GatewayMetrics;
 
 impl GatewayMetrics {
-    pub fn record_latency(method: &str, latency: Duration) {
-        let latency_seconds = latency.as_secs_f64();
-        SIMULATOR_LATENCY.with_label_values(&[method]).observe(latency_seconds);
+    pub fn simulate_anchor_timer() -> HistogramTimer {
+        SIMULATOR_LATENCY.with_label_values(&["simulate_anchor"]).start_timer()
+    }
+    pub fn record_simulate_anchor(result: &str) {
+        SIMULATOR_REQUESTS.with_label_values(&["simulate_anchor", result]).inc();
     }
 
-    pub fn record_simulator_request(method: &str, result: &str) {
-        SIMULATOR_REQUESTS.with_label_values(&[method, result]).inc();
+    pub fn simulate_tx_timer() -> HistogramTimer {
+        SIMULATOR_LATENCY.with_label_values(&["simulate_tx"]).start_timer()
+    }
+    pub fn record_simulate_tx(result: &str) {
+        SIMULATOR_REQUESTS.with_label_values(&["simulate_tx", result]).inc();
+    }
+
+    pub fn commit_timer() -> HistogramTimer {
+        SIMULATOR_LATENCY.with_label_values(&["commit"]).start_timer()
+    }
+    pub fn record_commit(result: &str) {
+        SIMULATOR_REQUESTS.with_label_values(&["commit", result]).inc();
     }
 
     pub fn record_proposer_status_code(success: bool) {

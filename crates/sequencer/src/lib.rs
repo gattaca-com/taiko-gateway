@@ -3,59 +3,57 @@
 use std::sync::Arc;
 
 use alloy_consensus::TxEnvelope;
+use context::SAFE_L1_LAG;
 use crossbeam_channel::Receiver;
 use pc_common::{
-    config::{StaticConfig, TaikoChainConfig},
-    driver::{DriverRequest, DriverResponse},
-    proposer::ProposerRequest,
-    sequencer::{Order, SequenceLoop},
-    types::DuplexChannel,
+    config::{StaticConfig, TaikoConfig},
+    fetcher::BlockFetcher,
+    proposer::NewSealedBlock,
+    runtime::spawn,
+    sequencer::Order,
 };
 use sequencer::Sequencer;
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::info;
-use worker::WorkerManager;
 
 mod context;
 mod sequencer;
+mod simulator;
 mod txpool;
-mod types;
-mod worker;
 
 pub fn start_sequencer(
     config: &StaticConfig,
-    chain_config: TaikoChainConfig,
+    taiko_config: TaikoConfig,
     rpc_rx: Receiver<Order>,
     mempool_rx: Receiver<Arc<TxEnvelope>>,
-    to_proposer: DuplexChannel<ProposerRequest, SequenceLoop>,
-    to_driver: DuplexChannel<DriverRequest, DriverResponse>,
+    new_blocks_tx: UnboundedSender<NewSealedBlock>,
 ) {
     let sequencer_config = config.into();
-    let worker_config = config.into();
 
-    info!("starting sequencer");
+    let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
+    let rpc_url = config.l1.rpc_url.clone();
+    let ws_url = config.l1.ws_url.clone();
+    spawn(BlockFetcher::new(rpc_url, ws_url, l1_blocks_tx).run("l1", SAFE_L1_LAG as u64));
 
-    let (to_worker, to_sequencer) = DuplexChannel::new();
-    let worker = WorkerManager::new(worker_config, to_sequencer);
-    std::thread::Builder::new()
-        .name("worker".to_string())
-        .spawn(move || {
-            worker.run();
-        })
-        .expect("failed to start worker thread");
+    let (l2_blocks_tx, l2_blocks_rx) = crossbeam_channel::unbounded();
+    let rpc_url = config.l2.rpc_url.clone();
+    let ws_url = config.l2.ws_url.clone();
+    spawn(BlockFetcher::new(rpc_url, ws_url, l2_blocks_tx).run("taiko", 0));
 
     let sequencer = Sequencer::new(
         sequencer_config,
-        chain_config,
+        taiko_config,
         rpc_rx,
         mempool_rx,
-        to_proposer,
-        to_worker,
-        to_driver,
+        new_blocks_tx,
+        l1_blocks_rx,
+        l2_blocks_rx,
     );
 
     std::thread::Builder::new()
         .name("sequencer".to_string())
         .spawn(move || {
+            info!("starting sequencer");
             sequencer.run();
         })
         .expect("failed to start sequencer thread");

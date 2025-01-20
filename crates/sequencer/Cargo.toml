@@ -8,17 +8,14 @@ publish = false
 [dependencies]
 pc-common.workspace = true
 
-
-serde_json.workspace = true
+tokio.workspace = true
 alloy-primitives.workspace = true
 alloy-consensus.workspace = true
 alloy-rpc-types.workspace = true
-
+alloy-provider.workspace = true
 
 jsonrpsee.workspace = true
 crossbeam-channel.workspace = true
 tracing.workspace = true
 
 eyre.workspace = true
-
-thiserror.workspace = true

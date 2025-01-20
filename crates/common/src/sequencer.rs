@@ -1,22 +1,46 @@
-use std::{fmt::Display, ops::Add, sync::Arc, time::Instant};
+use std::{
+    fmt::Display,
+    ops::{Add, Deref},
+    sync::Arc,
+};
 
 use alloy_consensus::TxEnvelope;
-use alloy_primitives::B256;
+use alloy_eips::eip2718::Encodable2718;
+use alloy_primitives::Bytes;
+use alloy_rlp::Decodable;
 use alloy_rpc_types::Block;
 use serde::{Deserialize, Serialize};
 
 /// Request to sequence a transaction
-// TODO: add chain_id once we have L1 too
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Order {
-    Tx(Arc<TxEnvelope>),
+pub struct Order {
+    tx: Arc<TxEnvelope>,
+    /// Raw RLP encoded transaction
+    raw: Bytes,
 }
 
 impl Order {
-    pub fn hash(&self) -> B256 {
-        match self {
-            Order::Tx(tx) => *tx.tx_hash(),
-        }
+    pub fn decode(raw: Bytes) -> eyre::Result<Self> {
+        let tx = TxEnvelope::decode(&mut raw.as_ref())?;
+        Ok(Self::new(tx.into()))
+    }
+
+    pub fn new(tx: Arc<TxEnvelope>) -> Self {
+        let mut buf = Vec::with_capacity(tx.encode_2718_len());
+        tx.encode_2718(&mut buf);
+        Self { tx, raw: buf.into() }
+    }
+
+    pub fn raw(&self) -> &Bytes {
+        &self.raw
+    }
+}
+
+impl Deref for Order {
+    type Target = TxEnvelope;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tx
     }
 }
 
@@ -39,22 +63,8 @@ impl std::fmt::Debug for StateId {
 }
 
 impl StateId {
-    /// Reserved ID for committed head state
-    pub const CHAIN_HEAD: Self = Self(1);
-
-    /// Reserved ID for committed preconf state
-    pub const PRECONF_HEAD: Self = Self(2);
-
     pub const fn new(id: u64) -> Self {
         Self(id)
-    }
-
-    pub fn is_chain_head(&self) -> bool {
-        *self == Self::CHAIN_HEAD
-    }
-
-    pub fn is_preconf_head(&self) -> bool {
-        *self == Self::PRECONF_HEAD
     }
 }
 
@@ -127,22 +137,6 @@ pub struct SealBlockResponse {
     pub cumulative_builder_payment: u128,
     /// Finalised block
     pub built_block: Arc<Block>,
-}
-
-pub enum SequenceLoop {
-    // Start {
-    //     /// Finalized block number to build on
-    //     chain_head: u64,
-    //     /// State root of the finalized block
-    //     state_root: B256,
-    // },
-    Continue {
-        /// When to stop sequencing, this acts as a "ping" from proposer module and makes sure
-        /// we stop sequencing if the proposer is down
-        stop_by: Instant,
-    },
-    /// Stop sequencing and finalize current block
-    Stop,
 }
 
 #[cfg(test)]

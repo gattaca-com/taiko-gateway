@@ -3,7 +3,7 @@ use alloy_signer::k256::{NonZeroScalar, Scalar, Secp256k1};
 use ecdsa::hazmat::{bits2field, sign_prehashed};
 use eyre::eyre;
 
-/// ECSDA normally signs over a randomized `k` but Taiko needs anchor transactions to be rebuilt
+/// ECDSA normally signs over a randomized `k` but Taiko needs anchor transactions to be rebuilt
 /// determinstically by all clients
 /// https://github.com/taikoxyz/taiko-mono/blob/ontake_preconfs/packages/taiko-client/driver/signer/fixed_k_signer.go
 pub fn sign_fixed_k(prehash: B256, scalar: &NonZeroScalar) -> eyre::Result<PrimitiveSignature> {
@@ -18,7 +18,7 @@ pub fn sign_fixed_k(prehash: B256, scalar: &NonZeroScalar) -> eyre::Result<Primi
         Ok(res) => res,
         // then try K=2
         Err(_) => sign_prehashed::<Secp256k1, Scalar>(scalar, K_2, &z)
-            .map_err(|_| eyre!("Failed to sign anchor using K=1 and K=2"))?,
+            .map_err(|_| eyre!("failed to sign anchor using K=1 and K=2"))?,
     };
 
     let sig =

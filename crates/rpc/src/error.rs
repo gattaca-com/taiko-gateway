@@ -9,8 +9,6 @@ fn rpc_err_owned(code: i32, msg: String) -> ErrorObjectOwned {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
-    #[error("gateway cannot issue preconfs for this slot")]
-    WrongPreconfer,
     #[error("failed parsing raw transaction")]
     FailedParsing,
     #[error("{0}")]
@@ -20,10 +18,6 @@ pub enum RpcError {
 impl From<RpcError> for ErrorObjectOwned {
     fn from(err: RpcError) -> Self {
         match err {
-            RpcError::WrongPreconfer => rpc_err_static(
-                ErrorCode::InvalidRequest.code(),
-                "gateway cannot issue preconfs for this slot",
-            ),
             RpcError::FailedParsing => {
                 rpc_err_static(ErrorCode::ParseError.code(), "failed parsing raw transaction")
             }

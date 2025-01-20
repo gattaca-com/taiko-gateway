@@ -1,422 +1,258 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use alloy_consensus::Transaction;
-use alloy_eips::BlockNumberOrTag;
-use alloy_primitives::{BlockHash, B256};
-use alloy_provider::{network::primitives::BlockTransactionsKind, Provider, ProviderBuilder};
-use alloy_sol_types::SolCall;
-use eyre::{bail, ensure, eyre, OptionExt};
+use alloy_consensus::BlobTransactionSidecar;
+use alloy_primitives::Bytes;
+use alloy_rpc_types::Block;
+use eyre::bail;
 use pc_common::{
-    config::{ProposerConfig, TaikoChainConfig},
-    metrics::GatewayMetrics,
-    proposer::ProposerRequest,
-    sequencer::SequenceLoop,
-    taiko::{l2::TaikoL2::anchorV2Call, GOLDEN_TOUCH_ADDRESS},
-    types::DuplexChannel,
-    utils::{alert_discord, verify_and_log_block},
+    config::ProposerConfig,
+    proposer::{NewSealedBlock, ProposerContext},
+    taiko::pacaya::{propose_batch_blobs, propose_batch_calldata},
+    utils::alert_discord,
 };
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{error, info};
-use url::Url;
 
-use crate::{includer::L1Includer, types::Propose};
+use super::L1Client;
 
-pub struct Proposer {
-    continue_loop_time: Duration,
-
-    block_tx: UnboundedSender<ProposerRequest>,
-    to_sequencer: DuplexChannel<SequenceLoop, ProposerRequest>,
+pub struct ProposerManager {
+    config: ProposerConfig,
+    context: ProposerContext,
+    client: L1Client,
+    new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
 }
 
-impl Proposer {
+impl ProposerManager {
     pub fn new(
         config: ProposerConfig,
-        block_tx: UnboundedSender<ProposerRequest>,
-        to_sequencer: DuplexChannel<SequenceLoop, ProposerRequest>,
+        context: ProposerContext,
+        client: L1Client,
+        new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
     ) -> Self {
-        Self { continue_loop_time: config.continue_loop_time, block_tx, to_sequencer }
+        Self { config, context, client, new_blocks_rx }
     }
 
-    pub fn run(self) {
-        self.send_continue_loop();
+    pub async fn run(mut self) {
+        // todo: this should be considering the time of preconfer switch, and how old is the oldest
+        // anchor block id NOTE: this probably conflicts with the reorg check so cant be too
+        // low
+        let mut tick = tokio::time::interval(self.config.propose_frequency);
 
-        let continue_tick = crossbeam_channel::tick(self.continue_loop_time / 2);
+        let mut to_propose: BTreeMap<u64, Vec<NewSealedBlock>> = BTreeMap::new();
 
         loop {
-            crossbeam_channel::select! {
-                recv(continue_tick) -> _ => {
-                    self.send_continue_loop();
+            tokio::select! {
+                Some(block) = self.new_blocks_rx.recv() => {
+                    to_propose.entry(block.anchor_block_id,).or_default().push(block);
                 }
 
-                recv(self.to_sequencer.rx) -> maybe_request => {
-                    match maybe_request {
-                        Ok(request) => {
-                            self.block_tx.send(request).unwrap();
-                        },
-
-                        Err(err) => error!(%err, "proposer_rx is closed")
+                _ = tick.tick() => {
+                    if let Some((anchor_block_id, blocks)) = to_propose.pop_first() {
+                        info!(anchor_block_id, n_blocks = blocks.len(), "proposing batch");
+                        let blocks = blocks.into_iter().map(|b| b.block).collect();
+                        self.propose_batch_with_retry(anchor_block_id, blocks).await;
                     }
                 }
             }
         }
     }
 
-    fn send_continue_loop(&self) {
-        let stop_by = Instant::now() + self.continue_loop_time;
+    async fn propose_batch_with_retry(&self, anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) {
+        assert!(!full_blocks.is_empty(), "no blocks to propose");
 
-        if let Err(err) = self.to_sequencer.tx.send(SequenceLoop::Continue { stop_by }) {
-            error!(%err, "failed to send continue loop signal");
-            // TODO: this means sequencer is down, we should do a graceful exit after all the
-            // pending blocks are proposed
+        if self.config.dry_run {
+            // todo: log something
+            return;
         }
-    }
-}
 
-/// If we restart and some blocks were not proposed, fetch from preconf tip and re-send proposals
-#[allow(clippy::comparison_chain)]
-#[tracing::instrument(skip_all, name = "resync", fields(force_reorgs = force_reorgs))]
-pub async fn resync_blocks(
-    l1_url: Url,
-    preconf_url: Url,
-    chain_url: Url,
-    chain_config: TaikoChainConfig,
-    proposer: Arc<Propose>,
-    includer: Arc<L1Includer>,
-    force_reorgs: bool,
-) -> eyre::Result<()> {
-    let l1_provider = ProviderBuilder::new().with_recommended_fillers().on_http(l1_url);
-    let chain_provider = ProviderBuilder::new().with_recommended_fillers().on_http(chain_url);
-    let preconf_provider = ProviderBuilder::new().with_recommended_fillers().on_http(preconf_url);
+        let hashes = full_blocks.iter().map(|b| b.header.hash).collect::<Vec<_>>();
+        let parent_meta_hash = self.client.last_meta_hash().await;
 
-    let mut chain_head = chain_provider.get_block_number().await?;
-    let mut preconf_head = preconf_provider.get_block_number().await?;
+        let (input, maybe_sidecar) = if self.config.use_blobs {
+            let (input, sidecar) =
+                propose_batch_blobs(full_blocks, anchor_block_id, parent_meta_hash, &self.context);
+            (input, Some(sidecar))
+        } else {
+            let input = propose_batch_calldata(
+                full_blocks,
+                anchor_block_id,
+                parent_meta_hash,
+                &self.context,
+            );
+            (input, None)
+        };
 
-    info!(chain_head, preconf_head, "resyncing preconf blocks");
+        const MAX_RETRIES: usize = 3;
+        let mut retries = 0;
 
-    if chain_head > preconf_head {
-        // TODO: this can happen in a edge case where we a block has just been proposed and
-        // simulator hasn't synced yet
-        bail!("simulator is behind chain, this should not happen")
-    } else if chain_head < preconf_head {
-        while chain_head < preconf_head {
-            let mut requests = vec![];
+        while let Err(err) = self.propose_one_batch(input.clone(), maybe_sidecar.clone()).await {
+            error!(%err, "failed to propose block, retrying in 12 secs");
 
-            let l1_head = l1_provider
-                .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
-                .await?
-                .ok_or_eyre("failed l1 fetch")?;
+            tokio::time::sleep(Duration::from_secs(12)).await;
+            retries += 1;
 
-            let mut to_verify = HashMap::new();
-            let mut has_reorged = false;
-
-            // sync max 10 blocks at a time
-            let max_preconf_bn = preconf_head.min(chain_head + 1 + 10);
-            for bn in (chain_head + 1)..=max_preconf_bn {
-                let block = preconf_provider
-                    .get_block_by_number(bn.into(), BlockTransactionsKind::Full)
-                    .await?
-                    .ok_or_eyre("failed to get block")?;
-                let block = Arc::new(block);
-                to_verify.insert(bn, block.clone());
-
-                // unwraps are ok because hydrate = true and there's at least one tx
-                let anchor_tx = block.transactions.as_transactions().unwrap().first().unwrap();
-
-                assert_eq!(
-                    anchor_tx.from, GOLDEN_TOUCH_ADDRESS,
-                    "expected first tx to be from anchor"
-                );
-
-                // get the anchor data
-                let anchor_data = anchorV2Call::abi_decode(&anchor_tx.input(), true)?;
-                let anchor_block_id = anchor_data._anchorBlockId;
-                let anchor_timestamp = block.header.timestamp;
-
-                let reorg_by_number = l1_head.header.number.saturating_sub(anchor_block_id) >=
-                    chain_config.max_anchor_height_offset;
-                let reorg_by_timestamp = l1_head.header.timestamp.saturating_sub(anchor_timestamp) >=
-                    chain_config.max_anchor_timestamp_offset;
-
-                if reorg_by_number || reorg_by_timestamp {
-                    // this can happen if we waited too long before restarting the proposer, a
-                    // re-org is inevitable
-                    if force_reorgs {
-                        let request = ProposerRequest {
-                            block,
-                            anchor_block_id: l1_head.header.number - 1,
-                            anchor_timestamp: l1_head.header.timestamp - 12,
-                        };
-                        requests.push(request);
-                        has_reorged = true;
-                    } else {
-                        panic!("unrecoverable re-org (number), check manually");
-                    }
-                } else {
-                    // propose same block
-                    let request = ProposerRequest { block, anchor_block_id, anchor_timestamp };
-                    requests.push(request);
-                }
-            }
-
-            if has_reorged {
-                let msg = format!("re-orged blocks {}-{}", chain_head + 1, max_preconf_bn);
+            if retries == 1 {
+                let msg = format!("failed to propose blocks={:?}, err={}", hashes, err);
                 alert_discord(&msg);
             }
 
-            propose_blocks(requests, &proposer, &includer, false).await?;
-
-            if !has_reorged {
-                for bn in (chain_head + 1)..=max_preconf_bn {
-                    let preconf_block = to_verify.remove(&bn).unwrap();
-                    let new_block = chain_provider
-                        .get_block_by_number(bn.into(), BlockTransactionsKind::Hashes)
-                        .await?
-                        .ok_or_eyre("failed to get chain block")?;
-
-                    verify_and_log_block(&preconf_block.header, &new_block.header, true);
-                }
+            if retries == MAX_RETRIES {
+                let msg =
+                    format!("max retries reached to propose blocks={:?}, err={}", hashes, err);
+                panic!("{}", msg);
             }
-
-            chain_head = chain_provider.get_block_number().await?;
-            preconf_head = preconf_provider.get_block_number().await?;
         }
-    }
 
-    Ok(())
-}
-
-// FIXME
-#[tracing::instrument(skip_all, name = "proposer")]
-pub async fn propose_pending_blocks(
-    mut block_rx: UnboundedReceiver<ProposerRequest>,
-    proposer: Arc<Propose>,
-    includer: Arc<L1Includer>,
-    use_blobs: bool,
-    use_batch: bool,
-) {
-    if use_batch {
-        let mut requests = vec![];
-        loop {
-            block_rx.recv_many(&mut requests, 10).await;
-            info!(pending = requests.len(), "new pending blocks");
-
-            if requests.len() == 1 {
-                propose_block_forever(&requests[0], &proposer, &includer, use_blobs).await;
-            } else if !requests.is_empty() {
-                propose_blocks_forever(&requests, &proposer, &includer, use_blobs).await;
-            }
-
-            requests.clear();
-        }
-    } else {
-        while let Some(block) = block_rx.recv().await {
-            propose_block_forever(&block, &proposer, &includer, use_blobs).await;
-        }
-    }
-}
-
-const MAX_RETRIES: usize = 4;
-
-async fn propose_block_forever(
-    request: &ProposerRequest,
-    proposer: &Arc<Propose>,
-    includer: &L1Includer,
-    use_blobs: bool,
-) {
-    let mut retries = 0;
-    while let Err(err) = propose_one_block(request.clone(), proposer, includer, use_blobs).await {
-        error!(%err, "failed to propose block, retrying in 12 secs");
-        GatewayMetrics::record_proposer_status_code(false);
-        tokio::time::sleep(Duration::from_secs(12)).await;
-
-        retries += 1;
-
-        if retries == 1 {
-            let msg = format!("failed to propose block={}, err={}", request.block.header.hash, err);
+        if retries > 0 {
+            let msg = format!("resolved propose blocks={:?}", hashes);
             alert_discord(&msg);
         }
+    }
 
-        if retries == MAX_RETRIES {
-            let msg = format!(
-                "max retries reached to propose block={}, err={}",
-                request.block.header.hash, err
+    async fn propose_one_batch(
+        &self,
+        input: Bytes,
+        sidecar: Option<BlobTransactionSidecar>,
+    ) -> eyre::Result<()> {
+        let tx = if let Some(sidecar) = sidecar {
+            self.client.build_eip4844(input, sidecar).await?
+        } else {
+            self.client.build_eip1559(input).await?
+        };
+
+        info!(tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
+        let tx_receipt = self.client.send_tx(tx).await?;
+
+        let tx_hash = tx_receipt.transaction_hash;
+        let block_number = tx_receipt.block_number.unwrap_or_default();
+
+        if tx_receipt.status() {
+            info!(
+                %tx_hash,
+                l1_bn = block_number,
+                "proposed batch"
             );
-            panic!("{}", msg);
+
+            self.client.reorg_check(tx_hash).await?;
+
+            Ok(())
+        } else {
+            let receipt_json = serde_json::to_string(&tx_receipt)?;
+            bail!("failed to propose block: l1_bn={block_number}, tx_hash={tx_hash}, receipt={receipt_json}");
         }
     }
-
-    GatewayMetrics::record_proposer_status_code(true);
-    if retries > 0 {
-        let msg = format!("resolved propose block={}", request.block.header.hash);
-        alert_discord(&msg);
-    }
 }
 
-async fn propose_blocks_forever(
-    requests: &Vec<ProposerRequest>,
-    proposer: &Arc<Propose>,
-    includer: &L1Includer,
-    use_blobs: bool,
-) {
-    let mut retries = 0;
-    let hashes: Vec<BlockHash> = requests.iter().map(|block| block.block.header.hash).collect();
-    while let Err(err) = propose_blocks(requests.clone(), proposer, includer, use_blobs).await {
-        error!(%err, "failed to propose block, retrying in 12 secs");
-        GatewayMetrics::record_proposer_status_code(false);
+// /// If we restart and some blocks were not proposed, fetch from preconf tip and re-send proposals
+// #[allow(clippy::comparison_chain)]
+// #[tracing::instrument(skip_all, name = "resync", fields(force_reorgs = force_reorgs))]
+// pub async fn resync_blocks(
+//     l1_url: Url,
+//     taiko_config: TaikoConfig,
+//     proposer: Arc<Propose>,
+//     includer: Arc<L1Includer>,
+//     force_reorgs: bool,
+// ) -> eyre::Result<()> {
+//     let l1_provider = ProviderBuilder::new().on_http(l1_url);
+//     let chain_provider = ProviderBuilder::new().on_http(taiko_config.rpc_url);
+//     let preconf_provider = ProviderBuilder::new().on_http(taiko_config.preconf_url);
 
-        tokio::time::sleep(Duration::from_secs(12)).await;
-        retries += 1;
+//     let mut chain_head = chain_provider.get_block_number().await?;
+//     let mut preconf_head = preconf_provider.get_block_number().await?;
 
-        if retries == 1 {
-            let msg = format!("failed to propose blocks={:?}, err={}", hashes, err);
-            // TODO: Make this async
-            alert_discord(&msg);
-        }
+//     info!(chain_head, preconf_head, "resyncing preconf blocks");
 
-        if retries == MAX_RETRIES {
-            let msg = format!("max retries reached to propose blocks={:?}, err={}", hashes, err);
-            panic!("{}", msg);
-        }
-    }
+//     if chain_head > preconf_head {
+//         // TODO: this can happen in a edge case where we a block has just been proposed and
+//         // simulator hasn't synced yet
+//         bail!("simulator is behind chain, this should not happen")
+//     } else if chain_head < preconf_head {
+//         while chain_head < preconf_head {
+//             let mut requests = vec![];
 
-    GatewayMetrics::record_proposer_status_code(true);
-    if retries > 0 {
-        let msg = format!("resolved propose blocks={:?}", hashes);
-        alert_discord(&msg);
-    }
-}
+//             let l1_head = l1_provider
+//                 .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
+//                 .await?
+//                 .ok_or_eyre("failed l1 fetch")?;
 
-#[tracing::instrument(skip_all, fields(use_blobs = use_blobs, n_blocks = requests.len()))]
-async fn propose_blocks(
-    requests: Vec<ProposerRequest>,
-    proposer: &Arc<Propose>,
-    includer: &L1Includer,
-    use_blobs: bool,
-) -> eyre::Result<()> {
-    ensure!(!requests.is_empty(), "request cannot be empty");
+//             let mut to_verify = HashMap::new();
+//             let mut has_reorged = false;
 
-    let n_txs: usize = requests.iter().map(|req| req.block.transactions.len()).sum();
-    let block_hashes: Vec<B256> = requests.iter().map(|req| req.block.header.hash).collect();
+//             // sync max 10 blocks at a time
+//             let max_preconf_bn = preconf_head.min(chain_head + 1 + 10);
+//             for bn in (chain_head + 1)..=max_preconf_bn {
+//                 let block = preconf_provider
+//                     .get_block_by_number(bn.into(), BlockTransactionsKind::Full)
+//                     .await?
+//                     .ok_or_eyre("failed to get block")?;
+//                 let block = Arc::new(block);
+//                 to_verify.insert(bn, block.clone());
 
-    let tx = if use_blobs {
-        let fields = proposer
-            .get_propose_txs_blob(requests)
-            .await
-            .map_err(|err| eyre!("propose tx blob {err}"))?;
-        includer.generate_blob_tx(fields).await.map_err(|err| eyre!("generate blob {err}"))?
-    } else {
-        let fields = proposer
-            .get_propose_txs_calldata(requests)
-            .await
-            .map_err(|err| eyre!("propose tx calldata {err}"))?;
-        includer.generate_eip1559_tx(fields).await.map_err(|err| eyre!("generate eip559 {err}"))?
-    };
+//                 // unwraps are ok because hydrate = true and there's at least one tx
+//                 let anchor_tx = block.transactions.as_transactions().unwrap().first().unwrap();
 
-    info!(tx_hash = %tx.tx_hash(), n_txs, ?block_hashes, "sending blocks proposal tx");
-    let tx_receipt = includer.send_tx(tx).await.map_err(|err| eyre!("send blob {err:?}"))?;
+//                 assert_eq!(
+//                     anchor_tx.from, GOLDEN_TOUCH_ADDRESS,
+//                     "expected first tx to be from anchor"
+//                 );
 
-    let tx_hash = tx_receipt.transaction_hash;
-    let block_number = tx_receipt.block_number.unwrap_or_default();
+//                 // FIXME
+//                 // get the anchor data
+//                 let anchor_data =
+//                     ontake::l2::TaikoL2::anchorV2Call::abi_decode(&anchor_tx.input(), true)?;
+//                 let anchor_block_id = anchor_data._anchorBlockId;
+//                 let anchor_timestamp = block.header.timestamp;
 
-    if tx_receipt.status() {
-        info!(
-            %tx_hash,
-            l1_bn = block_number,
-            "proposed blocks"
-        );
+//                 let reorg_by_number = l1_head.header.number.saturating_sub(anchor_block_id)
+//                     >= taiko_config.chain.max_anchor_height_offset;
+//                 let reorg_by_timestamp =
+// l1_head.header.timestamp.saturating_sub(anchor_timestamp)                     >=
+// taiko_config.chain.max_anchor_timestamp_offset;
 
-        reorg_check(tx_hash, includer).await?;
+//                 if reorg_by_number || reorg_by_timestamp {
+//                     // this can happen if we waited too long before restarting the proposer, a
+//                     // re-org is inevitable
+//                     if force_reorgs {
+//                         let request = NewSealedBlock {
+//                             block,
+//                             anchor_block_id: l1_head.header.number - 1,
+//                             anchor_timestamp: l1_head.header.timestamp - 12,
+//                         };
+//                         requests.push(request);
+//                         has_reorged = true;
+//                     } else {
+//                         panic!("unrecoverable re-org (number), check manually");
+//                     }
+//                 } else {
+//                     // propose same block
+//                     let request = NewSealedBlock { block, anchor_block_id, anchor_timestamp };
+//                     requests.push(request);
+//                 }
+//             }
 
-        Ok(())
-    } else {
-        let receipt_json = serde_json::to_string(&tx_receipt)?;
-        // TODO: check error type and return different errors so we can recover or not
-        bail!("failed to propose block: l1_bn={block_number}, tx_hash={tx_hash}, receipt={receipt_json}");
-    }
-}
+//             if has_reorged {
+//                 let msg = format!("re-orged blocks {}-{}", chain_head + 1, max_preconf_bn);
+//                 alert_discord(&msg);
+//             }
 
-#[tracing::instrument(skip_all, name = "propose_block", fields(l2_hash = %request.block.header.hash, l2_bn = request.block.header.number, use_blobs = use_blobs))]
-async fn propose_one_block(
-    request: ProposerRequest,
-    proposer: &Arc<Propose>,
-    includer: &L1Includer,
-    use_blobs: bool,
-) -> eyre::Result<()> {
-    let block = request.block.clone();
+//             propose_blocks(requests, &proposer, &includer, false).await?;
 
-    info!(
-        anchor_block_id = request.anchor_block_id,
-        anchor_ts = request.anchor_timestamp,
-        "proposing block"
-    );
+//             if !has_reorged {
+//                 for bn in (chain_head + 1)..=max_preconf_bn {
+//                     let preconf_block = to_verify.remove(&bn).unwrap();
+//                     let new_block = chain_provider
+//                         .get_block_by_number(bn.into(), BlockTransactionsKind::Hashes)
+//                         .await?
+//                         .ok_or_eyre("failed to get chain block")?;
 
-    let tx = if use_blobs {
-        let blob_fields = proposer
-            .get_propose_tx_blob(request)
-            .await
-            .map_err(|err| eyre!("propose tx blob: {err}"))?;
+//                     verify_and_log_block(&preconf_block.header, &new_block.header, true);
+//                 }
+//             }
 
-        includer.generate_blob_tx(blob_fields).await.map_err(|err| eyre!("generate blob: {err}"))?
-    } else {
-        let calldata_fields = proposer
-            .get_propose_tx_calldata(request)
-            .await
-            .map_err(|err| eyre!("propose tx calldata: {err}"))?;
+//             chain_head = chain_provider.get_block_number().await?;
+//             preconf_head = preconf_provider.get_block_number().await?;
+//         }
+//     }
 
-        includer
-            .generate_eip1559_tx(calldata_fields)
-            .await
-            .map_err(|err| eyre!("generate eip559: {err}"))?
-    };
-
-    info!(tx_hash = %tx.tx_hash(), n_txs = block.transactions.len().saturating_sub(1), "sending block proposal tx");
-    let tx_receipt = includer.send_tx(tx).await.map_err(|err| eyre!("send blob {err:?}"))?;
-
-    let tx_hash = tx_receipt.transaction_hash;
-    let block_number = tx_receipt.block_number.ok_or_eyre("tx not included in a block")?;
-
-    if tx_receipt.status() {
-        info!(
-            %tx_hash,
-            l1_bn = block_number,
-            "proposed block"
-        );
-
-        reorg_check(tx_hash, includer).await?;
-
-        Ok(())
-    } else {
-        let receipt_json = serde_json::to_string(&tx_receipt)?;
-        // TODO: check error type and return different errors so we can recover
-        bail!("failed to propose block: l1_bn={block_number}, tx_hash={tx_hash}, receipt={receipt_json}");
-    }
-}
-
-// 3 blocks
-const REORG_SAFE_TIME_SECS: u64 = 12 * 3;
-
-/// Tx hash is for a tx that was just included in a block and we need to make sure it will not be
-/// re-orged out
-#[tracing::instrument(skip_all, name = "reorg_check", fields(tx_hash = %tx_hash))]
-async fn reorg_check(tx_hash: B256, includer: &L1Includer) -> eyre::Result<()> {
-    info!("starting reorg check");
-
-    // after this time it's extremely unlikely that there's a re-org
-    tokio::time::sleep(Duration::from_secs(REORG_SAFE_TIME_SECS)).await;
-
-    let tx_receipt = includer
-        .provider()
-        .get_transaction_receipt(tx_hash)
-        .await?
-        .ok_or_eyre("tx not found, block was likely re-orged")?;
-
-    ensure!(tx_receipt.block_number.is_some(), "tx was re-orged out");
-
-    info!("check successful");
-
-    Ok(())
-}
+//     Ok(())
+// }

@@ -41,14 +41,10 @@ impl TxPool {
     pub fn next_sequence(&mut self) -> Option<Order> {
         for txs in self.txs.values_mut() {
             if let Some((_, tx)) = txs.pop_first() {
-                return Some(Order::Tx(tx));
+                return Some(Order::new(tx));
             }
         }
 
         None
-    }
-
-    pub fn has_txs(&self) -> bool {
-        self.txs.values().any(|txs| !txs.is_empty())
     }
 }

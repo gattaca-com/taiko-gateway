@@ -1585,6 +1585,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42012b0f064e01aa58b545fe3727f90f7dd4020f4a3ea735b50344965f5a57e9"
 
 [[package]]
+name = "gateway"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "eyre",
+ "pc-common",
+ "pc-proposer",
+ "pc-rpc",
+ "pc-sequencer",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2554,29 +2569,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "pc-cmd"
-version = "0.1.0"
-dependencies = [
- "crossbeam-channel",
- "eyre",
- "pc-common",
- "pc-driver",
- "pc-proposer",
- "pc-rpc",
- "pc-sequencer",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "pc-common"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
  "alloy-eips",
- "alloy-network",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rlp",
@@ -2586,6 +2584,7 @@ dependencies = [
  "alloy-signer-local",
  "alloy-sol-macro",
  "alloy-sol-types",
+ "alloy-transport-http",
  "axum",
  "backtrace",
  "c-kzg",
@@ -2609,24 +2608,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pc-driver"
-version = "0.1.0"
-dependencies = [
- "alloy-eips",
- "alloy-primitives",
- "alloy-provider",
- "alloy-rpc-types",
- "alloy-transport-http",
- "crossbeam-channel",
- "eyre",
- "pc-common",
- "reqwest",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "pc-proposer"
 version = "0.1.0"
 dependencies = [
@@ -2636,10 +2617,9 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",
+ "alloy-signer",
  "alloy-signer-local",
- "alloy-sol-types",
  "alloy-transport-http",
- "crossbeam-channel",
  "eyre",
  "pc-common",
  "reqwest",
@@ -2654,10 +2634,8 @@ name = "pc-rpc"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
  "alloy-primitives",
  "alloy-provider",
- "alloy-rpc-types",
  "alloy-rpc-types-txpool",
  "async-trait",
  "crossbeam-channel",
@@ -2676,13 +2654,13 @@ version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
+ "alloy-provider",
  "alloy-rpc-types",
  "crossbeam-channel",
  "eyre",
  "jsonrpsee",
  "pc-common",
- "serde_json",
- "thiserror 1.0.61",
+ "tokio",
  "tracing",
 ]
 

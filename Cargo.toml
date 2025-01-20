@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "bin"]
 resolver = "2"
 
 [workspace.package]
@@ -12,7 +12,6 @@ pc-common = { path = "crates/common" }
 pc-rpc = { path = "crates/rpc" }
 pc-sequencer = { path = "crates/sequencer" }
 pc-proposer = { path = "crates/proposer" }
-pc-driver = { path = "crates/driver" }
 
 alloy-primitives = { version = "0.8.14", features = ["k256", "getrandom"] }
 alloy-rpc-types = { version = "0.7.2", features = ["beacon"] }
