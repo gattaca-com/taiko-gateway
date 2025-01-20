@@ -13,21 +13,21 @@ pc-rpc = { path = "crates/rpc" }
 pc-sequencer = { path = "crates/sequencer" }
 pc-proposer = { path = "crates/proposer" }
 
-alloy-primitives = { version = "0.8.14", features = ["k256", "getrandom"] }
-alloy-rpc-types = { version = "0.7.2", features = ["beacon"] }
-alloy-rpc-types-txpool = "0.7.2"
+alloy-primitives = { version = "0.8.19", features = ["k256", "getrandom"] }
+alloy-rpc-types = { version = "0.8.3", features = ["beacon"] }
+alloy-rpc-types-txpool = "0.8.3"
 alloy-rlp = "0.3.9"
-alloy-network = "0.7.2"
-alloy-provider = { version = "0.7.2", features = ["ws"] }
-alloy-signer = "0.7.2"
-alloy-signer-local = "0.7.2"
-alloy-eips = { version = "0.7.2", features = ["kzg"] }
-alloy-consensus = { version = "0.7.2", features = ["k256"] }
-alloy-serde = "0.7.2"
-alloy-sol-types = "0.8.14"
-alloy-sol-macro = { version = "0.8.14", features = ["json"] }
-alloy-contract = "0.7.2"
-alloy-transport-http = "0.7.2"
+alloy-network = "0.8.3"
+alloy-provider = { version = "0.8.3", features = ["ws"] }
+alloy-signer = "0.8.3"
+alloy-signer-local = "0.8.3"
+alloy-eips = { version = "0.8.3", features = ["kzg"] }
+alloy-consensus = { version = "0.8.3", features = ["k256"] }
+alloy-serde = "0.8.3"
+alloy-sol-types = "0.8.19"
+alloy-sol-macro = { version = "0.8.19", features = ["json"] }
+alloy-contract = "0.8.3"
+alloy-transport-http = "0.8.3"
 
 # Networking
 axum = { version = "0.7.5", features = ["tokio"] }

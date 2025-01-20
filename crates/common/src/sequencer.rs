@@ -26,9 +26,8 @@ impl Order {
     }
 
     pub fn new(tx: Arc<TxEnvelope>) -> Self {
-        let mut buf = Vec::with_capacity(tx.encode_2718_len());
-        tx.encode_2718(&mut buf);
-        Self { tx, raw: buf.into() }
+        let raw = tx.encoded_2718().into();
+        Self { tx, raw }
     }
 
     pub fn raw(&self) -> &Bytes {
@@ -155,10 +154,13 @@ mod tests {
         }"#;
         let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
 
-        assert_eq!(decoded.execution_result, ExecutionResult::Success {
-            state_id: StateId(128181565),
-            gas_used: 21000,
-            builder_payment: 20480
-        });
+        assert_eq!(
+            decoded.execution_result,
+            ExecutionResult::Success {
+                state_id: StateId(128181565),
+                gas_used: 21000,
+                builder_payment: 20480
+            }
+        );
     }
 }
