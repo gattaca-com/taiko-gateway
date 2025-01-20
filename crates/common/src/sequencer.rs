@@ -93,7 +93,6 @@ impl SimulateTxResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-// we could use ExecutionResult from revm but need to check if easy to return in geth
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionResult {
     /// Transaction was successful
@@ -154,13 +153,10 @@ mod tests {
         }"#;
         let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
 
-        assert_eq!(
-            decoded.execution_result,
-            ExecutionResult::Success {
-                state_id: StateId(128181565),
-                gas_used: 21000,
-                builder_payment: 20480
-            }
-        );
+        assert_eq!(decoded.execution_result, ExecutionResult::Success {
+            state_id: StateId(128181565),
+            gas_used: 21000,
+            builder_payment: 20480
+        });
     }
 }

@@ -78,21 +78,17 @@ impl SimulatorClient {
     pub fn commit_state(&self, state_id: StateId) -> eyre::Result<CommitStateResponse> {
         debug!(%state_id, "commit state");
 
-        let response = self.runtime.block_on(async move {
+        self.runtime.block_on(async move {
             self.client.commit_state(state_id).await.map_err(|err| eyre!("commit state err: {err}"))
-        });
-
-        response
+        })
     }
 
     pub fn seal_block(&self) -> eyre::Result<SealBlockResponse> {
         debug!("seal block");
 
-        let response = self.runtime.block_on(async move {
+        self.runtime.block_on(async move {
             self.client.seal_block().await.map_err(|err| eyre!("seal block err: {err}"))
-        });
-
-        response
+        })
     }
 
     pub fn assemble_anchor(

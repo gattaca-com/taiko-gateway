@@ -1,5 +1,3 @@
-#![allow(clippy::blocks_in_conditions)]
-
 use alloy_primitives::{Bytes, B256};
 use crossbeam_channel::Sender;
 use jsonrpsee::{core::RpcResult, server::ServerBuilder};

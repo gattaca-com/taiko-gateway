@@ -111,7 +111,7 @@ dependencies = [
  "alloy-transport",
  "futures",
  "futures-util",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -195,7 +195,7 @@ dependencies = [
  "alloy-sol-types",
  "serde",
  "serde_json",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
  "tracing",
 ]
 
@@ -221,7 +221,7 @@ dependencies = [
  "futures-utils-wasm",
  "serde",
  "serde_json",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -297,7 +297,7 @@ dependencies = [
  "schnellru",
  "serde",
  "serde_json",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
  "url",
@@ -406,7 +406,7 @@ dependencies = [
  "alloy-rpc-types-engine",
  "serde",
  "serde_with",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -481,7 +481,7 @@ dependencies = [
  "auto_impl",
  "elliptic-curve",
  "k256",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -497,7 +497,7 @@ dependencies = [
  "async-trait",
  "k256",
  "rand",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -585,7 +585,7 @@ dependencies = [
  "futures-utils-wasm",
  "serde",
  "serde_json",
- "thiserror 2.0.4",
+ "thiserror 2.0.11",
  "tokio",
  "tower 0.5.1",
  "tracing",
@@ -2595,7 +2595,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror 1.0.61",
+ "thiserror 2.0.11",
  "tokio",
  "toml",
  "tracing",
@@ -2640,7 +2640,7 @@ dependencies = [
  "jsonrpsee",
  "pc-common",
  "reqwest",
- "thiserror 1.0.61",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
 ]
@@ -3717,11 +3717,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.4"
+version = "2.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f49a1853cf82743e3b7950f77e0f4d622ca36cf4317cba00c767838bac8d490"
+checksum = "d452f284b73e6d76dd36758a0c8684b1d5be31f92b89d07fd5822175732206fc"
 dependencies = [
- "thiserror-impl 2.0.4",
+ "thiserror-impl 2.0.11",
 ]
 
 [[package]]
@@ -3737,9 +3737,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.4"
+version = "2.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8381894bb3efe0c4acac3ded651301ceee58a15d47c2e34885ed1908ad667061"
+checksum = "26afc1baea8a989337eeb52b6e72a039780ce45c3edfcc9c5b9d112feeb173c2"
 dependencies = [
  "proc-macro2",
  "quote",

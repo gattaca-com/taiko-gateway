@@ -41,7 +41,6 @@ type Blob = [u8; BYTES_PER_BLOB];
 ///
 /// For only the very first output field, bytes [1:5] are used to encode the version and the length
 /// of the data.
-#[allow(non_snake_case)]
 pub fn encode_blob(data: &[u8]) -> c_kzg::Blob {
     assert!(data.len() <= MAX_BLOB_DATA_SIZE, "blob input too large");
 
@@ -122,31 +121,31 @@ pub fn encode_blob(data: &[u8]) -> c_kzg::Blob {
         }
 
         let x = read_1(data, &mut read_offset);
-        let A = x & 0b0011_1111;
-        write_1(&mut blob, &mut write_offset, A);
+        let a = x & 0b0011_1111;
+        write_1(&mut blob, &mut write_offset, a);
         write_31(&mut blob, &mut write_offset, &buf31);
 
         read_31(data, &mut read_offset, &mut buf31);
         let y = read_1(data, &mut read_offset);
-        let B = (y & 0b0000_1111) | ((x & 0b1100_0000) >> 2);
-        write_1(&mut blob, &mut write_offset, B);
+        let b = (y & 0b0000_1111) | ((x & 0b1100_0000) >> 2);
+        write_1(&mut blob, &mut write_offset, b);
         write_31(&mut blob, &mut write_offset, &buf31);
 
         read_31(data, &mut read_offset, &mut buf31);
         let z = read_1(data, &mut read_offset);
-        let C = z & 0b0011_1111;
-        write_1(&mut blob, &mut write_offset, C);
+        let c = z & 0b0011_1111;
+        write_1(&mut blob, &mut write_offset, c);
         write_31(&mut blob, &mut write_offset, &buf31);
 
         read_31(data, &mut read_offset, &mut buf31);
-        let D = ((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4);
-        write_1(&mut blob, &mut write_offset, D);
+        let d = ((z & 0b1100_0000) >> 2) | ((y & 0b1111_0000) >> 4);
+        write_1(&mut blob, &mut write_offset, d);
         write_31(&mut blob, &mut write_offset, &buf31);
     }
 
     assert!(
         read_offset == data.len(),
-        "Expected to fit data but failed {} {}",
+        "expected to fit data but failed {} {}",
         read_offset,
         data.len()
     );

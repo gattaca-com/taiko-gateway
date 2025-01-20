@@ -34,8 +34,9 @@ impl ProposerManager {
 
     pub async fn run(mut self) {
         // todo: this should be considering the time of preconfer switch, and how old is the oldest
-        // anchor block id NOTE: this probably conflicts with the reorg check so cant be too
-        // low
+        // anchor block id
+
+        // NOTE: this probably conflicts with the reorg check so cant be too low
         let mut tick = tokio::time::interval(self.config.propose_frequency);
 
         let mut to_propose: BTreeMap<u64, Vec<NewSealedBlock>> = BTreeMap::new();

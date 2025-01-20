@@ -51,11 +51,11 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-appender = "0.2.3"
 
 # Misc
-thiserror = "1.0.61"
+thiserror = "2.0.11"
 eyre = "0.6.12"
 lazy_static = "1.5.0"
 backtrace = "0.3.74"
-c-kzg = { version = "1.0", default-features = false }
+c-kzg = { version = "1.0.3", default-features = false }
 prometheus = "0.13.4"
 ecdsa = "0.16.9"
 libflate = "2.1.0"

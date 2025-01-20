@@ -23,6 +23,8 @@ use crate::{
     txpool::TxPool,
 };
 
+/// Number of blocks to wait before refreshing the anchor, the larger this is the more blocks we can
+/// fit in a batch, but we risk it getting stale
 const ANCHOR_BATCH_LAG: u64 = 8;
 
 pub struct Sequencer {
@@ -74,7 +76,7 @@ impl Sequencer {
     #[tracing::instrument(skip_all, name = "sequencer")]
     pub fn run(mut self) {
         while !self.is_ready() {
-            // ready when we have received a L1 and L2 blocks (parent and last)
+            // todo: ready when we have received a L1 and L2 blocks (parent and last)
             sleep(Duration::from_millis(250));
         }
 
@@ -155,8 +157,7 @@ impl Sequencer {
             self.config.coinbase_address,
             self.context.anchor.timestamp,
             l2_base_fee,
-        )
-        .into();
+        );
 
         let extra_data = get_extra_data(self.chain_config.base_fee_config.sharing_pctg);
 

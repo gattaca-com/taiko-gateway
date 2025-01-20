@@ -73,11 +73,11 @@ pub fn propose_batch_calldata(
         .into()
 }
 
-/// Returns the calldata for the proposeBatchCall
+/// Returns the calldata and blob sidecar for the proposeBatchCall
 /// Blocks:
 /// - need to share the same anchor_block_id
 /// - are assumed to be sorted by block number/timestamp
-/// - are assumed to have less transactions in total that would fit in a all available blobs
+/// - are assumed to have less transactions in total that would fit in all available blobs
 pub fn propose_batch_blobs(
     full_blocks: Vec<Arc<Block>>,
     anchor_block_id: u64,
@@ -108,7 +108,7 @@ pub fn propose_batch_blobs(
 
     assert!(
         compressed.len() % MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
-        "Too many bytes to encode in blobs"
+        "too many bytes to encode in blobs"
     );
 
     let blobs = compressed.chunks(MAX_BLOB_DATA_SIZE).map(encode_blob).collect();
@@ -131,10 +131,9 @@ pub fn propose_batch_blobs(
     };
 
     let encoded_params = batch_params.abi_encode_params();
-    let input =
-        TaikoL1::proposeBatchCall { _params: encoded_params.into(), _txList: compressed.into() }
-            .abi_encode()
-            .into();
+    let input = TaikoL1::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
+        .abi_encode()
+        .into();
 
     (input, sidecar)
 }

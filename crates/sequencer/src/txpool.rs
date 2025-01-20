@@ -30,9 +30,9 @@ impl TxPool {
     // should pick highest nonce for each address
     pub fn clear_mined(&mut self, txs: impl Iterator<Item = (Address, u64)>) {
         for (sender, nonce) in txs {
-            self.txs.get_mut(&sender).map(|txs| {
+            if let Some(txs) = self.txs.get_mut(&sender) {
                 txs.retain(|_, tx| tx.nonce() > nonce);
-            });
+            }
         }
 
         self.txs.retain(|_, txs| !txs.is_empty());

@@ -33,7 +33,7 @@ pub fn start_sequencer(
     let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l1.rpc_url.clone();
     let ws_url = config.l1.ws_url.clone();
-    spawn(BlockFetcher::new(rpc_url, ws_url, l1_blocks_tx).run("l1", SAFE_L1_LAG as u64));
+    spawn(BlockFetcher::new(rpc_url, ws_url, l1_blocks_tx).run("l1", SAFE_L1_LAG));
 
     let (l2_blocks_tx, l2_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l2.rpc_url.clone();

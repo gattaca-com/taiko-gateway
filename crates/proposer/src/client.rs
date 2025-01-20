@@ -46,7 +46,7 @@ impl L1Client {
     }
 
     pub fn provider(&self) -> &AlloyProvider {
-        &self.taiko_client.provider()
+        self.taiko_client.provider()
     }
 
     pub async fn last_meta_hash(&self) -> B256 {
@@ -144,7 +144,7 @@ impl L1Client {
             gas_limit,
             max_fee_per_gas,
             max_priority_fee_per_gas,
-            to: to.into(),
+            to,
             input,
             max_fee_per_blob_gas,
             blob_versioned_hashes: sidecar.versioned_hashes().collect(),

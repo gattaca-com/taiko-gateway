@@ -11,10 +11,8 @@ use crate::taiko::BaseFeeConfig;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StaticConfig {
     pub app_id: String,
-
     pub l1: L1ChainConfig,
     pub l2: L2ChainConfig,
-
     pub gateway: GatewayConfig,
 }
 
@@ -48,7 +46,6 @@ pub struct GatewayConfig {
     pub coinbase: Address,
     pub dry_run: bool,
     pub use_blobs: bool,
-    #[serde(default = "default_bool::<false>")]
     pub force_reorgs: bool,
     pub anchor_input: String,
 }
@@ -61,7 +58,7 @@ pub fn load_static_config() -> StaticConfig {
     let path =
         std::env::args().nth(1).expect("missing config path. Run with 'gateway my_config.toml'");
     let config_file = fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("Unable to find config file: '{}'", path));
+        .unwrap_or_else(|_| panic!("unable to find config file: '{}'", path));
     let config: StaticConfig = toml::from_str(&config_file).expect("failed to parse toml");
 
     config

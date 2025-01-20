@@ -44,9 +44,9 @@ pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_
         error!(%chain_block);
 
         if panic_on_error {
-            panic!("Block verify mismatch\n{our_block}\n{chain_block}")
+            panic!("block verify mismatch\n{our_block}\n{chain_block}")
         } else {
-            alert_discord(&format!("NOTE: Block verify mismatch\n{our_block}\n{chain_block}",));
+            alert_discord(&format!("NOTE: block verify mismatch\n{our_block}\n{chain_block}",));
         }
     } else {
         info!(bn =? new_header.number, hash =? new_header.hash, "verified l2 block");
@@ -66,7 +66,7 @@ const fn is_test_env() -> bool {
 pub fn initialize_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::new();
-        let crash_log = format!("Panic: {info}\nFull backtrace:\n{backtrace:?}\n");
+        let crash_log = format!("panic: {info}\nfull backtrace:\n{backtrace:?}\n");
         error!("{crash_log}");
         eprintln!("{crash_log}");
         alert_discord(&crash_log);

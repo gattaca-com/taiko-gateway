@@ -23,4 +23,5 @@ l2_target_block_time_ms = 2_000
 coinbase = "0xB851706411c088A2c43e6AfCb2794be5dd2f2A51"
 dry_run = true
 use_blobs = false
+force_reorgs = false
 anchor_input = "taiko preconfs"                         # this will be padded/truncated to 32 bytes
