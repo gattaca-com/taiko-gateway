@@ -1,6 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use alloy_consensus::TxEnvelope;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_txpool::TxpoolContent;
 use crossbeam_channel::Sender;
@@ -17,14 +16,8 @@ use tracing::{debug, error, info, Instrument};
 mod error;
 mod server;
 
-pub fn start_rpc(
-    config: &StaticConfig,
-    sequence_tx: Sender<Order>,
-    mempool_tx: Sender<Arc<TxEnvelope>>,
-) {
+pub fn start_rpc(config: &StaticConfig, sequence_tx: Sender<Order>, mempool_tx: Sender<Order>) {
     let rpc_config: RpcConfig = config.into();
-
-    info!(port = rpc_config.port, "starting RPC server");
 
     spawn(start_mempool_subscription(
         rpc_config.rpc_url.clone(),
@@ -38,11 +31,7 @@ pub fn start_rpc(
 
 // TODO: tidy up
 #[tracing::instrument(skip_all, name = "mempool")]
-async fn start_mempool_subscription(
-    rpc_url: Url,
-    ws_url: Url,
-    mempool_tx: Sender<Arc<TxEnvelope>>,
-) {
+async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sender<Order>) {
     info!(%rpc_url, "starting mempool subscription fetch");
 
     let backoff = 4;
@@ -70,7 +59,7 @@ async fn start_mempool_subscription(
     }
 }
 
-async fn subscribe_mempool(rpc_url: Url, mempool_tx: Sender<Arc<TxEnvelope>>) -> eyre::Result<()> {
+async fn subscribe_mempool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {
     info!(rpc_url = %rpc_url, "subscribing to mempool");
 
     let provider = ProviderBuilder::new().on_ws(WsConnect::new(rpc_url)).await?;
@@ -79,13 +68,13 @@ async fn subscribe_mempool(rpc_url: Url, mempool_tx: Sender<Arc<TxEnvelope>>) ->
 
     while let Ok(tx) = sub.recv().await {
         debug!(hash = %tx.inner.tx_hash(), "pending tx");
-        let _ = mempool_tx.send(tx.inner.into());
+        let _ = mempool_tx.send(Order::new(tx.inner));
     }
 
     Ok(())
 }
 
-async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Arc<TxEnvelope>>) -> eyre::Result<()> {
+async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {
     let provider = ProviderBuilder::new().on_http(rpc_url);
     let txpool: TxpoolContent = provider.client().request_noparams("txpool_content").await?;
 
@@ -93,7 +82,7 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Arc<TxEnvelope>>) -> eyre
     for txs in txpool.pending.into_values() {
         for tx in txs.into_values() {
             debug!(hash = %tx.inner.tx_hash(), "pending txpool");
-            let _ = mempool_tx.send(tx.inner.into());
+            let _ = mempool_tx.send(Order::new(tx.inner));
             count += 1;
         }
     }
@@ -101,7 +90,7 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Arc<TxEnvelope>>) -> eyre
     for txs in txpool.queued.into_values() {
         for tx in txs.into_values() {
             debug!(hash = %tx.inner.tx_hash(), "queued txpool");
-            let _ = mempool_tx.send(tx.inner.into());
+            let _ = mempool_tx.send(Order::new(tx.inner));
             count += 1;
         }
     }

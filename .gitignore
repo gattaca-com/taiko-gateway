@@ -44,3 +44,4 @@ lcov.info
 logs/
 
 datadir
+.env

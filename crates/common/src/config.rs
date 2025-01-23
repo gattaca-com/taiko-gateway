@@ -102,7 +102,6 @@ pub struct SequencerConfig {
     pub simulator_url: Url,
     pub target_block_time: Duration,
     pub coinbase_address: Address,
-    pub dry_run: bool,
 }
 
 impl From<&StaticConfig> for SequencerConfig {
@@ -111,7 +110,6 @@ impl From<&StaticConfig> for SequencerConfig {
             simulator_url: config.gateway.simulator_url.clone(),
             target_block_time: Duration::from_millis(config.gateway.l2_target_block_time_ms),
             coinbase_address: config.gateway.coinbase,
-            dry_run: config.gateway.dry_run,
         }
     }
 }

@@ -9,7 +9,6 @@ use pc_common::{
     runtime::spawn,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::info;
 
 mod client;
 mod manager;
@@ -21,8 +20,6 @@ pub async fn start_proposer(
     new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
 ) -> eyre::Result<()> {
     let proposer_config = config.into();
-
-    info!(proposer_address = %signer.address(), "starting l1 proposer");
 
     let context = ProposerContext {
         proposer: signer.address(),

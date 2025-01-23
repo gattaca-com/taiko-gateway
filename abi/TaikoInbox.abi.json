@@ -79,8 +79,13 @@
           },
           {
             "name": "_reserved3",
-            "type": "uint192",
-            "internalType": "uint192"
+            "type": "uint96",
+            "internalType": "uint96"
+          },
+          {
+            "name": "livenessBond",
+            "type": "uint96",
+            "internalType": "uint96"
           },
           {
             "name": "batchId",
@@ -129,9 +134,9 @@
     ],
     "outputs": [
       {
-        "name": "tran_",
+        "name": "ts_",
         "type": "tuple",
-        "internalType": "struct ITaikoInbox.Transition",
+        "internalType": "struct ITaikoInbox.TransitionState",
         "components": [
           {
             "name": "parentHash",
@@ -147,6 +152,16 @@
             "name": "stateRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -169,7 +184,7 @@
             "internalType": "uint64"
           },
           {
-            "name": "maxBatchProposals",
+            "name": "maxUnverifiedBatches",
             "type": "uint64",
             "internalType": "uint64"
           },
@@ -293,9 +308,9 @@
         "internalType": "uint64"
       },
       {
-        "name": "tran_",
+        "name": "ts_",
         "type": "tuple",
-        "internalType": "struct ITaikoInbox.Transition",
+        "internalType": "struct ITaikoInbox.TransitionState",
         "components": [
           {
             "name": "parentHash",
@@ -311,6 +326,16 @@
             "name": "stateRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -333,9 +358,9 @@
         "internalType": "uint64"
       },
       {
-        "name": "tran_",
+        "name": "ts_",
         "type": "tuple",
-        "internalType": "struct ITaikoInbox.Transition",
+        "internalType": "struct ITaikoInbox.TransitionState",
         "components": [
           {
             "name": "parentHash",
@@ -351,6 +376,16 @@
             "name": "stateRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -449,9 +484,9 @@
     ],
     "outputs": [
       {
-        "name": "tran_",
+        "name": "",
         "type": "tuple",
-        "internalType": "struct ITaikoInbox.Transition",
+        "internalType": "struct ITaikoInbox.TransitionState",
         "components": [
           {
             "name": "parentHash",
@@ -467,6 +502,16 @@
             "name": "stateRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -492,7 +537,7 @@
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct ITaikoInbox.Transition",
+        "internalType": "struct ITaikoInbox.TransitionState",
         "components": [
           {
             "name": "parentHash",
@@ -508,6 +553,16 @@
             "name": "stateRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -546,11 +601,6 @@
     "inputs": [
       {
         "name": "_owner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "_rollupResolver",
         "type": "address",
         "internalType": "address"
       },
@@ -712,21 +762,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "txListOffset",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "txListSize",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "numBlobs",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
             "name": "anchorBlockId",
             "type": "uint64",
             "internalType": "uint64"
@@ -740,6 +775,11 @@
             "name": "signalSlots",
             "type": "bytes32[]",
             "internalType": "bytes32[]"
+          },
+          {
+            "name": "anchorInput",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "blocks",
@@ -759,9 +799,31 @@
             ]
           },
           {
-            "name": "anchorInput",
-            "type": "bytes32",
-            "internalType": "bytes32"
+            "name": "blobParams",
+            "type": "tuple",
+            "internalType": "struct ITaikoInbox.BlobParams",
+            "components": [
+              {
+                "name": "firstBlobIndex",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "numBlobs",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "byteOffset",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "byteSize",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ]
           },
           {
             "name": "baseFeeConfig",
@@ -899,23 +961,10 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract IResolver"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "setResolver",
-    "inputs": [
-      {
-        "name": "_resolver",
-        "type": "address",
         "internalType": "address"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1054,6 +1103,44 @@
     "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "writeTransition",
+    "inputs": [
+      {
+        "name": "_batchId",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "_parentHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_blockHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_stateRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "_prover",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_inProvingWindow",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
     "type": "event",
     "name": "AdminChanged",
     "inputs": [
@@ -1138,21 +1225,6 @@
             "internalType": "uint64"
           },
           {
-            "name": "txListOffset",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "txListSize",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "numBlobs",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
             "name": "anchorBlockId",
             "type": "uint64",
             "internalType": "uint64"
@@ -1166,6 +1238,11 @@
             "name": "signalSlots",
             "type": "bytes32[]",
             "internalType": "bytes32[]"
+          },
+          {
+            "name": "anchorInput",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "blocks",
@@ -1185,9 +1262,31 @@
             ]
           },
           {
-            "name": "anchorInput",
-            "type": "bytes32",
-            "internalType": "bytes32"
+            "name": "blobParams",
+            "type": "tuple",
+            "internalType": "struct ITaikoInbox.BlobParams",
+            "components": [
+              {
+                "name": "firstBlobIndex",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "numBlobs",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "byteOffset",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "byteSize",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ]
           },
           {
             "name": "baseFeeConfig",
@@ -1402,7 +1501,7 @@
         "name": "oldTran",
         "type": "tuple",
         "indexed": false,
-        "internalType": "struct ITaikoInbox.Transition",
+        "internalType": "struct ITaikoInbox.TransitionState",
         "components": [
           {
             "name": "parentHash",
@@ -1418,6 +1517,16 @@
             "name": "stateRoot",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },
@@ -1513,25 +1622,6 @@
   },
   {
     "type": "event",
-    "name": "ResolverUpdated",
-    "inputs": [
-      {
-        "name": "oldResolver",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "newResolver",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Stats1Updated",
     "inputs": [
       {
@@ -1599,6 +1689,58 @@
             "name": "lastUnpausedAt",
             "type": "uint64",
             "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TransitionWritten",
+    "inputs": [
+      {
+        "name": "batchId",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "tid",
+        "type": "uint24",
+        "indexed": false,
+        "internalType": "uint24"
+      },
+      {
+        "name": "ts",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct ITaikoInbox.TransitionState",
+        "components": [
+          {
+            "name": "parentHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "blockHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stateRoot",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "prover",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "inProvingWindow",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -1723,12 +1865,12 @@
   },
   {
     "type": "error",
-    "name": "InvalidForkHeight",
+    "name": "InvalidGenesisBlockHash",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidGenesisBlockHash",
+    "name": "InvalidParams",
     "inputs": []
   },
   {

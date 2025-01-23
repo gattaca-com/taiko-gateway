@@ -22,8 +22,8 @@ use tokio::runtime::Runtime;
 use tracing::debug;
 
 pub struct SimulatorClient {
-    config: TaikoConfig,
     runtime: Runtime,
+    config: TaikoConfig,
     client: HttpClient,
     taiko_l2: TaikoL2Client,
 }
@@ -42,7 +42,7 @@ impl SimulatorClient {
         let provider = ProviderBuilder::new().on_http(simulator_url);
         let taiko_l2 = TaikoL2::new(config.l2_contract, provider);
 
-        Self { config, runtime, client, taiko_l2 }
+        Self { runtime, config, client, taiko_l2 }
     }
 
     pub fn simulate_anchor(
@@ -51,7 +51,7 @@ impl SimulatorClient {
         block_env: BlockEnv,
         extra_data: Bytes,
     ) -> eyre::Result<ExecutionResult> {
-        debug!(hash = %tx.tx_hash(), "simulate anchor");
+        debug!(hash = %tx.tx_hash(), ?block_env, ?extra_data, "simulate anchor");
 
         let response = self.runtime.block_on(async move {
             self.client
@@ -65,6 +65,8 @@ impl SimulatorClient {
 
     /// Simulate a tx at a given state id
     pub fn simulate_tx(&self, order: Order, state_id: StateId) -> eyre::Result<ExecutionResult> {
+        debug!(hash = %order.tx_hash(), "simulate anchor");
+
         let response = self.runtime.block_on(async move {
             self.client
                 .simulate_tx_at_state(order.raw().clone(), state_id)
@@ -111,7 +113,6 @@ impl SimulatorClient {
             self.config.anchor_input,
         );
 
-        let tx = Order::new(tx.into());
-        Ok((tx, l2_base_fee))
+        Ok((Order::new(tx), l2_base_fee))
     }
 }

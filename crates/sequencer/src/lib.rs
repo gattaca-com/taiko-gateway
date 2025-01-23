@@ -1,9 +1,6 @@
-//! Manages communication with simulator and sequence incoming transactions
+//! Builds blocks and sends to proposer loop
 
-use std::sync::Arc;
-
-use alloy_consensus::TxEnvelope;
-use context::SAFE_L1_LAG;
+use constants::SAFE_L1_LAG;
 use crossbeam_channel::Receiver;
 use pc_common::{
     config::{StaticConfig, TaikoConfig},
@@ -14,8 +11,7 @@ use pc_common::{
 };
 use sequencer::Sequencer;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::info;
-
+mod constants;
 mod context;
 mod sequencer;
 mod simulator;
@@ -25,7 +21,7 @@ pub fn start_sequencer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
     rpc_rx: Receiver<Order>,
-    mempool_rx: Receiver<Arc<TxEnvelope>>,
+    mempool_rx: Receiver<Order>,
     new_blocks_tx: UnboundedSender<NewSealedBlock>,
 ) {
     let sequencer_config = config.into();
@@ -38,7 +34,7 @@ pub fn start_sequencer(
     let (l2_blocks_tx, l2_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l2.rpc_url.clone();
     let ws_url = config.l2.ws_url.clone();
-    spawn(BlockFetcher::new(rpc_url, ws_url, l2_blocks_tx).run("taiko", 0));
+    spawn(BlockFetcher::new(rpc_url, ws_url, l2_blocks_tx).run("l2", 1));
 
     let sequencer = Sequencer::new(
         sequencer_config,
@@ -53,7 +49,6 @@ pub fn start_sequencer(
     std::thread::Builder::new()
         .name("sequencer".to_string())
         .spawn(move || {
-            info!("starting sequencer");
             sequencer.run();
         })
         .expect("failed to start sequencer thread");

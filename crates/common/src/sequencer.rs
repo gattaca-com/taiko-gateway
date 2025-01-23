@@ -22,12 +22,12 @@ pub struct Order {
 impl Order {
     pub fn decode(raw: Bytes) -> eyre::Result<Self> {
         let tx = TxEnvelope::decode(&mut raw.as_ref())?;
-        Ok(Self::new(tx.into()))
+        Ok(Self::new(tx))
     }
 
-    pub fn new(tx: Arc<TxEnvelope>) -> Self {
+    pub fn new(tx: TxEnvelope) -> Self {
         let raw = tx.encoded_2718().into();
-        Self { tx, raw }
+        Self { tx: Arc::new(tx), raw }
     }
 
     pub fn raw(&self) -> &Bytes {

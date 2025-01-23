@@ -49,6 +49,10 @@ impl L1Client {
         self.taiko_client.provider()
     }
 
+    pub fn address(&self) -> Address {
+        self.signer.address()
+    }
+
     pub async fn last_meta_hash(&self) -> B256 {
         todo!("fix abi");
         // let state = self.taiko_client.state().call().await?;

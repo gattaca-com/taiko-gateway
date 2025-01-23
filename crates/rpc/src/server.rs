@@ -2,7 +2,7 @@ use alloy_primitives::{Bytes, B256};
 use crossbeam_channel::Sender;
 use jsonrpsee::{core::RpcResult, server::ServerBuilder};
 use pc_common::{api::EthApiServer, config::RpcConfig, sequencer::Order};
-use tracing::{error, Level};
+use tracing::{error, info, Level};
 
 use super::error::RpcError;
 
@@ -20,10 +20,11 @@ impl RpcServer {
 
     #[tracing::instrument(skip_all, name = "rpc")]
     pub async fn run(self) {
-        let address = format!("0.0.0.0:{}", self.port);
+        let addr = format!("0.0.0.0:{}", self.port);
+        info!(addr, "starting RPC server");
 
         let server =
-            ServerBuilder::default().build(address).await.expect("failed to create RPC server");
+            ServerBuilder::default().build(addr).await.expect("failed to create RPC server");
         let execution_module = EthApiServer::into_rpc(self);
 
         let server_handle = server.start(execution_module);

@@ -1,4 +1,4 @@
-source .env.example
+source .env
 
 CONFIG_FILE="gateway.toml"
 

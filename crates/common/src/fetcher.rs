@@ -27,7 +27,7 @@ impl BlockFetcher {
 
     #[tracing::instrument(skip_all, name = "block_fetch" fields(id = %id))]
     pub async fn run(self, id: &str, fetch_last: u64) {
-        info!(source = %self.rpc_url, ws_url = %self.ws_url, "starting block fetch");
+        info!(fetch_last, source = %self.rpc_url, ws_url = %self.ws_url, "starting block fetch");
 
         let backoff = 4;
 
@@ -50,7 +50,7 @@ impl BlockFetcher {
 }
 
 async fn fetch_last_blocks(url: Url, tx: Sender<Header>, fetch_last: u64) -> eyre::Result<()> {
-    let provider = ProviderBuilder::new().on_http(url.clone());
+    let provider = ProviderBuilder::new().on_http(url);
 
     let block = provider
         .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)

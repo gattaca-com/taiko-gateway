@@ -49,14 +49,14 @@ pub struct BaseFeeConfig {
     pub max_gas_issuance_per_block: u32,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct AnchorParams {
     pub block_id: u64,
     pub state_root: B256,
     pub timestamp: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct ParentParams {
     pub timestamp: u64,
     pub gas_used: u32,

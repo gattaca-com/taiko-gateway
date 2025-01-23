@@ -20,7 +20,7 @@ use crate::{
 /// Returns the calldata for the proposeBatchCall
 /// Blocks:
 /// - need to share the same anchor_block_id
-/// - are assumed to be sorted by block number/timestamp
+/// - are assumed to be sorted by block number and have all the same timestamp
 pub fn propose_batch_calldata(
     full_blocks: Vec<Arc<Block>>,
     anchor_block_id: u64,
@@ -76,7 +76,7 @@ pub fn propose_batch_calldata(
 /// Returns the calldata and blob sidecar for the proposeBatchCall
 /// Blocks:
 /// - need to share the same anchor_block_id
-/// - are assumed to be sorted by block number/timestamp
+/// - are assumed to be sorted by block number and have all the same timestamp
 /// - are assumed to have less transactions in total that would fit in all available blobs
 pub fn propose_batch_blobs(
     full_blocks: Vec<Arc<Block>>,

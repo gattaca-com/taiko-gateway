@@ -32,25 +32,28 @@ impl ProposerManager {
         Self { config, context, client, new_blocks_rx }
     }
 
+    #[tracing::instrument(skip_all, name = "proposer")]
     pub async fn run(mut self) {
+        info!(proposer_address = %self.client.address(), "starting l1 proposer");
+
         // todo: this should be considering the time of preconfer switch, and how old is the oldest
         // anchor block id
 
         // NOTE: this probably conflicts with the reorg check so cant be too low
         let mut tick = tokio::time::interval(self.config.propose_frequency);
 
-        let mut to_propose: BTreeMap<u64, Vec<NewSealedBlock>> = BTreeMap::new();
+        // batches to propose sorted by anchor
+        let mut to_propose: BTreeMap<u64, Vec<Arc<Block>>> = BTreeMap::new();
 
         loop {
             tokio::select! {
-                Some(block) = self.new_blocks_rx.recv() => {
-                    to_propose.entry(block.anchor_block_id,).or_default().push(block);
+                Some(sealed_block) = self.new_blocks_rx.recv() => {
+                    to_propose.entry(sealed_block.anchor_block_id,).or_default().push(sealed_block.block);
                 }
 
                 _ = tick.tick() => {
                     if let Some((anchor_block_id, blocks)) = to_propose.pop_first() {
                         info!(anchor_block_id, n_blocks = blocks.len(), "proposing batch");
-                        let blocks = blocks.into_iter().map(|b| b.block).collect();
                         self.propose_batch_with_retry(anchor_block_id, blocks).await;
                     }
                 }
