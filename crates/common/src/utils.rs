@@ -1,10 +1,15 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    sync::OnceLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use ::backtrace::Backtrace;
 use alloy_rpc_types::Header;
 use tracing::{error, info};
 use tracing_appender::{non_blocking::WorkerGuard, rolling::Rotation};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use url::Url;
 
 // Time
 
@@ -54,9 +59,29 @@ pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_
 }
 
 // Alerts
+static DISCORD_WEBHOOK_URL: OnceLock<Url> = OnceLock::new();
+static DISCORD_USER: OnceLock<String> = OnceLock::new();
 
 pub fn alert_discord(message: &str) {
-    error!("MOCK DISCORD ALERT: {}", message);
+    if is_test_env() {
+        return;
+    }
+
+    if let Some(webhook_url) = DISCORD_WEBHOOK_URL.get() {
+        let user_tag = DISCORD_USER.get().map(String::as_str).unwrap_or("");
+
+        let max_len = 1850.min(message.len());
+        let msg = format!("{user_tag}\n{}", &message[..max_len]);
+
+        let content = HashMap::from([("content", msg.clone())]);
+
+        if let Err(err) =
+            reqwest::blocking::Client::new().post(webhook_url.clone()).json(&content).send()
+        {
+            error!("failed to send discord alert: {err}");
+            eprintln!("failed to send discord alert: {err}");
+        }
+    }
 }
 
 const fn is_test_env() -> bool {
@@ -64,6 +89,15 @@ const fn is_test_env() -> bool {
 }
 
 pub fn initialize_panic_hook() {
+    if let Some(webhook_url) = std::env::var("DISCORD_WEBHOOK_URL").ok() {
+        DISCORD_WEBHOOK_URL
+            .set(Url::parse(&webhook_url).expect("invalid DISCORD_WEBHOOK_URL"))
+            .unwrap();
+    }
+    if let Some(user_tag) = std::env::var("DISCORD_USER").ok() {
+        DISCORD_USER.set(user_tag).unwrap();
+    }
+
     std::panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::new();
         let crash_log = format!("panic: {info}\nfull backtrace:\n{backtrace:?}\n");

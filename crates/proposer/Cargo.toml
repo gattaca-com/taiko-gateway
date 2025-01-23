@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 pc-common.workspace = true
 
-
+alloy-sol-types.workspace = true
 alloy-primitives.workspace = true
 alloy-consensus.workspace = true
 alloy-eips.workspace = true

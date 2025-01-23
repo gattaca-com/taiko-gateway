@@ -101,7 +101,7 @@ impl Sequencer {
                                 let anchor_block_id = self.ctx.anchor.block_id;
                                 debug!(block_number, %state_id, anchor = ?anchor_block_id, "anchored");
 
-                                self.ctx.state = SequencerState::Anchored {
+                                self.ctx.state = SequencerState::Anchor {
                                     anchor_block_id,
                                     block_number,
                                     state_id,
@@ -113,7 +113,7 @@ impl Sequencer {
                     }
                 }
 
-                SequencerState::Anchored { anchor_block_id, block_number, state_id } => {
+                SequencerState::Anchor { anchor_block_id, block_number, state_id } => {
                     if anchor_block_id != self.ctx.anchor.block_id {
                         // refresh with new anchor
                         match self.anchor_block() {
@@ -122,7 +122,7 @@ impl Sequencer {
                                 let anchor_block_id = self.ctx.anchor.block_id;
                                 debug!(block_number, %state_id, anchor = ?anchor_block_id, "re-anchored");
 
-                                self.ctx.state = SequencerState::Anchored {
+                                self.ctx.state = SequencerState::Anchor {
                                     anchor_block_id,
                                     block_number,
                                     state_id,
@@ -136,7 +136,7 @@ impl Sequencer {
                         };
                     } else if let Some(order) = self.next_order() {
                         if let Some((new_state_id, gas_used)) = self.simulate_tx(state_id, order) {
-                            self.ctx.state = SequencerState::Sequencing {
+                            self.ctx.state = SequencerState::Sequence {
                                 anchor_block_id,
                                 block_number,
                                 tip_state_id: new_state_id,
@@ -148,7 +148,7 @@ impl Sequencer {
                     }
                 }
 
-                SequencerState::Sequencing {
+                SequencerState::Sequence {
                     anchor_block_id,
                     block_number,
                     start,
@@ -171,7 +171,7 @@ impl Sequencer {
                         if let Some((new_state_id, gas_used)) =
                             self.simulate_tx(tip_state_id, order)
                         {
-                            self.ctx.state = SequencerState::Sequencing {
+                            self.ctx.state = SequencerState::Sequence {
                                 anchor_block_id,
                                 block_number,
                                 tip_state_id: new_state_id,

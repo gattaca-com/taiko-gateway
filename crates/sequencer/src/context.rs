@@ -10,6 +10,7 @@ use crate::constants::SAFE_L1_LAG;
 
 /// Sequencing state
 pub struct SequencerContext {
+    pub last_l1_receive: Instant,
     /// Current state
     pub state: SequencerState,
     /// Anchor data to use for next batches
@@ -23,6 +24,7 @@ pub struct SequencerContext {
 impl SequencerContext {
     pub fn new() -> Self {
         Self {
+            last_l1_receive: Instant::now(),
             state: SequencerState::default(),
             anchor: AnchorParams::default(),
             l1_headers: BTreeMap::new(),
@@ -33,6 +35,7 @@ impl SequencerContext {
     pub fn new_l1_block(&mut self, new_header: Header) {
         self.l1_headers.retain(|n, _| *n >= new_header.number - SAFE_L1_LAG);
         self.l1_headers.insert(new_header.number, new_header);
+        self.last_l1_receive = Instant::now();
     }
 
     // either preconf or not

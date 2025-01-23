@@ -1,5 +1,6 @@
 //! Handles creating and landing L1 blockPropose transactions.
 
+use alloy_provider::ProviderBuilder;
 use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
 use manager::ProposerManager;
@@ -29,18 +30,13 @@ pub async fn start_proposer(
 
     let includer =
         L1Client::new(config.l1.rpc_url.clone(), taiko_config.l1_contract, signer).await?;
-
-    // Stale block sync
-    // resync_blocks(
-    //     config.l1.rpc_url.clone(),
-    //     taiko_config,
-    //     taiko_proposer.clone(),
-    //     includer.clone(),
-    // )
-    // .await?;
-
-    // Start proposer
     let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);
+
+    let l2_provider = ProviderBuilder::new().on_http(taiko_config.rpc_url.clone());
+    let preconf_provider = ProviderBuilder::new().on_http(taiko_config.preconf_url.clone());
+
+    // start proposer
+    proposer.resync(l2_provider, preconf_provider, taiko_config).await?;
     spawn(proposer.run());
 
     Ok(())
