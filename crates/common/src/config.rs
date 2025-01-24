@@ -48,6 +48,17 @@ pub struct GatewayConfig {
     pub use_blobs: bool,
     pub force_reorgs: bool,
     pub anchor_input: String,
+    /// If we dont receive a new L1 block for this amount of time, stop sequencing
+    pub l1_delay_secs: u64,
+    /// Use as anchors block ids with this lag to make sure we dont use a reorged L1 block
+    /// Wait until this many blocks have passed to check that the L1 propose tx hasnt reorged out
+    pub l1_safe_lag: u64,
+    /// Number of blocks to wait before refreshing the anchor, the larger this is the more blocks
+    /// we can fit in a batch, but we risk it getting stale when proposing
+    ///
+    /// This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep
+    /// blocks up to anchor_batch_lag + l1_safe_lag old
+    pub anchor_batch_lag: u64,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -102,6 +113,10 @@ pub struct SequencerConfig {
     pub simulator_url: Url,
     pub target_block_time: Duration,
     pub coinbase_address: Address,
+    pub l1_delay: Duration,
+    /// blocks
+    pub l1_safe_lag: u64,
+    pub anchor_batch_lag: u64,
 }
 
 impl From<&StaticConfig> for SequencerConfig {
@@ -110,6 +125,9 @@ impl From<&StaticConfig> for SequencerConfig {
             simulator_url: config.gateway.simulator_url.clone(),
             target_block_time: Duration::from_millis(config.gateway.l2_target_block_time_ms),
             coinbase_address: config.gateway.coinbase,
+            l1_delay: Duration::from_secs(config.gateway.l1_delay_secs),
+            l1_safe_lag: config.gateway.l1_safe_lag,
+            anchor_batch_lag: config.gateway.anchor_batch_lag,
         }
     }
 }
@@ -119,6 +137,8 @@ pub struct ProposerConfig {
     pub force_reorgs: bool,
     pub use_blobs: bool,
     pub dry_run: bool,
+    /// time
+    pub l1_safe_lag: Duration,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
@@ -128,6 +148,7 @@ impl From<&StaticConfig> for ProposerConfig {
             force_reorgs: config.gateway.force_reorgs,
             use_blobs: config.gateway.use_blobs,
             dry_run: config.gateway.dry_run,
+            l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
         }
     }
 }

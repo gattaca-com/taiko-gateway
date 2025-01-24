@@ -5,11 +5,12 @@ use pc_common::{
     sequencer::StateId,
     taiko::{AnchorParams, ParentParams},
 };
-
-use crate::constants::SAFE_L1_LAG;
+use tracing::debug;
 
 /// Sequencing state
 pub struct SequencerContext {
+    pub l1_safe_lag: u64,
+    pub l1_delayed: bool,
     pub last_l1_receive: Instant,
     /// Current state
     pub state: SequencerState,
@@ -22,8 +23,10 @@ pub struct SequencerContext {
 }
 
 impl SequencerContext {
-    pub fn new() -> Self {
+    pub fn new(l1_safe_lag: u64) -> Self {
         Self {
+            l1_safe_lag,
+            l1_delayed: false,
             last_l1_receive: Instant::now(),
             state: SequencerState::default(),
             anchor: AnchorParams::default(),
@@ -33,13 +36,18 @@ impl SequencerContext {
     }
 
     pub fn new_l1_block(&mut self, new_header: Header) {
-        self.l1_headers.retain(|n, _| *n >= new_header.number - SAFE_L1_LAG);
+        debug!(sync_time = ?self.last_l1_receive.elapsed(), number = new_header.number, hash = %new_header.hash, "new l1 block");
+
+        self.l1_headers.retain(|n, _| *n >= new_header.number - self.l1_safe_lag);
         self.l1_headers.insert(new_header.number, new_header);
+
         self.last_l1_receive = Instant::now();
     }
 
     // either preconf or not
     pub fn new_l2_block(&mut self, new_header: &Header) {
+        debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
+
         if new_header.number > self.parent.block_number {
             // we should never receive a new block while we're sequencing
             assert!(matches!(self.state, SequencerState::Sync));

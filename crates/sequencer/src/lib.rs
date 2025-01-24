@@ -1,9 +1,8 @@
 //! Builds blocks and sends to proposer loop
 
-use constants::SAFE_L1_LAG;
 use crossbeam_channel::Receiver;
 use pc_common::{
-    config::{StaticConfig, TaikoConfig},
+    config::{SequencerConfig, StaticConfig, TaikoConfig},
     fetcher::BlockFetcher,
     proposer::NewSealedBlock,
     runtime::spawn,
@@ -11,7 +10,6 @@ use pc_common::{
 };
 use sequencer::Sequencer;
 use tokio::sync::mpsc::UnboundedSender;
-mod constants;
 mod context;
 mod sequencer;
 mod simulator;
@@ -24,12 +22,12 @@ pub fn start_sequencer(
     mempool_rx: Receiver<Order>,
     new_blocks_tx: UnboundedSender<NewSealedBlock>,
 ) {
-    let sequencer_config = config.into();
+    let sequencer_config: SequencerConfig = config.into();
 
     let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l1.rpc_url.clone();
     let ws_url = config.l1.ws_url.clone();
-    spawn(BlockFetcher::new(rpc_url, ws_url, l1_blocks_tx).run("l1", SAFE_L1_LAG));
+    spawn(BlockFetcher::new(rpc_url, ws_url, l1_blocks_tx).run("l1", sequencer_config.l1_safe_lag));
 
     let (l2_blocks_tx, l2_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l2.rpc_url.clone();

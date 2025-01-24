@@ -25,6 +25,7 @@ pub struct L1Client {
     chain_id: u64,
     signer: PrivateKeySigner,
     taiko_client: TaikoL1Client,
+    safe_lag: Duration,
 }
 
 const DEFAULT_MAX_FEE_PER_GAS: u128 = 10_000_000_000;
@@ -37,12 +38,13 @@ impl L1Client {
         l1_rpc: Url,
         l1_contract: Address,
         signer: PrivateKeySigner,
+        safe_lag: Duration,
     ) -> eyre::Result<Self> {
         let provider = ProviderBuilder::new().on_http(l1_rpc);
         let chain_id = provider.get_chain_id().await?;
         let taiko_client = TaikoL1Client::new(l1_contract, provider);
 
-        Ok(Self { chain_id, signer, taiko_client })
+        Ok(Self { chain_id, signer, taiko_client, safe_lag })
     }
 
     pub fn provider(&self) -> &AlloyProvider {
@@ -173,13 +175,10 @@ impl L1Client {
     /// be re-orged out
     #[tracing::instrument(skip_all, name = "reorg_check", fields(tx_hash = %tx_hash))]
     pub async fn reorg_check(&self, tx_hash: B256) -> eyre::Result<()> {
-        // 3 blocks
-        const REORG_SAFE_TIME_SECS: u64 = 12 * 3;
-
         info!("starting reorg check");
 
         // after this time it's extremely unlikely that there's a re-org
-        tokio::time::sleep(Duration::from_secs(REORG_SAFE_TIME_SECS)).await;
+        tokio::time::sleep(self.safe_lag).await;
 
         let tx_receipt = self
             .provider()

@@ -5,7 +5,7 @@ use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
 use manager::ProposerManager;
 use pc_common::{
-    config::{StaticConfig, TaikoConfig},
+    config::{ProposerConfig, StaticConfig, TaikoConfig},
     proposer::{NewSealedBlock, ProposerContext},
     runtime::spawn,
 };
@@ -20,7 +20,7 @@ pub async fn start_proposer(
     signer: PrivateKeySigner,
     new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
 ) -> eyre::Result<()> {
-    let proposer_config = config.into();
+    let proposer_config: ProposerConfig = config.into();
 
     let context = ProposerContext {
         proposer: signer.address(),
@@ -28,8 +28,13 @@ pub async fn start_proposer(
         anchor_input: taiko_config.anchor_input,
     };
 
-    let includer =
-        L1Client::new(config.l1.rpc_url.clone(), taiko_config.l1_contract, signer).await?;
+    let includer = L1Client::new(
+        config.l1.rpc_url.clone(),
+        taiko_config.l1_contract,
+        signer,
+        proposer_config.l1_safe_lag,
+    )
+    .await?;
     let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);
 
     let l2_provider = ProviderBuilder::new().on_http(taiko_config.rpc_url.clone());

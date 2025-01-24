@@ -13,7 +13,7 @@ use crossbeam_channel::Receiver;
 use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
-    proposer::NewSealedBlock,
+    proposer::{is_propose_delayed, NewSealedBlock},
     sequencer::{ExecutionResult, Order, StateId},
     taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT},
     types::BlockEnv,
@@ -22,7 +22,6 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    constants::{ANCHOR_BATCH_LAG, SAFE_L1_LAG},
     context::{SequencerContext, SequencerState},
     simulator::SimulatorClient,
     txpool::TxPool,
@@ -59,7 +58,7 @@ impl Sequencer {
         let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config);
 
         // this doesn't handle well the restarts if we had pending orders in the rpc
-        let ctx = SequencerContext::new();
+        let ctx = SequencerContext::new(config.l1_safe_lag);
         let txpool = TxPool::new(mempool_rx);
 
         Self {
@@ -92,28 +91,33 @@ impl Sequencer {
             self.txpool.fetch();
             self.maybe_refresh_anchor();
 
+            // state transition
             match self.ctx.state {
                 SequencerState::Sync => {
-                    if self.can_sequence() {
-                        match self.anchor_block() {
-                            Ok(state_id) => {
-                                let block_number = self.ctx.parent.block_number + 1;
-                                let anchor_block_id = self.ctx.anchor.block_id;
-                                debug!(block_number, %state_id, anchor = ?anchor_block_id, "anchored");
-
-                                self.ctx.state = SequencerState::Anchor {
-                                    anchor_block_id,
-                                    block_number,
-                                    state_id,
-                                };
-                            }
-
-                            Err(err) => error!(%err, "failed anchoring"),
-                        };
+                    if !self.can_sequence() {
+                        continue
                     }
+
+                    match self.anchor_block() {
+                        Ok(state_id) => {
+                            let block_number = self.ctx.parent.block_number + 1;
+                            let anchor_block_id = self.ctx.anchor.block_id;
+                            debug!(block_number, %state_id, anchor = ?anchor_block_id, "anchored");
+
+                            self.ctx.state =
+                                SequencerState::Anchor { anchor_block_id, block_number, state_id };
+                        }
+
+                        Err(err) => error!(%err, "failed anchoring"),
+                    };
                 }
 
                 SequencerState::Anchor { anchor_block_id, block_number, state_id } => {
+                    if !self.can_sequence() {
+                        self.ctx.state = SequencerState::Sync;
+                        continue;
+                    }
+
                     if anchor_block_id != self.ctx.anchor.block_id {
                         // refresh with new anchor
                         match self.anchor_block() {
@@ -159,7 +163,7 @@ impl Sequencer {
                     let seal_by_time = start.elapsed() > self.config.target_block_time;
                     let seal_by_gas = false;
 
-                    if seal_by_time || seal_by_gas {
+                    if seal_by_time || seal_by_gas || !self.can_sequence() {
                         if let Err(err) = self.commit_seal(tip_state_id, start, anchor_block_id) {
                             // todo: add a failsafe so we're not stuck forever here
                             error!(%err, "failed commit seal");
@@ -187,8 +191,22 @@ impl Sequencer {
     }
 
     // TODO: this need to be aware of the preconf schedule
-    fn can_sequence(&self) -> bool {
-        true
+    fn can_sequence(&mut self) -> bool {
+        if is_propose_delayed() {
+            return false;
+        }
+
+        if self.ctx.last_l1_receive.elapsed() > self.config.l1_delay {
+            if !self.ctx.l1_delayed {
+                warn!("l1 block fetch is delayed, stopping sequencing");
+                self.ctx.l1_delayed = true;
+            }
+        } else if self.ctx.l1_delayed {
+            warn!("l1 block fetch has resumed");
+            self.ctx.l1_delayed = false;
+        }
+
+        !self.ctx.l1_delayed
     }
 
     // TODO: if sim fails, rpc orders are lost
@@ -198,18 +216,17 @@ impl Sequencer {
 
     fn recv_blocks(&mut self) {
         if let Ok(new_header) = self.l1_blocks_rx.try_recv() {
-            debug!(number = new_header.number, hash = %new_header.hash, "new l1 block");
             self.ctx.new_l1_block(new_header);
         }
 
         if let Ok(new_header) = self.l2_blocks_rx.try_recv() {
-            debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
             self.ctx.new_l2_block(&new_header);
         }
     }
 
     fn is_ready(&self) -> bool {
-        self.ctx.l1_headers.len() as u64 >= SAFE_L1_LAG && self.ctx.parent.block_number > 0
+        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag &&
+            self.ctx.parent.block_number > 0
     }
 
     fn maybe_refresh_anchor(&mut self) {
@@ -220,7 +237,7 @@ impl Sequencer {
 
         // if current anchor has been used for enough blocks, refresh it
         let should_refresh_anchor =
-            self.ctx.current_anchor_id() + ANCHOR_BATCH_LAG < safe_l1_header.number;
+            self.ctx.current_anchor_id() + self.config.anchor_batch_lag < safe_l1_header.number;
 
         if should_refresh_anchor {
             let new = AnchorParams {

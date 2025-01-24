@@ -25,3 +25,6 @@ dry_run = true
 use_blobs = false
 force_reorgs = false
 anchor_input = "taiko preconfs"                         # this will be padded/truncated to 32 bytes
+l1_delay_secs = 48
+l1_safe_lag = 3
+anchor_batch_lag = 8
