@@ -11,7 +11,6 @@ use url::Url;
 
 /// Fetches new blocks from rpc
 // TODO: fix error flows
-// TODO: if we dont receive L1 blocks for a while, we should stop sequencing
 pub struct BlockFetcher {
     rpc_url: Url,
     /// Websocket url

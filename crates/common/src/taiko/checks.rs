@@ -63,7 +63,5 @@ pub async fn get_and_validate_config(
         taiko_config.blockMaxGasLimit as u64,
     );
 
-    info!(config =? chain_config, "config");
-
     Ok(chain_config)
 }

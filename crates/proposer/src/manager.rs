@@ -1,3 +1,5 @@
+#![allow(clippy::comparison_chain)]
+
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -117,7 +119,7 @@ impl ProposerManager {
                     "expected anchor tx to be from golden touch"
                 );
 
-                let anchor_data = TaikoL2::anchorV3Call::abi_decode(&anchor_tx.input(), true)?;
+                let anchor_data = TaikoL2::anchorV3Call::abi_decode(anchor_tx.input(), true)?;
                 let anchor_block_id = anchor_data._anchorBlockId;
                 to_propose.entry(anchor_block_id).or_default().push(block);
             }

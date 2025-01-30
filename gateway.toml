@@ -30,3 +30,4 @@ anchor_input = "taiko preconfs"                         # this will be padded/tr
 l1_delay_secs = 48
 l1_safe_lag = 3
 anchor_batch_lag = 8
+soft_block_url = "http://0.0.0.0:9998/preconfBlocks"

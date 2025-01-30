@@ -89,12 +89,12 @@ const fn is_test_env() -> bool {
 }
 
 pub fn initialize_panic_hook() {
-    if let Some(webhook_url) = std::env::var("DISCORD_WEBHOOK_URL").ok() {
+    if let Ok(webhook_url) = std::env::var("DISCORD_WEBHOOK_URL") {
         DISCORD_WEBHOOK_URL
             .set(Url::parse(&webhook_url).expect("invalid DISCORD_WEBHOOK_URL"))
             .unwrap();
     }
-    if let Some(user_tag) = std::env::var("DISCORD_USER").ok() {
+    if let Ok(user_tag) = std::env::var("DISCORD_USER") {
         DISCORD_USER.set(user_tag).unwrap();
     }
 
