@@ -1,9 +1,13 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Instant,
+};
 
 use alloy_rpc_types::Header;
 use pc_common::{
     sequencer::StateId,
     taiko::{AnchorParams, ParentParams},
+    utils::verify_and_log_block,
 };
 use tracing::debug;
 
@@ -20,6 +24,8 @@ pub struct SequencerContext {
     pub parent: ParentParams,
     /// Last confirmed L1 header, keep a buffer to account for L1 reorgs
     pub l1_headers: BTreeMap<u64, Header>,
+    /// L2 blocks to verify
+    pub to_verify: HashMap<u64, Header>,
 }
 
 impl SequencerContext {
@@ -32,6 +38,7 @@ impl SequencerContext {
             anchor: AnchorParams::default(),
             l1_headers: BTreeMap::new(),
             parent: Default::default(),
+            to_verify: HashMap::new(),
         }
     }
 
@@ -44,7 +51,6 @@ impl SequencerContext {
         self.last_l1_receive = Instant::now();
     }
 
-    // either preconf or not
     pub fn new_l2_block(&mut self, new_header: &Header) {
         debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
 
@@ -58,6 +64,23 @@ impl SequencerContext {
                 block_number: new_header.number,
             };
         }
+
+        if let Some(preconf_header) = self.to_verify.remove(&new_header.number) {
+            verify_and_log_block(&preconf_header, new_header, true);
+        }
+    }
+
+    pub fn new_preconf_l2_block(&mut self, new_header: &Header) {
+        debug!(number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
+        assert!(new_header.number > self.parent.block_number);
+
+        self.parent = ParentParams {
+            timestamp: new_header.timestamp,
+            gas_used: new_header.gas_used.try_into().unwrap(),
+            block_number: new_header.number,
+        };
+
+        self.to_verify.insert(new_header.number, new_header.clone());
     }
 
     pub fn safe_l1_header(&self) -> Option<&Header> {
@@ -76,8 +99,8 @@ pub enum SequencerState {
     Sync,
     /// After simulating anchor tx, ready to sequence
     Anchor {
-        /// Anchor block id
-        anchor_block_id: u64,
+        /// Data used in anchor sim
+        anchor_params: AnchorParams,
         /// Current block number (parent + 1)
         block_number: u64,
         /// Anchor state id
@@ -85,8 +108,8 @@ pub enum SequencerState {
     },
     /// Sequencing user txs
     Sequence {
-        /// Anchor block id
-        anchor_block_id: u64,
+        /// Data used in anchor sim
+        anchor_params: AnchorParams,
         /// Current block number (parent + 1)
         block_number: u64,
         /// State to sequence txs on

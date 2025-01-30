@@ -74,11 +74,20 @@ pub fn assemble_anchor_v3(
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{address, b256, Bytes};
-    use alloy_provider::ProviderBuilder;
+    use alloy_consensus::Transaction;
+    use alloy_primitives::{address, b256, Address, Bytes};
+    use alloy_provider::{Provider, ProviderBuilder};
+    use alloy_rpc_types::Block;
+    use alloy_sol_types::SolType;
 
     use super::*;
-    use crate::{config::TaikoChainParams, taiko::pacaya::l2::TaikoL2};
+    use crate::{
+        config::{L2ChainConfig, TaikoChainParams},
+        taiko::{
+            pacaya::{l1::TaikoL1::proposeBatchCall, l2::TaikoL2, BatchParams},
+            GOLDEN_TOUCH_ADDRESS,
+        },
+    };
 
     #[test]
     fn test_input() {
@@ -119,5 +128,150 @@ mod tests {
         .abi_encode();
 
         assert_eq!(input, Bytes::from(input_check));
+    }
+
+    #[test]
+    fn test_validate_anchor_v3() {
+        let base_fee_config = TaikoChainParams::new_helder().base_fee_config;
+
+        let parent_block: Block = serde_json::from_str(include_str!("599.json")).expect("parent");
+        assert_eq!(
+            parent_block.header.hash,
+            b256!("723d1b62f1cdd88bf64e38f8d5ea46b65305ba4ba0f94d3732a79ec92ce79964")
+        );
+        assert_eq!(parent_block.header.number, 599);
+
+        let block: Block = serde_json::from_str(include_str!("600.json")).expect("block");
+        assert_eq!(
+            block.header.hash,
+            b256!("d151eab56447de7142f4456d94600e866f4372a0baa71d5cf60b3bac0e2e30fb")
+        );
+        assert_eq!(block.header.number, 600);
+
+        let block_transactions = block.transactions.as_transactions().unwrap().to_vec();
+        let block_anchor = block_transactions.first().unwrap();
+        assert_eq!(block_anchor.from, GOLDEN_TOUCH_ADDRESS);
+        assert_eq!(block_anchor.nonce(), parent_block.header.number);
+
+        let anchor_call =
+            anchorV3Call::abi_decode(&block_anchor.input(), true).expect("decode input");
+
+        let anchor_block_id = anchor_call._anchorBlockId;
+        let anchor_state_root = anchor_call._anchorStateRoot;
+        let parent_gas_used = anchor_call._parentGasUsed;
+        let base_fee_cfg = anchor_call._baseFeeConfig;
+        let anchor_input = anchor_call._anchorInput;
+
+        assert_eq!(parent_gas_used as u64, parent_block.header.gas_used);
+
+        assert_eq!(base_fee_cfg.adjustmentQuotient, base_fee_config.adjustment_quotient);
+        assert_eq!(base_fee_cfg.gasIssuancePerSecond, base_fee_config.gas_issuance_per_second);
+        assert_eq!(base_fee_cfg.maxGasIssuancePerBlock, base_fee_config.max_gas_issuance_per_block);
+        assert_eq!(base_fee_cfg.minGasExcess, base_fee_config.min_gas_excess);
+        assert_eq!(base_fee_cfg.sharingPctg, base_fee_config.sharing_pctg);
+
+        let anchor_params = AnchorParams {
+            block_id: anchor_block_id,
+            state_root: anchor_state_root,
+            timestamp: parent_block.header.timestamp,
+        };
+
+        let parent_params = ParentParams {
+            gas_used: parent_gas_used,
+            block_number: parent_block.header.number,
+            timestamp: parent_block.header.timestamp,
+        };
+
+        let config = TaikoConfig {
+            preconf_url: "http://abc.xyz".parse().unwrap(),
+            config: L2ChainConfig {
+                name: "".to_string(),
+                chain_id: 167010,
+                rpc_url: "http://abc.xyz".parse().unwrap(),
+                ws_url: "http://abc.xyz".parse().unwrap(),
+                taiko_token: Address::ZERO,
+                l1_contract: Address::ZERO,
+                l2_contract: block_anchor.inner.to().unwrap(),
+                router_contract: Address::ZERO,
+                whitelist_contract: Address::ZERO,
+            },
+            params: TaikoChainParams::new_helder(),
+            anchor_input: B256::ZERO,
+        };
+
+        let test_anchor = assemble_anchor_v3(
+            &config,
+            parent_params,
+            anchor_params,
+            block.header.base_fee_per_gas.unwrap() as u128, // This is calculated async below#
+            anchor_input,
+        );
+
+        assert_eq!(test_anchor.tx_hash(), block_anchor.inner.tx_hash())
+    }
+
+    #[test]
+    fn test_decode_propose_block() {
+        let anchor_block: Block =
+            serde_json::from_str(include_str!("1225296.json")).expect("block");
+        assert_eq!(
+            anchor_block.header.hash,
+            b256!("0x2805fec505d544ed9e3e3818f3f2212c16e6ff021d86fa402f2ecc2e105800b0")
+        );
+        assert_eq!(anchor_block.header.number, 1225296);
+
+        let propose_block: Block =
+            serde_json::from_str(include_str!("1225297.json")).expect("block");
+        assert_eq!(
+            propose_block.header.hash,
+            b256!("8dd275a1a2e87ed191d867104edd84a56c792014b35128c5c1938f0f889748a7")
+        );
+        assert_eq!(propose_block.header.number, 1225297);
+
+        let l2_block: Block = serde_json::from_str(include_str!("600.json")).expect("block");
+        assert_eq!(
+            l2_block.header.hash,
+            b256!("d151eab56447de7142f4456d94600e866f4372a0baa71d5cf60b3bac0e2e30fb")
+        );
+        assert_eq!(l2_block.header.number, 600);
+
+        let anchor_tx = l2_block.transactions.txns().next().unwrap().clone();
+        assert_eq!(anchor_tx.from, GOLDEN_TOUCH_ADDRESS);
+
+        let anchor_call = anchorV3Call::abi_decode(&anchor_tx.input(), true).expect("decode input");
+
+        assert_eq!(anchor_call._anchorStateRoot, anchor_block.header.state_root);
+
+        let propose_tx = propose_block
+            .transactions
+            .txns()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .find(|tx| tx.to() == Some(address!("b639Fe5ca89320C38CE6426715D44A35585D0723")))
+            .unwrap();
+
+        let input = propose_tx.input();
+        let call = proposeBatchCall::abi_decode(&input, true).expect("decode input");
+
+        let params = call._params;
+
+        const PARAMS_OFFSET: usize = 32;
+        let params = params.slice(PARAMS_OFFSET..);
+
+        assert!(BatchParams::abi_decode_params(&params, true).is_ok());
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_fetch_block() {
+        let l2_provider =
+            ProviderBuilder::new().on_http("https://rpc.helder-devnets.xyz".parse().unwrap());
+
+        let bn =
+            l2_provider.get_block_by_number(1225296.into(), true.into()).await.unwrap().unwrap();
+
+        let s = serde_json::to_string(&bn).unwrap();
+        println!("{}", s);
     }
 }

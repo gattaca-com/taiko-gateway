@@ -13,7 +13,11 @@ alloy-primitives.workspace = true
 alloy-consensus.workspace = true
 alloy-rpc-types.workspace = true
 alloy-provider.workspace = true
+alloy-rlp.workspace = true
 
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
 jsonrpsee.workspace = true
 crossbeam-channel.workspace = true
 tracing.workspace = true

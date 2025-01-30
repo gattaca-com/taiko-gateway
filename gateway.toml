@@ -3,17 +3,19 @@ app_id = "taiko_helder"
 [l1]
 name = "helder"
 chain_id = 7014190335
-rpc_url = "http://rpc.xyz"
-ws_url = "ws://ws.xyz"
+rpc_url = "https://rpc.helder-devnets.xyz"
+ws_url = "ws://18.199.195.154:8546"
 
 [l2]
 name = "taiko"
 chain_id = 167010
-rpc_url = "http://rpc.xyz"                                 # non-preconf rpc
-ws_url = "ws://ws.xyz"                                     # non-preconf ws
-taiko_token = "0x6afE5A43f88aeB35ADeb49C1952B3c1B21dFcdb2"
-l1_contract = "0x68E0355959b68B12AdA9D4769D8DbD77f9Eb7560"
+rpc_url = "http://18.199.195.154:18545"                           # non-preconf rpc
+ws_url = "ws://18.199.195.154:18546"                              # non-preconf ws
+taiko_token = "0x1D443AfFDc8c275e7d19cb9012A9d4Cd9c48e06A"
+l1_contract = "0xb639Fe5ca89320C38CE6426715D44A35585D0723"
 l2_contract = "0x1670100000000000000000000000000000010001"
+router_contract = "0x5261E2E4864613e2e8d28E24bC1B246cB04F82aB"
+whitelist_contract = "0x2D35be83908D34AAa8FECaB23b1Ba2bf1bE6F35D"
 
 [gateway]
 rpc_port = 10000
@@ -25,3 +27,6 @@ dry_run = true
 use_blobs = false
 force_reorgs = false
 anchor_input = "taiko preconfs"                         # this will be padded/truncated to 32 bytes
+l1_delay_secs = 48
+l1_safe_lag = 3
+anchor_batch_lag = 8

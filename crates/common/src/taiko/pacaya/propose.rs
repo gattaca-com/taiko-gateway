@@ -1,18 +1,18 @@
 use std::{io::Write, sync::Arc};
 
-use alloy_consensus::BlobTransactionSidecar;
+use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::{Bytes, B256};
 use alloy_rpc_types::Block;
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
 
-use super::{BatchParams, BlockParams};
+use super::{preconf::PreconfRouter, BatchParams, BlockParams};
 use crate::{
     proposer::ProposerContext,
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
-        pacaya::l1::TaikoL1,
+        pacaya::BlobParams,
         GOLDEN_TOUCH_ADDRESS,
     },
 };
@@ -46,8 +46,7 @@ pub fn propose_batch_calldata(
         last_timestamp = block.header.timestamp;
     }
 
-    let encoded = alloy_rlp::encode(tx_list);
-    let compressed = compress_bytes(&encoded);
+    let compressed = encode_and_compress_tx_list(tx_list);
 
     // TODO: check the offsets here
     let batch_params = BatchParams {
@@ -57,20 +56,27 @@ pub fn propose_batch_calldata(
         anchorBlockId: anchor_block_id,
         anchorInput: context.anchor_input,
         lastBlockTimestamp: last_timestamp,
-        txListOffset: 0,
-        txListSize: compressed.len() as u32,
-        firstBlobIndex: 0,
-        numBlobs: 0,
         revertIfNotFirstProposal: false,
         signalSlots: vec![],
         blocks,
+        blobParams: BlobParams {
+            blobHashes: vec![],
+            firstBlobIndex: 0,
+            numBlobs: 0,
+            byteOffset: 0,
+            byteSize: 0,
+        },
     };
 
     let encoded_params = batch_params.abi_encode_params();
 
-    TaikoL1::proposeBatchCall { _params: encoded_params.into(), _txList: compressed.into() }
-        .abi_encode()
-        .into()
+    PreconfRouter::proposePreconfedBlocksCall {
+        _0: Bytes::new(),
+        _batchParams: encoded_params.into(),
+        _batchTxList: compressed.into(),
+    }
+    .abi_encode()
+    .into()
 }
 
 /// Returns the calldata and blob sidecar for the proposeBatchCall
@@ -103,8 +109,7 @@ pub fn propose_batch_blobs(
         last_timestamp = block.header.timestamp;
     }
 
-    let encoded = alloy_rlp::encode(tx_list);
-    let compressed = compress_bytes(&encoded);
+    let compressed = encode_and_compress_tx_list(tx_list);
 
     assert!(
         compressed.len() % MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
@@ -114,6 +119,14 @@ pub fn propose_batch_blobs(
     let blobs = compressed.chunks(MAX_BLOB_DATA_SIZE).map(encode_blob).collect();
     let sidecar = blobs_to_sidecar(blobs);
 
+    let blob_params = BlobParams {
+        blobHashes: vec![],
+        firstBlobIndex: 0,
+        numBlobs: sidecar.blobs.len() as u8,
+        byteOffset: 0,
+        byteSize: compressed.len() as u32,
+    };
+
     let batch_params = BatchParams {
         proposer: context.proposer,
         coinbase: context.coinbase,
@@ -121,19 +134,20 @@ pub fn propose_batch_blobs(
         anchorBlockId: anchor_block_id,
         anchorInput: context.anchor_input,
         lastBlockTimestamp: last_timestamp,
-        txListOffset: 0,
-        txListSize: 0,
-        firstBlobIndex: 0,
-        numBlobs: sidecar.blobs.len() as u8,
         revertIfNotFirstProposal: false,
         signalSlots: vec![],
+        blobParams: blob_params,
         blocks,
     };
 
     let encoded_params = batch_params.abi_encode_params();
-    let input = TaikoL1::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
-        .abi_encode()
-        .into();
+    let input = PreconfRouter::proposePreconfedBlocksCall {
+        _0: Bytes::new(),
+        _batchParams: encoded_params.into(),
+        _batchTxList: Bytes::new(),
+    }
+    .abi_encode()
+    .into();
 
     (input, sidecar)
 }
@@ -157,4 +171,9 @@ fn compress_bytes(data: &[u8]) -> Vec<u8> {
     let mut encoder = zlibEncoder::new(Vec::new()).unwrap();
     encoder.write_all(data).unwrap();
     encoder.finish().into_result().unwrap()
+}
+
+pub fn encode_and_compress_tx_list(tx_list: Vec<TxEnvelope>) -> Vec<u8> {
+    let encoded = alloy_rlp::encode(tx_list);
+    compress_bytes(&encoded)
 }

@@ -16,6 +16,26 @@ pub mod l1 {
     );
 }
 
+pub mod preconf {
+    use alloy_sol_types::sol;
+
+    sol!(
+        #[derive(Debug, Eq, PartialEq)]
+        #[sol(rpc)]
+        #[allow(missing_docs)]
+        PreconfRouter,
+        "../../abi/PreconfRouter.abi.json"
+    );
+
+    sol!(
+        #[derive(Debug, Eq, PartialEq)]
+        #[sol(rpc)]
+        #[allow(missing_docs)]
+        PreconfWhitelist,
+        "../../abi/PreconfWhitelist.abi.json"
+    );
+}
+
 pub mod l2 {
     use alloy_sol_types::sol;
     sol!(
@@ -42,29 +62,35 @@ sol! {
         uint8 timeShift;
     }
 
+
     #[derive(Debug, Default)]
-    struct BatchParams {
-        /// The address of the proposer, which is set by the PreconfTaskManager if
-        /// enabled; otherwise, it must be address(0).
-        address proposer;
-        /// The address that will receive the block rewards; defaults to the proposer's
-        /// address if set to address(0).
-        address coinbase;
-        /// metahash of the previous BatchMetadata
-        bytes32 parentMetaHash;
-        uint64 anchorBlockId;
-        bytes32 anchorInput;
-        uint64 lastBlockTimestamp;
-        uint32 txListOffset;
-        uint32 txListSize;
+    struct BlobParams {
+        // The hashes of the blob. Note that if this array is not empty.  `firstBlobIndex` and
+        // `numBlobs` must be 0.
+        bytes32[] blobHashes;
         // The index of the first blob in this batch.
         uint8 firstBlobIndex;
         // The number of blobs in this batch. Blobs are initially concatenated and subsequently
         // decompressed via Zlib.
         uint8 numBlobs;
+        // The byte offset of the blob in the batch.
+        uint32 byteOffset;
+        // The byte size of the blob.
+        uint32 byteSize;
+    }
+
+    #[derive(Debug, Default)]
+    struct BatchParams {
+        address proposer;
+        address coinbase;
+        bytes32 parentMetaHash;
+        uint64 anchorBlockId;
+        bytes32 anchorInput;
+        uint64 lastBlockTimestamp;
         bool revertIfNotFirstProposal;
         bytes32[] signalSlots;
         // Specifies the number of blocks to be generated from this batch.
+        BlobParams blobParams;
         BlockParams[] blocks;
     }
 }

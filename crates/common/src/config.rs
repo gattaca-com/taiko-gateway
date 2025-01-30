@@ -35,6 +35,8 @@ pub struct L2ChainConfig {
     pub taiko_token: Address,
     pub l1_contract: Address,
     pub l2_contract: Address,
+    pub router_contract: Address,
+    pub whitelist_contract: Address,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -59,6 +61,8 @@ pub struct GatewayConfig {
     /// This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep
     /// blocks up to anchor_batch_lag + l1_safe_lag old
     pub anchor_batch_lag: u64,
+    /// Url to post soft blocks to
+    pub soft_block_url: Url,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -117,6 +121,7 @@ pub struct SequencerConfig {
     /// blocks
     pub l1_safe_lag: u64,
     pub anchor_batch_lag: u64,
+    pub soft_block_url: Url,
 }
 
 impl From<&StaticConfig> for SequencerConfig {
@@ -128,6 +133,7 @@ impl From<&StaticConfig> for SequencerConfig {
             l1_delay: Duration::from_secs(config.gateway.l1_delay_secs),
             l1_safe_lag: config.gateway.l1_safe_lag,
             anchor_batch_lag: config.gateway.anchor_batch_lag,
+            soft_block_url: config.gateway.soft_block_url.clone(),
         }
     }
 }
@@ -216,7 +222,7 @@ impl TaikoChainParams {
     pub const fn new_helder() -> Self {
         const BASE_FEE_CONFIG: BaseFeeConfig = BaseFeeConfig {
             adjustment_quotient: 8,
-            sharing_pctg: 0,
+            sharing_pctg: 75,
             gas_issuance_per_second: 5_000_000,
             min_gas_excess: 1_340_000_000,
             max_gas_issuance_per_block: 600_000_000,

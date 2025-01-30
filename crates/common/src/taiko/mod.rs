@@ -10,6 +10,7 @@ pub mod pacaya;
 use alloy_transport_http::Http;
 pub use checks::get_and_validate_config;
 use pacaya::{l1::TaikoL1::TaikoL1Instance, l2::TaikoL2::TaikoL2Instance};
+use serde::{Deserialize, Serialize};
 
 pub type TaikoL1Client =
     TaikoL1Instance<Http<reqwest::Client>, alloy_provider::RootProvider<Http<reqwest::Client>>>;
@@ -40,7 +41,8 @@ pub fn get_extra_data(sharing_pct: u8) -> Bytes {
     Bytes::from(a)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseFeeConfig {
     pub adjustment_quotient: u8,
     pub sharing_pctg: u8,

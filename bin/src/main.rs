@@ -36,7 +36,9 @@ async fn main() {
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
 
-    let chain_config = get_and_validate_config(config.l1.clone(), config.l2.clone()).await?;
+    let operator_address = envs.proposer_signer_key.address();
+    let chain_config =
+        get_and_validate_config(config.l1.clone(), config.l2.clone(), operator_address).await?;
     info!("initial checks ok");
 
     let taiko_config = TaikoConfig::new(&config, chain_config);

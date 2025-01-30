@@ -14,16 +14,19 @@ use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
     proposer::{is_propose_delayed, NewSealedBlock},
+    runtime::spawn,
     sequencer::{ExecutionResult, Order, StateId},
     taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT},
     types::BlockEnv,
 };
+use reqwest::Client;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 use crate::{
     context::{SequencerContext, SequencerState},
     simulator::SimulatorClient,
+    soft_block::BuildPreconfBlockRequestBody,
     txpool::TxPool,
 };
 
@@ -101,33 +104,33 @@ impl Sequencer {
                     match self.anchor_block() {
                         Ok(state_id) => {
                             let block_number = self.ctx.parent.block_number + 1;
-                            let anchor_block_id = self.ctx.anchor.block_id;
-                            debug!(block_number, %state_id, anchor = ?anchor_block_id, "anchored");
+                            let anchor_params = self.ctx.anchor;
+                            debug!(block_number, %state_id, anchor = ?anchor_params, "anchored");
 
                             self.ctx.state =
-                                SequencerState::Anchor { anchor_block_id, block_number, state_id };
+                                SequencerState::Anchor { anchor_params, block_number, state_id };
                         }
 
                         Err(err) => error!(%err, "failed anchoring"),
                     };
                 }
 
-                SequencerState::Anchor { anchor_block_id, block_number, state_id } => {
+                SequencerState::Anchor { anchor_params, block_number, state_id } => {
                     if !self.can_sequence() {
                         self.ctx.state = SequencerState::Sync;
                         continue;
                     }
 
-                    if anchor_block_id != self.ctx.anchor.block_id {
+                    if anchor_params.block_id != self.ctx.anchor.block_id {
                         // refresh with new anchor
                         match self.anchor_block() {
                             Ok(state_id) => {
                                 let block_number = self.ctx.parent.block_number + 1;
-                                let anchor_block_id = self.ctx.anchor.block_id;
-                                debug!(block_number, %state_id, anchor = ?anchor_block_id, "re-anchored");
+                                let anchor_params = self.ctx.anchor;
+                                debug!(block_number, %state_id, anchor = ?anchor_params, "re-anchored");
 
                                 self.ctx.state = SequencerState::Anchor {
-                                    anchor_block_id,
+                                    anchor_params,
                                     block_number,
                                     state_id,
                                 };
@@ -141,7 +144,7 @@ impl Sequencer {
                     } else if let Some(order) = self.next_order() {
                         if let Some((new_state_id, gas_used)) = self.simulate_tx(state_id, order) {
                             self.ctx.state = SequencerState::Sequence {
-                                anchor_block_id,
+                                anchor_params,
                                 block_number,
                                 tip_state_id: new_state_id,
                                 start: Instant::now(),
@@ -153,7 +156,7 @@ impl Sequencer {
                 }
 
                 SequencerState::Sequence {
-                    anchor_block_id,
+                    anchor_params,
                     block_number,
                     start,
                     running_gas_used,
@@ -164,7 +167,7 @@ impl Sequencer {
                     let seal_by_gas = false;
 
                     if seal_by_time || seal_by_gas || !self.can_sequence() {
-                        if let Err(err) = self.commit_seal(tip_state_id, start, anchor_block_id) {
+                        if let Err(err) = self.commit_seal(tip_state_id, start, anchor_params) {
                             // todo: add a failsafe so we're not stuck forever here
                             error!(%err, "failed commit seal");
                         } else {
@@ -176,7 +179,7 @@ impl Sequencer {
                             self.simulate_tx(tip_state_id, order)
                         {
                             self.ctx.state = SequencerState::Sequence {
-                                anchor_block_id,
+                                anchor_params,
                                 block_number,
                                 tip_state_id: new_state_id,
                                 start,
@@ -322,7 +325,7 @@ impl Sequencer {
         &mut self,
         origin_state_id: StateId,
         start_block: Instant,
-        anchor_block_id: u64,
+        anchor_params: AnchorParams,
     ) -> eyre::Result<()> {
         // commit
         let res = self.simulator.commit_state(origin_state_id)?;
@@ -350,9 +353,10 @@ impl Sequencer {
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
         self.txpool.clear_mined(txs);
 
-        self.ctx.new_l2_block(&block.header);
+        self.ctx.new_preconf_l2_block(&block.header);
+        self.gossip_soft_block(block.clone(), anchor_params);
 
-        self.send_block_to_proposer(block, anchor_block_id);
+        self.send_block_to_proposer(block, anchor_params.block_id);
 
         Ok(())
     }
@@ -361,6 +365,39 @@ impl Sequencer {
         if let Err(err) = self.new_blocks_tx.send(NewSealedBlock { block, anchor_block_id }) {
             error!(%err, "failed sequencer->proposer");
         };
+    }
+
+    #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
+    fn gossip_soft_block(&self, block: Arc<Block>, anchor_params: AnchorParams) {
+        let request = BuildPreconfBlockRequestBody::new(
+            block,
+            anchor_params,
+            self.simulator.config().anchor_input,
+            self.chain_config.base_fee_config,
+        );
+
+        let url = self.config.soft_block_url.clone();
+        spawn(
+            async move {
+                let raw = serde_json::to_string(&request).unwrap();
+                match Client::new().post(url).json(&request).send().await {
+                    Ok(res) => {
+                        let status = res.status();
+                        let body = res.text().await.unwrap();
+
+                        if status.is_success() {
+                            debug!("soft block posted: {}", body);
+                        } else {
+                            error!(code = status.as_u16(), err = body, %raw, "soft block failed");
+                        }
+                    }
+                    Err(err) => {
+                        error!(%err, %raw, "failed to post soft block")
+                    }
+                }
+            }
+            .in_current_span(),
+        );
     }
 }
 

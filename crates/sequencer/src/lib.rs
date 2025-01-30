@@ -13,6 +13,7 @@ use tokio::sync::mpsc::UnboundedSender;
 mod context;
 mod sequencer;
 mod simulator;
+mod soft_block;
 mod txpool;
 
 pub fn start_sequencer(
