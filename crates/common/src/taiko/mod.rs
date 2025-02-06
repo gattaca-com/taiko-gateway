@@ -7,15 +7,12 @@ mod blob;
 mod checks;
 mod fixed_signer;
 pub mod pacaya;
-use alloy_transport_http::Http;
 pub use checks::get_and_validate_config;
 use pacaya::{l1::TaikoL1::TaikoL1Instance, l2::TaikoL2::TaikoL2Instance};
 use serde::{Deserialize, Serialize};
 
-pub type TaikoL1Client =
-    TaikoL1Instance<Http<reqwest::Client>, alloy_provider::RootProvider<Http<reqwest::Client>>>;
-pub type TaikoL2Client =
-    TaikoL2Instance<Http<reqwest::Client>, alloy_provider::RootProvider<Http<reqwest::Client>>>;
+pub type TaikoL1Client = TaikoL1Instance<(), alloy_provider::RootProvider>;
+pub type TaikoL2Client = TaikoL2Instance<(), alloy_provider::RootProvider>;
 
 /// Golden touch is the key that needs to propose the anchor tx in every block
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 =

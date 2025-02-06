@@ -14,23 +14,23 @@ pc-sequencer = { path = "crates/sequencer" }
 pc-proposer = { path = "crates/proposer" }
 
 alloy-primitives = { version = "0.8.19", features = ["k256", "getrandom"] }
-alloy-rpc-types = { version = "0.8.3", features = ["beacon"] }
-alloy-rpc-types-txpool = "0.8.3"
+alloy-rpc-types = { version = "0.11.0", features = ["beacon"] }
+alloy-rpc-types-txpool = "0.11.0"
 alloy-rlp = "0.3.9"
-alloy-network = "0.8.3"
-alloy-provider = { version = "0.8.3", features = ["ws"] }
-alloy-signer = "0.8.3"
-alloy-signer-local = "0.8.3"
-alloy-eips = { version = "0.8.3", features = ["kzg"] }
-alloy-consensus = { version = "0.8.3", features = ["k256"] }
-alloy-serde = "0.8.3"
+alloy-network = "0.11.0"
+alloy-provider = { version = "0.11.0", features = ["ws"] }
+alloy-signer = "0.11.0"
+alloy-signer-local = "0.11.0"
+alloy-eips = { version = "0.11.0", features = ["kzg"] }
+alloy-consensus = { version = "0.11.0", features = ["k256"] }
+alloy-serde = "0.11.0"
 alloy-sol-types = "0.8.19"
 alloy-sol-macro = { version = "0.8.19", features = ["json"] }
-alloy-contract = "0.8.3"
-alloy-transport-http = "0.8.3"
+alloy-contract = "0.11.0"
+alloy-transport-http = "0.11.0"
 
 # Networking
-axum = { version = "0.7.5", features = ["tokio"] }
+axum = { version = "0.8.1", features = ["tokio"] }
 jsonrpsee = { version = "0.24", features = ["full"] }
 reqwest = { version = "0.12.4", features = ["blocking", "json"] }
 url = { version = "2.5.0", features = ["serde"] }

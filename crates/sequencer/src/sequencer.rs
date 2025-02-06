@@ -98,7 +98,7 @@ impl Sequencer {
             match self.ctx.state {
                 SequencerState::Sync => {
                     if !self.can_sequence() {
-                        continue
+                        continue;
                     }
 
                     match self.anchor_block() {
