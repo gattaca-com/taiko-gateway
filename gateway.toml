@@ -11,11 +11,11 @@ name = "taiko"
 chain_id = 167010
 rpc_url = "http://18.199.195.154:18545"                           # non-preconf rpc
 ws_url = "ws://18.199.195.154:18546"                              # non-preconf ws
-taiko_token = "0xbB8D45E3FD2a5138d6569FedbBb75083349ce45E"
-l1_contract = "0xA61a5ABD774Cb7aE5D4A2553990ea7fB253A315C"
+taiko_token = "0x397884f0947Cfe2eEbF3A52f196C140EBfb6b546"
+l1_contract = "0x330055B6D9f78150C7d5F7c94009Fe5BDD1696de"
 l2_contract = "0x1670100000000000000000000000000000010001"
-router_contract = "0x6631488A0A6Fd9d7926e90B1C658D1B4cc4953Da"
-whitelist_contract = "0x9127086c3fb12fa764721C02Cc98C0F06206F82F"
+router_contract = "0x7A95C1C22eB16F0396Be23609A9f614e2b43110E"
+whitelist_contract = "0x946D8C68A00f9A5C74e866843dD0f93428365C54"
 
 [gateway]
 rpc_port = 10000

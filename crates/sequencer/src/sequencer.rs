@@ -327,17 +327,8 @@ impl Sequencer {
         start_block: Instant,
         anchor_params: AnchorParams,
     ) -> eyre::Result<()> {
-        // commit
-        let res = self.simulator.commit_state(origin_state_id)?;
-        info!(
-            committed = %origin_state_id,
-            gas_used = res.cumulative_gas_used,
-            payment = format_ether(res.cumulative_builder_payment),
-            "committed"
-        );
-
         // seal
-        let res = self.simulator.seal_block()?;
+        let res = self.simulator.seal_block(origin_state_id)?;
 
         let block = res.built_block;
         let block_number = block.header.number;
@@ -347,6 +338,7 @@ impl Sequencer {
             block_hash = %block.header.hash,
             block_time = ?start_block.elapsed(),
             payment = format_ether(res.cumulative_builder_payment),
+            gas_used = res.cumulative_gas_used,
             "sealed block"
         );
 

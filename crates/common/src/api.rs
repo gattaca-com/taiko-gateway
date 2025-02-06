@@ -2,7 +2,7 @@ use alloy_primitives::{Bytes, B256};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 
 use crate::{
-    sequencer::{CommitStateResponse, SealBlockResponse, SimulateTxResponse, StateId},
+    sequencer::{SealBlockResponse, SimulateTxResponse, StateId},
     types::BlockEnv,
 };
 
@@ -35,10 +35,7 @@ pub trait SimulateApi {
         block_env: BlockEnv,
         extra_data: Bytes,
     ) -> RpcResult<SimulateTxResponse>;
-    /// Update the state at the head of the chain
-    #[method(name = "commitState")]
-    async fn commit_state(&self, state_id: StateId) -> RpcResult<CommitStateResponse>;
-    /// Seal a block with from the latest committed state
+    /// Seal a block with the given state id
     #[method(name = "sealBlock")]
-    async fn seal_block(&self) -> RpcResult<SealBlockResponse>;
+    async fn seal_block(&self, state_id: StateId) -> RpcResult<SealBlockResponse>;
 }

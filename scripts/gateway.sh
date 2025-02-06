@@ -1,6 +1,6 @@
 source .env
 
-CONFIG_FILE="gateway.toml"
+CONFIG_FILE="../gateway.toml"
 
 PROPOSER_SIGNER_KEY=$PROPOSER_SIGNER_KEY \
     RUST_BACKTRACE=$RUST_BACKTRACE \
