@@ -6,7 +6,7 @@ use alloy_consensus::{
 };
 use alloy_eips::BlockNumberOrTag;
 use alloy_network::TransactionBuilder;
-use alloy_primitives::{address, Address, Bytes, B256};
+use alloy_primitives::{Address, Bytes, B256};
 use alloy_provider::{Provider, ProviderBuilder, RootProvider};
 use alloy_rpc_types::{BlockTransactionsKind, TransactionReceipt, TransactionRequest};
 use alloy_signer::SignerSync;
