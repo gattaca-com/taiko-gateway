@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use eyre::OptionExt;
-use tracing::{info, warn};
+use eyre::eyre;
+use tracing::info;
 
 use crate::{
     config::{L1ChainConfig, L2ChainConfig, TaikoChainParams},
@@ -30,8 +30,7 @@ pub async fn get_and_validate_config(
     assert_eq!(chain_id, l1_config.chain_id, "l1 chain id");
 
     let taiko_config = taiko_l1.pacayaConfig().call().await?._0;
-    // assert_eq!(taiko_config.chainId, l2_config.chain_id, "l2 chain id in l1 contract");
-    warn!("skipping l2 chain id in l1 contract");
+    assert_eq!(taiko_config.chainId, l2_config.chain_id, "l2 chain id in l1 contract");
 
     // L2 data
     let chain_id = taiko_l2.provider().get_chain_id().await?;
@@ -51,10 +50,9 @@ pub async fn get_and_validate_config(
         operators.push(operator);
     }
 
-    let gateway_index = operators
-        .iter()
-        .position(|&op| op == signer_address)
-        .ok_or_eyre("provided address is not in whitelist!")?;
+    let gateway_index = operators.iter().position(|&op| op == signer_address).ok_or(eyre!(
+        "provided address is not in whitelist! operator={signer_address}, whitelist={operators:?}"
+    ))?;
     info!(gateway_index, ?operators, "fetched operators");
 
     let chain_config = TaikoChainParams::new(

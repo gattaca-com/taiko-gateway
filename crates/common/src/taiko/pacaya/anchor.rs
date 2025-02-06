@@ -75,16 +75,21 @@ pub fn assemble_anchor_v3(
 #[cfg(test)]
 mod tests {
     use alloy_consensus::Transaction;
-    use alloy_primitives::{address, b256, Address, Bytes};
+    use alloy_primitives::{address, b256, hex, Address, Bytes};
     use alloy_provider::{Provider, ProviderBuilder};
     use alloy_rpc_types::Block;
-    use alloy_sol_types::SolType;
+    use alloy_sol_types::{SolInterface, SolType};
 
     use super::*;
     use crate::{
         config::{L2ChainConfig, TaikoChainParams},
         taiko::{
-            pacaya::{l1::TaikoL1::proposeBatchCall, l2::TaikoL2, BatchParams},
+            pacaya::{
+                l1::TaikoL1::{proposeBatchCall, TaikoL1Errors},
+                l2::TaikoL2::{self, TaikoL2Errors},
+                preconf::PreconfRouter::PreconfRouterErrors,
+                BatchParams,
+            },
             GOLDEN_TOUCH_ADDRESS,
         },
     };
@@ -199,11 +204,23 @@ mod tests {
             anchor_input: B256::ZERO,
         };
 
+        // NOTE: this is commented out as the call is to a stateful contract so may fail
+        // let url: Url = "https://rpc.helder.taiko.xyz".parse().unwrap();
+        // let provider = ProviderBuilder::new().on_http(url);
+        // let taiko_l2 = TaikoL2::new(config.l2_contract, provider);
+
+        // let base_fee =
+        //     compute_next_base_fee(&taiko_l2, base_fee_config, parent_params, anchor_params)
+        //         .await
+        //         .unwrap();
+
+        // assert_eq!(base_fee, block.header.base_fee_per_gas.unwrap() as u128);
+
         let test_anchor = assemble_anchor_v3(
             &config,
             parent_params,
             anchor_params,
-            block.header.base_fee_per_gas.unwrap() as u128, // This is calculated async below#
+            block.header.base_fee_per_gas.unwrap() as u128,
             anchor_input,
         );
 
@@ -273,5 +290,31 @@ mod tests {
 
         let s = serde_json::to_string(&bn).unwrap();
         println!("{}", s);
+    }
+
+    #[ignore]
+    #[test]
+    fn test_decode_l2_error() {
+        let bytes = hex!("d719258d");
+
+        let err = TaikoL2Errors::abi_decode(&bytes, true).unwrap();
+        print!("{:?}", err);
+    }
+
+    #[ignore]
+    #[test]
+    fn test_decode_l1_error() {
+        let bytes = hex!("1999aed2");
+
+        let err = TaikoL1Errors::abi_decode(&bytes, true).unwrap();
+        print!("{:?}", err);
+    }
+
+    #[test]
+    fn test_decode_whitelist_error() {
+        let bytes = hex!("1999aed2");
+
+        let err = PreconfRouterErrors::abi_decode(&bytes, true).unwrap();
+        print!("{:?}", err);
     }
 }

@@ -1,5 +1,6 @@
 use pc_common::{
     config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
+    erc20::check_and_approve_balance,
     metrics::start_metrics_server,
     runtime::init_runtime,
     taiko::get_and_validate_config,
@@ -27,8 +28,8 @@ async fn main() {
     match run(config, envs).await {
         Ok(_) => info!("gateway exited"),
         Err(err) => {
+            error!(%err, "gateway exited with error");
             eprintln!("gateway exited with error: {err}");
-            error!(%err, "gateway exited with error")
         }
     }
 }
@@ -36,9 +37,20 @@ async fn main() {
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
 
-    let operator_address = envs.proposer_signer_key.address();
-    let chain_config =
-        get_and_validate_config(config.l1.clone(), config.l2.clone(), operator_address).await?;
+    check_and_approve_balance(
+        config.l2.taiko_token,
+        config.l2.l1_contract,
+        config.l1.rpc_url.clone(),
+        envs.proposer_signer_key.clone(),
+    )
+    .await?;
+
+    let chain_config = get_and_validate_config(
+        config.l1.clone(),
+        config.l2.clone(),
+        envs.proposer_signer_key.address(),
+    )
+    .await?;
     info!("initial checks ok");
 
     let taiko_config = TaikoConfig::new(&config, chain_config);

@@ -1,5 +1,6 @@
 pub mod api;
 pub mod config;
+pub mod erc20;
 pub mod fetcher;
 pub mod metrics;
 pub mod proposer;

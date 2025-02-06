@@ -68,7 +68,7 @@ pub fn propose_batch_calldata(
         },
     };
 
-    let encoded_params = batch_params.abi_encode_params();
+    let encoded_params = batch_params.abi_encode();
 
     PreconfRouter::proposePreconfedBlocksCall {
         _0: Bytes::new(),
@@ -140,7 +140,7 @@ pub fn propose_batch_blobs(
         blocks,
     };
 
-    let encoded_params = batch_params.abi_encode_params();
+    let encoded_params = batch_params.abi_encode();
     let input = PreconfRouter::proposePreconfedBlocksCall {
         _0: Bytes::new(),
         _batchParams: encoded_params.into(),

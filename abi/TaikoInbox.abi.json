@@ -78,7 +78,7 @@
             "internalType": "uint64"
           },
           {
-            "name": "_reserved3",
+            "name": "reserved3",
             "type": "uint96",
             "internalType": "uint96"
           },
@@ -162,6 +162,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       }
@@ -212,6 +217,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       }
@@ -262,6 +272,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       }
@@ -388,6 +403,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       }
@@ -439,6 +459,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       }
@@ -606,6 +631,11 @@
             "name": "provingWindow",
             "type": "uint16",
             "internalType": "uint16"
+          },
+          {
+            "name": "cooldownWindow",
+            "type": "uint24",
+            "internalType": "uint24"
           },
           {
             "name": "maxSignalsToReceive",
@@ -1459,6 +1489,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       },
@@ -1673,6 +1708,11 @@
             "name": "inProvingWindow",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint48",
+            "internalType": "uint48"
           }
         ]
       }

@@ -33,6 +33,7 @@ pub async fn start_proposer(
         taiko_config.l1_contract,
         signer,
         proposer_config.l1_safe_lag,
+        config.l2.router_contract,
     )
     .await?;
     let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);

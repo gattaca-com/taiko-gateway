@@ -6,7 +6,7 @@ use alloy_consensus::{
 };
 use alloy_eips::BlockNumberOrTag;
 use alloy_network::TransactionBuilder;
-use alloy_primitives::{Address, Bytes, B256};
+use alloy_primitives::{address, Address, Bytes, B256};
 use alloy_provider::{Provider, ProviderBuilder, RootProvider};
 use alloy_rpc_types::{BlockTransactionsKind, TransactionReceipt, TransactionRequest};
 use alloy_signer::SignerSync;
@@ -26,8 +26,10 @@ pub struct L1Client {
     signer: PrivateKeySigner,
     taiko_client: TaikoL1Client,
     safe_lag: Duration,
+    router_address: Address,
 }
 
+const DEFAULT_GAS_LIMIT: u64 = 10_000_000;
 const DEFAULT_MAX_FEE_PER_GAS: u128 = 10_000_000_000;
 const DEFAULT_MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
 const DEFAULT_MAX_FEE_PER_BLOB_GAS: u128 = 5_000_000;
@@ -39,12 +41,13 @@ impl L1Client {
         l1_contract: Address,
         signer: PrivateKeySigner,
         safe_lag: Duration,
+        router_address: Address,
     ) -> eyre::Result<Self> {
         let provider = ProviderBuilder::new().on_http(l1_rpc);
         let chain_id = provider.get_chain_id().await?;
         let taiko_client = TaikoL1Client::new(l1_contract, provider);
 
-        Ok(Self { chain_id, signer, taiko_client, safe_lag })
+        Ok(Self { chain_id, signer, taiko_client, safe_lag, router_address })
     }
 
     pub fn provider(&self) -> &AlloyProvider {
@@ -56,12 +59,22 @@ impl L1Client {
     }
 
     pub async fn last_meta_hash(&self) -> B256 {
-        todo!("fix abi");
         // let state = self.taiko_client.state().call().await?;
-        // let stats2 = state.stats2;
-        // let config = self.taiko_client.getConfig().call().await?._0;
-        // let last_batch = state.batches[(stats2.numBatches - 1) % config.batchRingBufferSize];
-        // last_batch.meta_hash
+
+        // state.stats2.
+
+        // let b = self.taiko_client.getBatch(1).call().await?;
+        // b.batch_.metaHash
+
+        // // let stats2 = state.stats2;
+        // // let config = self.taiko_client.getConfig().call().await?._0;
+        // // let last_batch = state.batches[(stats2.numBatches - 1) % config.batchRingBufferSize];
+        // // last_batch.meta_hash
+
+        // TODO: Zero picks the last batch, but we should pick the last on the state as a double
+        // check
+
+        B256::ZERO
     }
 
     pub async fn get_nonce(&self) -> eyre::Result<u64> {
@@ -72,9 +85,13 @@ impl L1Client {
     }
 
     pub async fn build_eip1559(&self, input: Bytes) -> eyre::Result<TxEnvelope> {
-        let to = *self.taiko_client.address();
+        let to = self.router_address;
 
-        let tx = TransactionRequest::default().with_to(to).with_input(input.clone());
+        let tx = TransactionRequest::default()
+            .with_to(to)
+            .with_input(input.clone())
+            .with_from(self.signer.address());
+
         let gas_limit = self.provider().estimate_gas(&tx).await?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
@@ -115,11 +132,14 @@ impl L1Client {
         input: Bytes,
         sidecar: BlobTransactionSidecar,
     ) -> eyre::Result<TxEnvelope> {
-        let to = *self.taiko_client.address();
+        let to = self.router_address;
 
         // should we add the blob for estimation?
-        let tx = TransactionRequest::default().with_to(to).with_input(input.clone());
-        let gas_limit = self.provider().estimate_gas(&tx).await?;
+        let tx = TransactionRequest::default()
+            .with_to(to)
+            .with_input(input.clone())
+            .with_from(self.signer.address());
+        let gas_limit = self.provider().estimate_gas(&tx).await.unwrap_or(DEFAULT_GAS_LIMIT);
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
