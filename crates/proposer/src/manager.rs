@@ -61,7 +61,7 @@ impl ProposerManager {
         loop {
             tokio::select! {
                 Some(sealed_block) = self.new_blocks_rx.recv() => {
-                    to_propose.entry(sealed_block.anchor_block_id,).or_default().push(sealed_block.block);
+                    to_propose.entry(sealed_block.anchor_block_id).or_default().push(sealed_block.block);
                 }
 
                 _ = tick.tick() => {
@@ -200,7 +200,7 @@ impl ProposerManager {
 
             if retries == 1 {
                 let msg = format!(
-                    "failed to propose batch, retrying in 12 secs. hashes={hashes:?}, bns={bns:?}, err={err}"
+                    "failed to propose batch, retrying in 12 secs. hashes={hashes:?}, bns={bns:?}, err={err:?}"
                 );
                 error!("{msg}");
                 alert_discord(&msg);

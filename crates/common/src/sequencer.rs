@@ -33,6 +33,10 @@ impl Order {
     pub fn raw(&self) -> &Bytes {
         &self.raw
     }
+
+    pub fn tx(&self) -> &TxEnvelope {
+        &self.tx
+    }
 }
 
 impl Deref for Order {
