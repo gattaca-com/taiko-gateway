@@ -4,21 +4,19 @@ use alloy_consensus::{
     BlobTransactionSidecar, SignableTransaction, TxEip1559, TxEip4844, TxEip4844WithSidecar,
     TxEnvelope,
 };
-use alloy_eips::BlockNumberOrTag;
+use alloy_eips::{eip7840::BlobParams, BlockNumberOrTag};
 use alloy_network::TransactionBuilder;
 use alloy_primitives::{Address, Bytes, B256};
 use alloy_provider::{Provider, ProviderBuilder, RootProvider};
 use alloy_rpc_types::{BlockTransactionsKind, TransactionReceipt, TransactionRequest};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
-use alloy_transport_http::Http;
 use eyre::{ensure, eyre, OptionExt};
 use pc_common::taiko::TaikoL1Client;
-use reqwest::Client;
 use tracing::{error, info};
 use url::Url;
 
-type AlloyProvider = RootProvider<Http<Client>>;
+type AlloyProvider = RootProvider;
 
 /// Wrapper around a L1 provider
 pub struct L1Client {
@@ -43,7 +41,7 @@ impl L1Client {
         safe_lag: Duration,
         router_address: Address,
     ) -> eyre::Result<Self> {
-        let provider = ProviderBuilder::new().on_http(l1_rpc);
+        let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(l1_rpc);
         let chain_id = provider.get_chain_id().await?;
         let taiko_client = TaikoL1Client::new(l1_contract, provider);
 
@@ -154,7 +152,7 @@ impl L1Client {
             .provider()
             .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
             .await?
-            .and_then(|block| block.header.next_block_blob_fee())
+            .and_then(|block| block.header.next_block_blob_fee(BlobParams::cancun()))
             .unwrap_or(DEFAULT_MAX_FEE_PER_BLOB_GAS);
 
         // add buffer

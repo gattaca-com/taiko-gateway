@@ -26,7 +26,7 @@ use tracing::{error, info, warn};
 
 use super::L1Client;
 
-type AlloyProvider = alloy_provider::RootProvider<alloy_transport_http::Http<reqwest::Client>>;
+type AlloyProvider = alloy_provider::RootProvider;
 
 pub struct ProposerManager {
     config: ProposerConfig,

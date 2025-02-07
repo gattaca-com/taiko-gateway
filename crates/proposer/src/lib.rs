@@ -38,8 +38,11 @@ pub async fn start_proposer(
     .await?;
     let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);
 
-    let l2_provider = ProviderBuilder::new().on_http(taiko_config.rpc_url.clone());
-    let preconf_provider = ProviderBuilder::new().on_http(taiko_config.preconf_url.clone());
+    let l2_provider =
+        ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
+    let preconf_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .on_http(taiko_config.preconf_url.clone());
 
     // start proposer
     proposer.resync(l2_provider, preconf_provider, taiko_config).await?;
