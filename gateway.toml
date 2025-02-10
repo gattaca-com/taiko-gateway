@@ -9,7 +9,7 @@ ws_url = "ws://18.199.195.154:8546"
 [l2]
 name = "taiko"
 chain_id = 167010
-rpc_url =  "https://rpc.helder.taiko.xyz" #"http://18.199.195.154:18545"                           # non-preconf rpc
+rpc_url = "http://18.199.195.154:18545"                           # non-preconf rpc
 ws_url = "ws://18.199.195.154:18546"                              # non-preconf ws
 taiko_token = "0x397884f0947Cfe2eEbF3A52f196C140EBfb6b546"
 l1_contract = "0x330055B6D9f78150C7d5F7c94009Fe5BDD1696de"
@@ -18,7 +18,7 @@ router_contract = "0x7A95C1C22eB16F0396Be23609A9f614e2b43110E"
 whitelist_contract = "0x946D8C68A00f9A5C74e866843dD0f93428365C54"
 
 [gateway]
-rpc_port = 10000
+rpc_port = 10001
 simulator_url = "http://0.0.0.0:8545"
 propose_frequency_secs = 1
 l2_target_block_time_ms = 2_000

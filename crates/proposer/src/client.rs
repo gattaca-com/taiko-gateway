@@ -211,3 +211,51 @@ impl L1Client {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use alloy_consensus::Transaction;
+    use alloy_rpc_types::BlockTransactions;
+    use alloy_signer_local::LocalSigner;
+
+    use super::*;
+
+/*
+name = "helder"
+chain_id = 7014190335
+rpc_url = "https://rpc.helder-devnets.xyz"
+ws_url = "ws://18.199.195.154:8546"
+
+*/
+
+    #[tokio::test]
+    async fn test_l1_client() {
+        let l2_router_address = Address::from_str("0x1670100000000000000000000000000000010001").unwrap();
+        let spammer_address = Address::from_str("0xF3384dCC14F03f079Ac7cd3C2299256B19261Bb0").unwrap();
+        let l1_client = L1Client::new(
+            Url::parse("https://rpc.helder-devnets.xyz").unwrap(), 
+            Address::ZERO, 
+            LocalSigner::random(),
+            Duration::from_secs(10), 
+            l2_router_address
+        ).await.unwrap();
+        let chain_id = l1_client.provider().get_chain_id().await.unwrap();
+        println!("chain_id: {}", chain_id);
+
+        // get nonce for spammer_address
+        let nonce = l1_client.provider().get_transaction_count(spammer_address).await.unwrap();
+        println!("nonce: {}", nonce);
+
+        // get balance for spammer_address
+        let balance = l1_client.provider().get_balance(spammer_address).await.unwrap();
+        println!("balance: {}", balance);
+
+        // get receipt for tx hash
+        let tx_hash = B256::from_str("0xd60dc1a0731e995b13aaf0c67a13b0578bce96a9fc125cee2affb83b0e6adce7").unwrap();
+        let receipt = l1_client.provider().get_transaction_receipt(tx_hash).await.unwrap();
+        println!("receipt: {:?}", receipt);
+    }
+    
+}

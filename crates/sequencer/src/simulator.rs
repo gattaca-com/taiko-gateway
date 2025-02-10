@@ -69,7 +69,7 @@ impl SimulatorClient {
 
     /// Simulate a tx at a given state id
     pub fn simulate_tx(&self, order: Order, state_id: StateId) -> eyre::Result<ExecutionResult> {
-        debug!(hash = %order.tx_hash(), "simulate anchor");
+        debug!(hash = %order.tx_hash(), ?state_id, "simulate tx");
 
         let response = self.runtime.block_on(async move {
             self.client
