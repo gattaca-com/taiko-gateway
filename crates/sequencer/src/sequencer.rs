@@ -16,7 +16,7 @@ use pc_common::{
     proposer::{is_propose_delayed, NewSealedBlock},
     runtime::spawn,
     sequencer::{ExecutionResult, Order, StateId},
-    taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT},
+    taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT_V2},
     types::BlockEnv,
 };
 use reqwest::Client;
@@ -400,7 +400,7 @@ fn get_block_env_from_anchor(
     timestamp: u64,
     base_fee: u128,
 ) -> BlockEnv {
-    let gas_limit = max_gas_limit + ANCHOR_GAS_LIMIT;
+    let gas_limit = max_gas_limit + ANCHOR_GAS_LIMIT_V2;
     let difficulty = get_difficulty(block_number);
 
     BlockEnv {

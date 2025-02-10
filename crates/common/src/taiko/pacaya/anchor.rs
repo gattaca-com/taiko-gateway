@@ -7,7 +7,7 @@ use crate::{
     config::TaikoConfig,
     taiko::{
         fixed_signer::sign_fixed_k, AnchorParams, BaseFeeConfig, ParentParams, TaikoL2Client,
-        ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_SIGNER,
+        ANCHOR_GAS_LIMIT_V3, GOLDEN_TOUCH_SIGNER,
     },
 };
 
@@ -54,7 +54,7 @@ pub fn assemble_anchor_v3(
     let tx = TxEip1559 {
         chain_id: config.chain_id,
         nonce: parent.block_number, // one anchor tx per L2 block -> block number = nonce
-        gas_limit: ANCHOR_GAS_LIMIT,
+        gas_limit: ANCHOR_GAS_LIMIT_V3,
         max_fee_per_gas: l2_base_fee,
         max_priority_fee_per_gas: 0,
         to: config.l2_contract.into(),

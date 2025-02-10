@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use alloy_primitives::{address, b256, keccak256, Address, Bytes, B256, U256};
+use alloy_primitives::{address, b256, Address, Bytes, B256, U256};
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolValue;
 mod blob;
@@ -25,13 +25,15 @@ pub static GOLDEN_TOUCH_SIGNER: LazyLock<PrivateKeySigner> =
 /// Gas limit of the anchor tx
 // this is not really on-chain so we need to hardcode it for now
 // https://github.com/taikoxyz/taiko-geth/blob/1e948cff4c83e7a5cb0d8a4db27cbe59ce2a8884/consensus/taiko/consensus.go#L43
-pub const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
+pub const ANCHOR_GAS_LIMIT_V3: u64 = 1_000_000;
+pub const ANCHOR_GAS_LIMIT_V2: u64 = 250_000;
 
-// https://github.com/taikoxyz/taiko-mono/blob/ontake_preconfs/packages/protocol/contracts/L1/libs/LibProposing.sol#L129
 /// Block number where the anchor is included
+// https://github.com/taikoxyz/taiko-mono/blob/cdeadc09401ed8f1dab4588c4296a46af68d73a6/packages/taiko-client/driver/chain_syncer/blob/blocks_inserter/pacaya.go#L328
 pub fn get_difficulty(bn: u64) -> B256 {
-    let bytes = ("TAIKO_DIFFICULTY", bn);
-    keccak256(bytes.abi_encode_params())
+    let bytes = ("TAIKO_DIFFICULTY", bn).abi_encode();
+    let bytes: [u8; 32] = bytes[(bytes.len() - 32)..].try_into().unwrap();
+    B256::from(bytes)
 }
 
 pub fn get_extra_data(sharing_pct: u8) -> Bytes {
@@ -81,6 +83,14 @@ mod tests {
         assert_eq!(
             extra_data,
             bytes!("000000000000000000000000000000000000000000000000000000000000004b")
+        );
+    }
+
+    #[test]
+    fn test_difficulty() {
+        assert_eq!(
+            get_difficulty(9),
+            b256!("5441494b4f5f444946464943554c545900000000000000000000000000000000")
         );
     }
 }

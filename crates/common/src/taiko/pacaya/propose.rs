@@ -35,7 +35,7 @@ pub fn propose_batch_calldata(
         let block = Arc::unwrap_or_clone(block);
 
         blocks.push(BlockParams {
-            numTransactions: block.transactions.len() as u16,
+            numTransactions: (block.transactions.len() - 1) as u16, // remove anchor
             timeShift: 0,
             signalSlots: vec![], // TODO
         });
@@ -66,7 +66,7 @@ pub fn propose_batch_calldata(
             firstBlobIndex: 0,
             numBlobs: 0,
             byteOffset: 0,
-            byteSize: 0,
+            byteSize: compressed.len() as u32,
         },
     };
 

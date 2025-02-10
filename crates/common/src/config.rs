@@ -51,7 +51,6 @@ pub struct GatewayConfig {
     pub force_reorgs: bool,
     /// If we dont receive a new L1 block for this amount of time, stop sequencing
     pub l1_delay_secs: u64,
-    /// Use as anchors block ids with this lag to make sure we dont use a reorged L1 block
     /// Wait until this many blocks have passed to check that the L1 propose tx hasnt reorged out
     pub l1_safe_lag: u64,
     /// Number of blocks to wait before refreshing the anchor, the larger this is the more blocks
