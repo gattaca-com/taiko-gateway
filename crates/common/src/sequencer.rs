@@ -123,20 +123,11 @@ pub enum ExecutionResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitStateResponse {
-    /// Cumulative gas used in the block
-    #[serde(with = "alloy_serde::quantity")]
-    pub cumulative_gas_used: u128,
-    /// Cumulative builder payment in the block
-    #[serde(with = "alloy_serde::quantity")]
-    pub cumulative_builder_payment: u128,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SealBlockResponse {
     /// Cumulative builder payment in the block
     #[serde(with = "alloy_serde::quantity")]
     pub cumulative_builder_payment: u128,
+    pub cumulative_gas_used: u64,
     /// Finalised block
     pub built_block: Arc<Block>,
 }

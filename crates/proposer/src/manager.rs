@@ -1,9 +1,7 @@
 #![allow(clippy::comparison_chain)]
 
 use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Duration,
+    collections::{BTreeMap, HashMap}, sync::Arc, time::Duration
 };
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
@@ -169,7 +167,7 @@ impl ProposerManager {
         assert!(!full_blocks.is_empty(), "no blocks to propose");
 
         if self.config.dry_run {
-            // todo: log something
+            warn!("dry run, skipping proposal");
             return;
         }
 

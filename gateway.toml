@@ -18,7 +18,7 @@ router_contract = "0x7A95C1C22eB16F0396Be23609A9f614e2b43110E"
 whitelist_contract = "0x946D8C68A00f9A5C74e866843dD0f93428365C54"
 
 [gateway]
-rpc_port = 10000
+rpc_port = 10001
 simulator_url = "http://0.0.0.0:8545"
 propose_frequency_secs = 1
 l2_target_block_time_ms = 2_000

@@ -8,7 +8,7 @@ use jsonrpsee::{
 use pc_common::{
     api::SimulateApiClient,
     config::TaikoConfig,
-    sequencer::{CommitStateResponse, ExecutionResult, Order, SealBlockResponse, StateId},
+    sequencer::{ExecutionResult, Order, SealBlockResponse, StateId},
     taiko::{
         pacaya::{
             self,
@@ -69,7 +69,7 @@ impl SimulatorClient {
 
     /// Simulate a tx at a given state id
     pub fn simulate_tx(&self, order: Order, state_id: StateId) -> eyre::Result<ExecutionResult> {
-        debug!(hash = %order.tx_hash(), "simulate anchor");
+        debug!(hash = %order.tx_hash(), ?state_id, "simulate tx");
 
         let response = self.runtime.block_on(async move {
             self.client
@@ -81,19 +81,11 @@ impl SimulatorClient {
         Ok(response)
     }
 
-    pub fn commit_state(&self, state_id: StateId) -> eyre::Result<CommitStateResponse> {
-        debug!(%state_id, "commit state");
+    pub fn seal_block(&self, state_id: StateId) -> eyre::Result<SealBlockResponse> {
+        debug!(%state_id, "seal block");
 
         self.runtime.block_on(async move {
-            self.client.commit_state(state_id).await.map_err(|err| eyre!("commit state err: {err}"))
-        })
-    }
-
-    pub fn seal_block(&self) -> eyre::Result<SealBlockResponse> {
-        debug!("seal block");
-
-        self.runtime.block_on(async move {
-            self.client.seal_block().await.map_err(|err| eyre!("seal block err: {err}"))
+            self.client.seal_block(state_id).await.map_err(|err| eyre!("seal block err: {err}"))
         })
     }
 
