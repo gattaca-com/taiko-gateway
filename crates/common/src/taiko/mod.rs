@@ -24,7 +24,8 @@ pub static GOLDEN_TOUCH_SIGNER: LazyLock<PrivateKeySigner> =
 
 /// Gas limit of the anchor tx
 // this is not really on-chain so we need to hardcode it for now
-pub const ANCHOR_GAS_LIMIT: u64 = 250_000;
+// https://github.com/taikoxyz/taiko-geth/blob/1e948cff4c83e7a5cb0d8a4db27cbe59ce2a8884/consensus/taiko/consensus.go#L43
+pub const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 
 // https://github.com/taikoxyz/taiko-mono/blob/ontake_preconfs/packages/protocol/contracts/L1/libs/LibProposing.sol#L129
 /// Block number where the anchor is included

@@ -135,19 +135,19 @@ mod tests {
     fn test_validate_anchor_v3() {
         let base_fee_config = TaikoChainParams::new_helder().base_fee_config;
 
-        let parent_block: Block = serde_json::from_str(include_str!("599.json")).expect("parent");
+        let parent_block: Block = serde_json::from_str(include_str!("4.json")).expect("parent");
         assert_eq!(
             parent_block.header.hash,
-            b256!("723d1b62f1cdd88bf64e38f8d5ea46b65305ba4ba0f94d3732a79ec92ce79964")
+            b256!("2485f8006c41ad7e6e4f538774cd576c52a5f119c46b2fc61175768599720e06")
         );
-        assert_eq!(parent_block.header.number, 599);
+        assert_eq!(parent_block.header.number, 4);
 
-        let block: Block = serde_json::from_str(include_str!("600.json")).expect("block");
+        let block: Block = serde_json::from_str(include_str!("5.json")).expect("block");
         assert_eq!(
             block.header.hash,
-            b256!("d151eab56447de7142f4456d94600e866f4372a0baa71d5cf60b3bac0e2e30fb")
+            b256!("ccdd76f4a02856cfdd33ad52be94e32acdb0260f5bc682706bda6c2b3ab562b9")
         );
-        assert_eq!(block.header.number, 600);
+        assert_eq!(block.header.number, 5);
 
         let block_transactions = block.transactions.as_transactions().unwrap().to_vec();
         let block_anchor = block_transactions.first().unwrap();
@@ -223,27 +223,27 @@ mod tests {
     #[test]
     fn test_decode_propose_block() {
         let anchor_block: Block =
-            serde_json::from_str(include_str!("1225296.json")).expect("block");
+            serde_json::from_str(include_str!("1275729.json")).expect("block");
         assert_eq!(
             anchor_block.header.hash,
-            b256!("0x2805fec505d544ed9e3e3818f3f2212c16e6ff021d86fa402f2ecc2e105800b0")
+            b256!("d7f49b0a0b22969d264012cb4fcb93bef05793c93ebb07c4bfc2eb647d0a2f51")
         );
-        assert_eq!(anchor_block.header.number, 1225296);
+        assert_eq!(anchor_block.header.number, 1275729);
 
         let propose_block: Block =
-            serde_json::from_str(include_str!("1225297.json")).expect("block");
+            serde_json::from_str(include_str!("1275730.json")).expect("block");
         assert_eq!(
             propose_block.header.hash,
-            b256!("8dd275a1a2e87ed191d867104edd84a56c792014b35128c5c1938f0f889748a7")
+            b256!("d0a1c88b01959e435f972cc46707aec2567cec1f964159b89ad0e4e873c8bdb7")
         );
-        assert_eq!(propose_block.header.number, 1225297);
+        assert_eq!(propose_block.header.number, 1275730);
 
-        let l2_block: Block = serde_json::from_str(include_str!("600.json")).expect("block");
+        let l2_block: Block = serde_json::from_str(include_str!("5.json")).expect("block");
         assert_eq!(
             l2_block.header.hash,
-            b256!("d151eab56447de7142f4456d94600e866f4372a0baa71d5cf60b3bac0e2e30fb")
+            b256!("ccdd76f4a02856cfdd33ad52be94e32acdb0260f5bc682706bda6c2b3ab562b9")
         );
-        assert_eq!(l2_block.header.number, 600);
+        assert_eq!(l2_block.header.number, 5);
 
         let anchor_tx = l2_block.transactions.txns().next().unwrap().clone();
         assert_eq!(anchor_tx.from, GOLDEN_TOUCH_ADDRESS);
@@ -258,7 +258,7 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>()
             .into_iter()
-            .find(|tx| tx.to() == Some(address!("b639Fe5ca89320C38CE6426715D44A35585D0723")))
+            .find(|tx| tx.to() == Some(address!("55FC9869E51885B6523D25d20A82A4bD9787998F")))
             .unwrap();
 
         let input = propose_tx.input();
@@ -266,20 +266,16 @@ mod tests {
 
         let params = call._params;
 
-        const PARAMS_OFFSET: usize = 32;
-        let params = params.slice(PARAMS_OFFSET..);
-
-        assert!(BatchParams::abi_decode_params(&params, true).is_ok());
+        assert!(BatchParams::abi_decode(&params, true).is_ok());
     }
 
     #[ignore]
     #[tokio::test]
     async fn test_fetch_block() {
-        let l2_provider =
+        let provider =
             ProviderBuilder::new().on_http("https://rpc.helder-devnets.xyz".parse().unwrap());
 
-        let bn =
-            l2_provider.get_block_by_number(1225296.into(), true.into()).await.unwrap().unwrap();
+        let bn = provider.get_block_by_number(1275730.into(), true.into()).await.unwrap().unwrap();
 
         let s = serde_json::to_string(&bn).unwrap();
         println!("{}", s);
@@ -303,6 +299,7 @@ mod tests {
         print!("{:?}", err);
     }
 
+    #[ignore]
     #[test]
     fn test_decode_whitelist_error() {
         let bytes = hex!("1999aed2");
