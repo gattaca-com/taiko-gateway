@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
 };
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::Address;
 use alloy_rpc_types::Block;
 use lazy_static::lazy_static;
 
@@ -34,6 +34,4 @@ pub struct ProposerContext {
     /// The address that will receive the block rewards; defaults to the proposer's address if set
     /// to address(0).
     pub coinbase: Address,
-    /// Arbitary graffiti
-    pub anchor_input: B256,
 }

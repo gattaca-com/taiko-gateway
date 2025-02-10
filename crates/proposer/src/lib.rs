@@ -22,11 +22,7 @@ pub async fn start_proposer(
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 
-    let context = ProposerContext {
-        proposer: signer.address(),
-        coinbase: config.gateway.coinbase,
-        anchor_input: taiko_config.anchor_input,
-    };
+    let context = ProposerContext { proposer: signer.address(), coinbase: config.gateway.coinbase };
 
     let includer = L1Client::new(
         config.l1.rpc_url.clone(),

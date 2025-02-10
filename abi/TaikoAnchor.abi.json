@@ -94,19 +94,6 @@
   },
   {
     "type": "function",
-    "name": "anchorInput",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "anchorV2",
     "inputs": [
       {
@@ -171,11 +158,6 @@
       },
       {
         "name": "_anchorStateRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "_anchorInput",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -940,11 +922,6 @@
   {
     "type": "error",
     "name": "L2_INVALID_L2_CHAIN_ID",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "L2_INVALID_PARAM",
     "inputs": []
   },
   {

@@ -13,9 +13,9 @@ rpc_url = "http://18.199.195.154:18545"                           # non-preconf 
 ws_url = "ws://18.199.195.154:18546"                              # non-preconf ws
 taiko_token = "0x6866A70100DeF26aF56e4A7A5e78F6eF3Ed5e5c2"        # taikoTokenAddress
 l1_contract = "0x55FC9869E51885B6523D25d20A82A4bD9787998F"        # taikoInboxAddress
-l2_contract = "0x1670100000000000000000000000000000010001"
-router_contract = "0x7A95C1C22eB16F0396Be23609A9f614e2b43110E"
-whitelist_contract = "0x946D8C68A00f9A5C74e866843dD0f93428365C54"
+l2_contract = "0x1670100000000000000000000000000000010001"        # taikoAnchorAddress
+router_contract = "0xcd1115B40120cCB7F233DC3B86c7D6Bb633c03d3"    # preconfRouterAddress
+whitelist_contract = "0x896A084Add909028DCd92754D4408Acdfd11cbbc" # preconfWhitelistAddress
 
 [gateway]
 rpc_port = 10001
@@ -26,7 +26,6 @@ coinbase = "0xB851706411c088A2c43e6AfCb2794be5dd2f2A51"
 dry_run = true
 use_blobs = false
 force_reorgs = false
-anchor_input = "taiko preconfs"                         # this will be padded/truncated to 32 bytes
 l1_delay_secs = 48
 l1_safe_lag = 3
 anchor_batch_lag = 8

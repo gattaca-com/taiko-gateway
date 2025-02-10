@@ -39,14 +39,12 @@ pub fn assemble_anchor_v3(
     parent: ParentParams,
     anchor: AnchorParams,
     l2_base_fee: u128, // base fee where this tx will be included
-    anchor_input: B256,
 ) -> TxEnvelope {
     const SIGNAL_SLOTS: Vec<B256> = vec![];
 
     let input = anchorV3Call::new((
         anchor.block_id,
         anchor.state_root,
-        anchor_input,
         parent.gas_used,
         config.params.base_fee_config.into(),
         SIGNAL_SLOTS,
@@ -114,7 +112,6 @@ mod tests {
             .anchorV3(
                 anchor_block_id,
                 anchor_state_root,
-                anchor_input,
                 parent_gas_used,
                 base_fee_config.into(),
                 signal_slots.clone(),
@@ -125,7 +122,6 @@ mod tests {
         let input_check = anchorV3Call::new((
             anchor_block_id,
             anchor_state_root,
-            anchor_input,
             parent_gas_used,
             base_fee_config.into(),
             signal_slots,
@@ -165,7 +161,6 @@ mod tests {
         let anchor_state_root = anchor_call._anchorStateRoot;
         let parent_gas_used = anchor_call._parentGasUsed;
         let base_fee_cfg = anchor_call._baseFeeConfig;
-        let anchor_input = anchor_call._anchorInput;
 
         assert_eq!(parent_gas_used as u64, parent_block.header.gas_used);
 
@@ -201,7 +196,6 @@ mod tests {
                 whitelist_contract: Address::ZERO,
             },
             params: TaikoChainParams::new_helder(),
-            anchor_input: B256::ZERO,
         };
 
         // NOTE: this is commented out as the call is to a stateful contract so may fail
@@ -221,7 +215,6 @@ mod tests {
             parent_params,
             anchor_params,
             block.header.base_fee_per_gas.unwrap() as u128,
-            anchor_input,
         );
 
         assert_eq!(test_anchor.tx_hash(), block_anchor.inner.tx_hash())

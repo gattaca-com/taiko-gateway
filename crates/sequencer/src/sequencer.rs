@@ -364,7 +364,6 @@ impl Sequencer {
         let request = BuildPreconfBlockRequestBody::new(
             block,
             anchor_params,
-            self.simulator.config().anchor_input,
             self.chain_config.base_fee_config,
         );
 

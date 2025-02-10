@@ -45,10 +45,6 @@ impl SimulatorClient {
         Self { runtime, config, client, taiko_l2 }
     }
 
-    pub fn config(&self) -> &TaikoConfig {
-        &self.config
-    }
-
     pub fn simulate_anchor(
         &self,
         tx: Order,
@@ -101,13 +97,7 @@ impl SimulatorClient {
             anchor,
         ))?;
 
-        let tx = pacaya::assemble_anchor_v3(
-            &self.config,
-            parent,
-            anchor,
-            l2_base_fee,
-            self.config.anchor_input,
-        );
+        let tx = pacaya::assemble_anchor_v3(&self.config, parent, anchor, l2_base_fee);
 
         Ok((Order::new(tx), l2_base_fee))
     }

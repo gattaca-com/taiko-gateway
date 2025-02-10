@@ -34,7 +34,11 @@ pub fn propose_batch_calldata(
     for block in full_blocks {
         let block = Arc::unwrap_or_clone(block);
 
-        blocks.push(BlockParams { numTransactions: block.transactions.len() as u16, timeShift: 0 });
+        blocks.push(BlockParams {
+            numTransactions: block.transactions.len() as u16,
+            timeShift: 0,
+            signalSlots: vec![], // TODO
+        });
 
         let txs = block
             .transactions
@@ -54,10 +58,8 @@ pub fn propose_batch_calldata(
         coinbase: context.coinbase,
         parentMetaHash: parent_meta_hash,
         anchorBlockId: anchor_block_id,
-        anchorInput: context.anchor_input,
         lastBlockTimestamp: last_timestamp,
         revertIfNotFirstProposal: false,
-        signalSlots: vec![],
         blocks,
         blobParams: BlobParams {
             blobHashes: vec![],
@@ -97,7 +99,11 @@ pub fn propose_batch_blobs(
     for block in full_blocks {
         let block = Arc::unwrap_or_clone(block);
 
-        blocks.push(BlockParams { numTransactions: block.transactions.len() as u16, timeShift: 0 });
+        blocks.push(BlockParams {
+            numTransactions: block.transactions.len() as u16,
+            timeShift: 0,
+            signalSlots: vec![], // TODO
+        });
 
         let txs = block
             .transactions
@@ -132,10 +138,8 @@ pub fn propose_batch_blobs(
         coinbase: context.coinbase,
         parentMetaHash: parent_meta_hash,
         anchorBlockId: anchor_block_id,
-        anchorInput: context.anchor_input,
         lastBlockTimestamp: last_timestamp,
         revertIfNotFirstProposal: false,
-        signalSlots: vec![],
         blobParams: blob_params,
         blocks,
     };

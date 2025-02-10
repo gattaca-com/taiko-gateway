@@ -42,9 +42,9 @@ pub async fn get_and_validate_config(
     let chain_id = taiko_l2.l1ChainId().call().await?._0;
     assert_eq!(chain_id, l1_config.chain_id, "l1 chain id in l2 contract");
 
-    let operator_count: u64 = whitelist.operatorCount().call().await?._0.try_into()?;
+    let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
 
-    let mut operators = Vec::with_capacity(operator_count as usize);
+    let mut operators = Vec::with_capacity(operator_count);
     for i in 0..operator_count {
         let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
         operators.push(operator);

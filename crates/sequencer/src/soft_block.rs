@@ -27,7 +27,6 @@ pub struct BuildPreconfBlockRequestBody {
     #[serde(rename = "anchorBlockID")]
     anchor_block_id: u64,
     anchor_state_root: B256,
-    anchor_input: [u8; 32],
     signal_slots: Vec<[u8; 32]>,
     base_fee_config: BaseFeeConfig,
 }
@@ -43,7 +42,6 @@ impl BuildPreconfBlockRequestBody {
     pub fn new(
         block: Arc<Block>,
         anchor_params: AnchorParams,
-        anchor_input: B256,
         base_fee_config: BaseFeeConfig,
     ) -> Self {
         let tx_list: Vec<TxEnvelope> =
@@ -67,7 +65,6 @@ impl BuildPreconfBlockRequestBody {
             ),
             anchor_block_id: anchor_params.block_id,
             anchor_state_root: anchor_params.state_root,
-            anchor_input: anchor_input.0,
             signal_slots: vec![],
             base_fee_config,
         }
@@ -90,7 +87,6 @@ mod tests {
             ),
             anchor_block_id: 0,
             anchor_state_root: B256::default(),
-            anchor_input: [0; 32],
             signal_slots: vec![],
             base_fee_config: BaseFeeConfig {
                 adjustment_quotient: 1,

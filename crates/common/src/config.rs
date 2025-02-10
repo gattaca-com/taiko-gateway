@@ -1,6 +1,6 @@
 use std::{fs, ops::Deref, time::Duration};
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::Address;
 use alloy_signer_local::PrivateKeySigner;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -49,7 +49,6 @@ pub struct GatewayConfig {
     pub dry_run: bool,
     pub use_blobs: bool,
     pub force_reorgs: bool,
-    pub anchor_input: String,
     /// If we dont receive a new L1 block for this amount of time, stop sequencing
     pub l1_delay_secs: u64,
     /// Use as anchors block ids with this lag to make sure we dont use a reorged L1 block
@@ -165,7 +164,6 @@ pub struct TaikoConfig {
     pub preconf_url: Url,
     pub config: L2ChainConfig,
     pub params: TaikoChainParams,
-    pub anchor_input: B256,
 }
 
 impl Deref for TaikoConfig {
@@ -178,15 +176,10 @@ impl Deref for TaikoConfig {
 
 impl TaikoConfig {
     pub fn new(static_config: &StaticConfig, chain_config: TaikoChainParams) -> Self {
-        let mut anchor_input = static_config.gateway.anchor_input.as_bytes().to_vec();
-        anchor_input.resize(32, 0);
-        let anchor_input = B256::try_from(anchor_input.as_slice()).unwrap();
-
         Self {
             preconf_url: static_config.gateway.simulator_url.clone(),
             config: static_config.l2.clone(),
             params: chain_config,
-            anchor_input,
         }
     }
 }
