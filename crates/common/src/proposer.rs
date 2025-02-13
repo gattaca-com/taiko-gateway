@@ -1,7 +1,7 @@
-use std::sync::{
+use std::{fmt::{self, Display}, sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
-};
+}};
 
 use alloy_primitives::Address;
 use alloy_rpc_types::Block;
@@ -41,6 +41,19 @@ pub enum ProposerEvent {
         anchor_block_id: u64,
     },
     NeedsResync,
+}
+
+impl Display for ProposerEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProposerEvent::SealedBlock { block, anchor_block_id } => {
+                write!(f, "SealedBlock {{ block_number: {}, anchor_block_id: {} }}", block.header.number, anchor_block_id)
+            }
+            ProposerEvent::NeedsResync => {
+                write!(f, "NeedsResync")
+            }
+        }
+    }
 }
 
 pub struct ProposerContext {

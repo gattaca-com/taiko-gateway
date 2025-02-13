@@ -109,7 +109,10 @@ impl Sequencer {
                                 SequencerState::Anchor { anchor_params, block_number, state_id };
                         }
 
-                        Err(err) => error!(%err, "failed anchoring"),
+                        Err(err) => {
+                            error!(%err, "failed anchoring");
+                            self.initiate_resync();
+                        }
                     };
                 }
 
@@ -350,8 +353,7 @@ impl Sequencer {
 
         self.ctx.new_preconf_l2_block(&block.header);
         
-        info!("skipping gossiping soft block");
-        //self.gossip_soft_block(block.clone(), anchor_params);
+        self.gossip_soft_block(block.clone(), anchor_params);
 
         self.send_block_to_proposer(block, anchor_params.block_id);
 
@@ -401,10 +403,7 @@ impl Sequencer {
         set_resyncing();
         
         // Reset context to initial state
-        info!(
-            old_state = ?self.ctx,
-            "resetting context to initial state"
-        );
+        info!("resetting context to initial state");
         self.ctx = SequencerContext::new(self.config.l1_safe_lag);
         self.ctx.state = SequencerState::Sync;
 
@@ -413,15 +412,16 @@ impl Sequencer {
             error!(%err, "failed to signal resync needed - channel may be disconnected");
         }
 
-        info!(
-            l1_blocks_needed = self.config.l1_safe_lag,
-            l2_blocks_needed = 1,
-            "waiting for block fetch after resync"
-        );
-
         // Fetch latest L2 block
         let max_retries_l2_fetch = 20;
         let num_l2_blocks_to_fetch = 5;
+
+        info!(
+            l1_blocks_needed = self.config.l1_safe_lag,
+            l2_blocks_needed = num_l2_blocks_to_fetch,
+            "waiting for block fetch after resync"
+        );
+
         let latest_blocks = self.fetch_latest_n_blocks_with_retry(max_retries_l2_fetch, num_l2_blocks_to_fetch).map_err(|e| {
             error!("failed to fetch latest L2 block during resync: {}", e);
             e
@@ -438,21 +438,13 @@ impl Sequencer {
         // Wait for enough L1 blocks to be received
         while !self.is_ready() {
             self.recv_blocks();
-            std::thread::sleep(Duration::from_millis(250));
+            std::thread::sleep(Duration::from_millis(100));
         }
 
-        info!(
-            new_state = ?self.ctx,
-            "resync complete, refreshing anchor"
-        );
+        info!("resync complete, refreshing anchor");
         
         // Refresh anchor with new block data
         self.maybe_refresh_anchor();
-
-        info!(
-            new_state_after_anchor_refresh = ?self.ctx,
-            "resync complete, anchor refreshed"
-        );
     }
 
     fn fetch_latest_n_blocks_with_retry(&self, max_retries: u32, num_blocks: u64) -> eyre::Result<Vec<Header>> {

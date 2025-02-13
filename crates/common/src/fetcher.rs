@@ -9,8 +9,6 @@ use tokio::time::sleep;
 use tracing::{error, info};
 use url::Url;
 
-use crate::runtime::spawn;
-
 /// Fetches new blocks from rpc
 // TODO: fix error flows
 pub struct BlockFetcher {
@@ -115,7 +113,6 @@ pub async fn fetch_latest_n_blocks(rpc_url: Url, num_blocks: u64) -> eyre::Resul
 }
 
 pub fn fetch_latest_n_blocks_sync(rpc_url: Url, num_blocks: u64) -> eyre::Result<Vec<Header>> {
-    // use async block to fetch latest block
     let blocks = crate::runtime::block_on(fetch_latest_n_blocks(rpc_url, num_blocks));
     blocks
 }

@@ -13,6 +13,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 mod client;
 mod manager;
+mod manager_resync;
 
 pub async fn start_proposer(
     config: &StaticConfig,
