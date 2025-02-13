@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use alloy_primitives::{address, b256, Address, Bytes, B256, U256};
+use alloy_primitives::{address, b256, keccak256, Address, Bytes, B256, U256};
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolValue;
 mod blob;
@@ -30,9 +30,8 @@ pub const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 /// Block number where the anchor is included
 // https://github.com/taikoxyz/taiko-mono/blob/cdeadc09401ed8f1dab4588c4296a46af68d73a6/packages/taiko-client/driver/chain_syncer/blob/blocks_inserter/pacaya.go#L328
 pub fn get_difficulty(bn: u64) -> B256 {
-    let bytes = ("TAIKO_DIFFICULTY", bn).abi_encode();
-    let bytes: [u8; 32] = bytes[(bytes.len() - 32)..].try_into().unwrap();
-    B256::from(bytes)
+    let bytes = ("TAIKO_DIFFICULTY", bn).abi_encode_params();
+    keccak256(bytes)
 }
 
 pub fn get_extra_data(sharing_pct: u8) -> Bytes {
@@ -88,8 +87,8 @@ mod tests {
     #[test]
     fn test_difficulty() {
         assert_eq!(
-            get_difficulty(9),
-            b256!("5441494b4f5f444946464943554c545900000000000000000000000000000000")
+            get_difficulty(70),
+            b256!("1251ecc8a8bb1784ccd0c08f3da02b7b12eec7f8e1fe3408db9de22dcc6cad79")
         );
     }
 }
