@@ -16,7 +16,7 @@ use pc_common::{
     proposer::{is_propose_delayed, NewSealedBlock},
     runtime::spawn,
     sequencer::{ExecutionResult, Order, StateId},
-    taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT_V2},
+    taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT},
     types::BlockEnv,
 };
 use reqwest::Client;
@@ -339,6 +339,7 @@ impl Sequencer {
             block_time = ?start_block.elapsed(),
             payment = format_ether(res.cumulative_builder_payment),
             gas_used = res.cumulative_gas_used,
+            gas_limit = block.header.gas_limit,
             "sealed block"
         );
 
@@ -377,7 +378,7 @@ impl Sequencer {
                         let body = res.text().await.unwrap();
 
                         if status.is_success() {
-                            debug!("soft block posted: {}", body);
+                            debug!("soft block posted: response {}, raw {}", body, raw);
                         } else {
                             error!(code = status.as_u16(), err = body, %raw, "soft block failed");
                         }
@@ -400,7 +401,7 @@ fn get_block_env_from_anchor(
     timestamp: u64,
     base_fee: u128,
 ) -> BlockEnv {
-    let gas_limit = max_gas_limit + ANCHOR_GAS_LIMIT_V2;
+    let gas_limit = max_gas_limit + ANCHOR_GAS_LIMIT;
     let difficulty = get_difficulty(block_number);
 
     BlockEnv {

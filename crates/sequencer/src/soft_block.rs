@@ -5,7 +5,7 @@ use alloy_primitives::{Address, PrimitiveSignature, B256};
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::core::Serialize;
-use pc_common::taiko::{pacaya::encode_and_compress_tx_list, AnchorParams, BaseFeeConfig};
+use pc_common::taiko::{AnchorParams, BaseFeeConfig, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS};
 
 #[derive(Debug, Default, Serialize, RlpEncodable)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +14,6 @@ pub struct ExecutableData {
     fee_recipient: Address,
     block_number: u64,
     gas_limit: u64,
-    gas_used: u64,
     timestamp: u64,
     transactions: Vec<u8>,
 }
@@ -44,16 +43,27 @@ impl BuildPreconfBlockRequestBody {
         anchor_params: AnchorParams,
         base_fee_config: BaseFeeConfig,
     ) -> Self {
+        // filter out anchor tx
         let tx_list: Vec<TxEnvelope> =
-            block.transactions.txns().map(|tx| tx.inner.clone()).collect();
-        let compressed = encode_and_compress_tx_list(tx_list);
+            block
+                .transactions
+                .txns()
+                .filter_map(|tx| {
+                    if tx.from == GOLDEN_TOUCH_ADDRESS {
+                        None
+                    } else {
+                        Some(tx.inner.clone())
+                    }
+                })
+                .collect();
+        // let compressed = encode_and_compress_tx_list(tx_list);
+        let compressed = alloy_rlp::encode(tx_list);
 
         let executable_data = ExecutableData {
             parent_hash: block.header.parent_hash,
             fee_recipient: block.header.beneficiary,
             block_number: block.header.number,
-            gas_limit: block.header.gas_limit,
-            gas_used: block.header.gas_used,
+            gas_limit: block.header.gas_limit - ANCHOR_GAS_LIMIT,
             timestamp: block.header.timestamp,
             transactions: compressed,
         };

@@ -1,7 +1,9 @@
 #![allow(clippy::comparison_chain)]
 
 use std::{
-    collections::{BTreeMap, HashMap}, sync::Arc, time::Duration
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+    time::Duration,
 };
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
@@ -79,6 +81,11 @@ impl ProposerManager {
         preconf_provider: AlloyProvider,
         taiko_config: TaikoConfig,
     ) -> eyre::Result<()> {
+        // let mut l1_head = self
+        //     .client
+        //     .provider()
+        //     .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+        //     .await?;
         let mut l1_head = self.client.provider().get_block_number().await?;
         let mut chain_head = l2_provider.get_block_number().await?;
         let mut preconf_head = preconf_provider.get_block_number().await?;

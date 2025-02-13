@@ -28,5 +28,5 @@ use_blobs = false
 force_reorgs = false
 l1_delay_secs = 48                                                  # if gateway doesnt receive a new L1 block for this amount of time, stop sequencing
 l1_safe_lag = 3
-anchor_batch_lag = 8
-soft_block_url = "http://0.0.0.0:9998/preconfBlocks"
+anchor_batch_lag = 0
+soft_block_url = "http://18.199.195.154:9998/preconfBlocks"

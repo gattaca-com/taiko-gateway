@@ -7,7 +7,7 @@ use crate::{
     config::TaikoConfig,
     taiko::{
         fixed_signer::sign_fixed_k, AnchorParams, BaseFeeConfig, ParentParams, TaikoL2Client,
-        ANCHOR_GAS_LIMIT_V3, GOLDEN_TOUCH_SIGNER,
+        ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_SIGNER,
     },
 };
 
@@ -54,7 +54,7 @@ pub fn assemble_anchor_v3(
     let tx = TxEip1559 {
         chain_id: config.chain_id,
         nonce: parent.block_number, // one anchor tx per L2 block -> block number = nonce
-        gas_limit: ANCHOR_GAS_LIMIT_V3,
+        gas_limit: ANCHOR_GAS_LIMIT,
         max_fee_per_gas: l2_base_fee,
         max_priority_fee_per_gas: 0,
         to: config.l2_contract.into(),
@@ -273,9 +273,16 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_block() {
         let provider =
-            ProviderBuilder::new().on_http("https://rpc.helder-devnets.xyz".parse().unwrap());
+            ProviderBuilder::new().on_http("http://18.199.195.154:18545".parse().unwrap());
 
-        let bn = provider.get_block_by_number(1275730.into(), true.into()).await.unwrap().unwrap();
+        let bn = provider.get_block_by_number(47.into(), true.into()).await.unwrap().unwrap();
+
+        let s = serde_json::to_string(&bn).unwrap();
+        println!("{}\n\n", s);
+
+        let provider = ProviderBuilder::new().on_http("http://0.0.0.0:8545".parse().unwrap());
+
+        let bn = provider.get_block_by_number(47.into(), true.into()).await.unwrap().unwrap();
 
         let s = serde_json::to_string(&bn).unwrap();
         println!("{}", s);
