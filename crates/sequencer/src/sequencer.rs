@@ -412,12 +412,13 @@ impl Sequencer {
             error!(%err, "failed to signal resync needed - channel may be disconnected");
         }
 
-        // Fetch latest L2 block
+        // Fetch latest l1 and L2 block
         let max_retries_l2_fetch = 20;
         let num_l2_blocks_to_fetch = 5;
+        let num_l1_blocks_to_fetch = 1;
 
         info!(
-            l1_blocks_needed = self.config.l1_safe_lag,
+            l1_blocks_needed = num_l1_blocks_to_fetch,
             l2_blocks_needed = num_l2_blocks_to_fetch,
             "waiting for block fetch after resync"
         );
