@@ -1,7 +1,7 @@
 #![allow(clippy::comparison_chain)]
 
 use std::{
-    collections::BTreeMap, sync::{atomic::AtomicBool, Arc, Mutex}, time::Duration
+    collections::BTreeMap, sync::Arc, time::Duration
 };
 
 use alloy_consensus::BlobTransactionSidecar;
@@ -17,6 +17,8 @@ use pc_common::{
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{error, info, warn};
 
+use crate::manager_resync::RESYNC_MAX_RETRIES;
+
 use super::L1Client;
 
 pub(crate) type AlloyProvider = alloy_provider::RootProvider;
@@ -30,9 +32,6 @@ pub struct ProposerManager {
     pub(crate) l2_provider: AlloyProvider,
     pub(crate) preconf_provider: AlloyProvider,
     pub(crate) taiko_config: TaikoConfig,
-
-    // for testing
-    dry_run: Mutex<AtomicBool>,
 }
 
 impl ProposerManager {
@@ -45,7 +44,7 @@ impl ProposerManager {
         preconf_provider: AlloyProvider,
         taiko_config: TaikoConfig,
     ) -> Self {
-        Self { config, context, client, events_rx, l2_provider, preconf_provider, taiko_config, dry_run: Mutex::new(AtomicBool::new(true)) }
+        Self { config, context, client, events_rx, l2_provider, preconf_provider, taiko_config }
     }
 
     #[tracing::instrument(skip_all, name = "proposer")]
@@ -64,7 +63,7 @@ impl ProposerManager {
         loop {
             tokio::select! {
                 Some(event) = self.events_rx.recv() => {
-                    info!("received event: {:?}", event);
+                    info!("received event: {}", event);
                     match event {
                         ProposerEvent::SealedBlock { block, anchor_block_id } => {
                             to_propose.entry(anchor_block_id).or_default().push(block);
@@ -75,8 +74,10 @@ impl ProposerManager {
                             to_propose.clear();
                             
                             // Trigger resync
-                            if let Err(err) = self.resync().await {
+                            if let Err(err) = self.resync_with_retries(RESYNC_MAX_RETRIES).await {
                                 error!(%err, "failed to resync");
+                                alert_discord(&format!("failed to resync: {}, the gateway will be stopped!", err));
+                                panic!("failed to resync: {}", err);
                             }
                         }
                     }
@@ -96,16 +97,6 @@ impl ProposerManager {
 
     pub(crate) async fn propose_batch_with_retry(&self, anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) {
         assert!(!full_blocks.is_empty(), "no blocks to propose");
-
-         
-        if self.dry_run.lock().unwrap().load(std::sync::atomic::Ordering::Relaxed) {
-            warn!("dry run, skipping proposal");
-            self.dry_run.lock().unwrap().store(false, std::sync::atomic::Ordering::Relaxed);
-            return;
-        }
-        
-
-        //self.dry_run.lock().unwrap().store(true, std::sync::atomic::Ordering::Relaxed);
 
         let bns = full_blocks.iter().map(|b| b.header.number).collect::<Vec<_>>();
         let hashes = full_blocks.iter().map(|b| b.header.hash).collect::<Vec<_>>();

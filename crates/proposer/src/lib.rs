@@ -4,6 +4,7 @@ use alloy_provider::ProviderBuilder;
 use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
 use manager::ProposerManager;
+use manager_resync::RESYNC_MAX_RETRIES;
 use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
     proposer::{ProposerEvent, ProposerContext},
@@ -51,7 +52,7 @@ pub async fn start_proposer(
     );
 
     // start proposer
-    proposer.resync().await?;
+    proposer.resync_with_retries(RESYNC_MAX_RETRIES).await?;
     spawn(proposer.run());
 
     Ok(())
