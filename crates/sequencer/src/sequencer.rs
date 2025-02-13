@@ -12,12 +12,7 @@ use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::Receiver;
 use eyre::bail;
 use pc_common::{
-    config::{SequencerConfig, TaikoChainParams, TaikoConfig},
-    proposer::{is_propose_delayed, NewSealedBlock},
-    runtime::spawn,
-    sequencer::{ExecutionResult, Order, StateId},
-    taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT},
-    types::BlockEnv,
+    config::{L2ChainConfig, SequencerConfig, TaikoChainParams, TaikoConfig}, fetcher::fetch_latest_n_blocks_sync, proposer::{is_propose_delayed, is_resyncing, set_resyncing, ProposerEvent}, runtime::spawn, sequencer::{ExecutionResult, Order, StateId}, taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT}, types::BlockEnv
 };
 use reqwest::Client;
 use tokio::sync::mpsc::UnboundedSender;
@@ -33,6 +28,7 @@ use crate::{
 pub struct Sequencer {
     config: SequencerConfig,
     chain_config: TaikoChainParams,
+    l2_config: L2ChainConfig,
     ctx: SequencerContext,
     simulator: SimulatorClient,
     /// Receive txs and bundles from RPC
@@ -40,7 +36,7 @@ pub struct Sequencer {
     /// Mempool transactions
     txpool: TxPool,
     /// Send blocks to proposer for inclusion
-    new_blocks_tx: UnboundedSender<NewSealedBlock>,
+    proposer_events_tx: UnboundedSender<ProposerEvent>,
     // Receiver of L1 blocks
     l1_blocks_rx: Receiver<Header>,
     // Receiver of L2 non preconf blocks
@@ -51,9 +47,10 @@ impl Sequencer {
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
+        l2_config: L2ChainConfig,
         rpc_rx: Receiver<Order>,
         mempool_rx: Receiver<Order>,
-        new_blocks_tx: UnboundedSender<NewSealedBlock>,
+        new_blocks_tx: UnboundedSender<ProposerEvent>,
         l1_blocks_rx: Receiver<Header>,
         l2_blocks_rx: Receiver<Header>,
     ) -> Self {
@@ -67,11 +64,12 @@ impl Sequencer {
         Self {
             config,
             chain_config,
+            l2_config,
             ctx,
             simulator,
             rpc_rx,
             txpool,
-            new_blocks_tx,
+            proposer_events_tx: new_blocks_tx,
             l1_blocks_rx,
             l2_blocks_rx,
         }
@@ -168,8 +166,8 @@ impl Sequencer {
 
                     if seal_by_time || seal_by_gas || !self.can_sequence() {
                         if let Err(err) = self.commit_seal(tip_state_id, start, anchor_params) {
-                            // todo: add a failsafe so we're not stuck forever here
                             error!(%err, "failed commit seal");
+                            self.initiate_resync();
                         } else {
                             // reset state for next block
                             self.ctx.state = SequencerState::Sync;
@@ -195,7 +193,7 @@ impl Sequencer {
 
     // TODO: this need to be aware of the preconf schedule
     fn can_sequence(&mut self) -> bool {
-        if is_propose_delayed() {
+        if is_propose_delayed() || is_resyncing() {
             return false;
         }
 
@@ -223,7 +221,11 @@ impl Sequencer {
         }
 
         if let Ok(new_header) = self.l2_blocks_rx.try_recv() {
-            self.ctx.new_l2_block(&new_header);
+            if !self.ctx.new_l2_block(&new_header) {
+                // Verification failed, trigger resync
+                warn!("block verification failed, stopping sequencing");
+                self.initiate_resync();
+            }
         }
     }
 
@@ -347,7 +349,9 @@ impl Sequencer {
         self.txpool.clear_mined(txs);
 
         self.ctx.new_preconf_l2_block(&block.header);
-        self.gossip_soft_block(block.clone(), anchor_params);
+        
+        info!("skipping gossiping soft block");
+        //self.gossip_soft_block(block.clone(), anchor_params);
 
         self.send_block_to_proposer(block, anchor_params.block_id);
 
@@ -355,7 +359,7 @@ impl Sequencer {
     }
 
     fn send_block_to_proposer(&self, block: Arc<Block>, anchor_block_id: u64) {
-        if let Err(err) = self.new_blocks_tx.send(NewSealedBlock { block, anchor_block_id }) {
+        if let Err(err) = self.proposer_events_tx.send(ProposerEvent::SealedBlock { block, anchor_block_id }) {
             error!(%err, "failed sequencer->proposer");
         };
     }
@@ -390,6 +394,84 @@ impl Sequencer {
             }
             .in_current_span(),
         );
+    }
+
+    fn initiate_resync(&mut self) {
+        info!("initiating resync");
+        set_resyncing();
+        
+        // Reset context to initial state
+        info!(
+            old_state = ?self.ctx,
+            "resetting context to initial state"
+        );
+        self.ctx = SequencerContext::new(self.config.l1_safe_lag);
+        self.ctx.state = SequencerState::Sync;
+
+        // Signal to proposer that resync is needed
+        if let Err(err) = self.proposer_events_tx.send(ProposerEvent::NeedsResync) {
+            error!(%err, "failed to signal resync needed - channel may be disconnected");
+        }
+
+        info!(
+            l1_blocks_needed = self.config.l1_safe_lag,
+            l2_blocks_needed = 1,
+            "waiting for block fetch after resync"
+        );
+
+        // Fetch latest L2 block
+        let max_retries_l2_fetch = 20;
+        let num_l2_blocks_to_fetch = 5;
+        let latest_blocks = self.fetch_latest_n_blocks_with_retry(max_retries_l2_fetch, num_l2_blocks_to_fetch).map_err(|e| {
+            error!("failed to fetch latest L2 block during resync: {}", e);
+            e
+        });
+        if let Ok(mut latest_blocks) = latest_blocks {
+            latest_blocks.sort_by_key(|block| block.number);
+            for block in latest_blocks {
+                self.ctx.new_l2_block(&block);
+            }
+        } else {
+            panic!("failed to fetch latest L2 block during resync, retried {} times", max_retries_l2_fetch);
+        }
+        
+        // Wait for enough L1 blocks to be received
+        while !self.is_ready() {
+            self.recv_blocks();
+            std::thread::sleep(Duration::from_millis(250));
+        }
+
+        info!(
+            new_state = ?self.ctx,
+            "resync complete, refreshing anchor"
+        );
+        
+        // Refresh anchor with new block data
+        self.maybe_refresh_anchor();
+
+        info!(
+            new_state_after_anchor_refresh = ?self.ctx,
+            "resync complete, anchor refreshed"
+        );
+    }
+
+    fn fetch_latest_n_blocks_with_retry(&self, max_retries: u32, num_blocks: u64) -> eyre::Result<Vec<Header>> {
+        let l2_rpc_url = self.l2_config.rpc_url.clone();
+        let mut attempts = 0;
+        
+        loop {
+            match fetch_latest_n_blocks_sync(l2_rpc_url.clone(), num_blocks) {
+                Ok(blocks) => return Ok(blocks),
+                Err(e) => {
+                    attempts += 1;
+                    if attempts >= max_retries {
+                        return Err(e);
+                    }
+                    // Exponential backoff: 100ms, 200ms, 400ms, 800ms, etc.
+                    sleep(Duration::from_millis(100 * 2_u64.pow(attempts - 1)));
+                }
+            }
+        }
     }
 }
 

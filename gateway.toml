@@ -30,4 +30,4 @@ l1_delay_secs = 48                                                  # if gateway
 l1_safe_lag = 3
 anchor_batch_lag = 0
 # soft_block_url = "http://18.199.195.154:9998/preconfBlocks"
-soft_block_url = "http://0.0.0.0:9999/preconfBlocks"
+soft_block_url = "http://1.1.1.1:9999/preconfBlocks"

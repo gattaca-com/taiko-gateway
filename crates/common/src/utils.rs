@@ -38,7 +38,7 @@ pub fn timestamp_of_prev_slot_start_ms(slot: u64, genesis_time_sec: u64) -> u64 
     (genesis_time_sec + slot.saturating_sub(1) * 12) * 1_000
 }
 
-pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_on_error: bool) {
+pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_on_error: bool) -> bool {
     let header = &preconf_header;
     if header.hash != new_header.hash {
         let our_block = format!("ours: {}", serde_json::to_string_pretty(&header).unwrap(),);
@@ -52,9 +52,11 @@ pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_
             panic!("block verify mismatch\n{our_block}\n{chain_block}")
         } else {
             alert_discord(&format!("NOTE: block verify mismatch\n{our_block}\n{chain_block}",));
+            false
         }
     } else {
         info!(bn =? new_header.number, hash =? new_header.hash, "verified l2 block");
+        true
     }
 }
 

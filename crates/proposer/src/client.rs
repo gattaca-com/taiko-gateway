@@ -216,6 +216,7 @@ impl L1Client {
 mod tests {
     use std::str::FromStr;
 
+    use alloy_rpc_types::BlockTransactions;
     use alloy_signer_local::LocalSigner;
 
     use super::*;
@@ -253,5 +254,31 @@ mod tests {
                 .unwrap();
         let receipt = l1_client.provider().get_transaction_receipt(tx_hash).await.unwrap();
         println!("receipt: {:?}", receipt);
+
+
+        // go 20 blocks back from block 1280596 and search for a tx coming from the spammer address
+        for block_number in (1280596 - 20..1280635).rev() {
+            let block = l1_client.provider().get_block_by_number(BlockNumberOrTag::Number(block_number), BlockTransactionsKind::Full).await.unwrap();
+            match block {
+                Some(block) => {
+                    match block.transactions {
+                        BlockTransactions::Full(transactions) => {
+                            for tx in transactions {
+                                if tx.from == spammer_address {
+                                    println!("block number: {}", block_number);
+                                    println!("tx found: {:?}", tx);
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("block not found");
+                        }
+                    }
+                }
+                None => {
+                    println!("block not found");
+                }
+            }
+        }
     }
 }

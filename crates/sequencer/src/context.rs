@@ -12,6 +12,7 @@ use pc_common::{
 use tracing::debug;
 
 /// Sequencing state
+#[derive(Debug, Clone)]
 pub struct SequencerContext {
     pub l1_safe_lag: u64,
     pub l1_delayed: bool,
@@ -51,7 +52,7 @@ impl SequencerContext {
         self.last_l1_receive = Instant::now();
     }
 
-    pub fn new_l2_block(&mut self, new_header: &Header) {
+    pub fn new_l2_block(&mut self, new_header: &Header) -> bool {
         debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
 
         if new_header.number > self.parent.block_number {
@@ -66,7 +67,11 @@ impl SequencerContext {
         }
 
         if let Some(preconf_header) = self.to_verify.remove(&new_header.number) {
-            verify_and_log_block(&preconf_header, new_header, true);
+            // Return the verification result to allow the sequencer to handle failed verifications
+            verify_and_log_block(&preconf_header, new_header, false)
+        } else {
+            // No verification needed
+            true
         }
     }
 

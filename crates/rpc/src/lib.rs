@@ -95,7 +95,7 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<(
         }
     }
 
-    debug!(count, "fetched from txpool");
+    //debug!(count, "fetched from txpool");
 
     Ok(())
 }

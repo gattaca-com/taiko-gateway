@@ -6,7 +6,7 @@ use client::L1Client;
 use manager::ProposerManager;
 use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
-    proposer::{NewSealedBlock, ProposerContext},
+    proposer::{ProposerEvent, ProposerContext},
     runtime::spawn,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -18,7 +18,7 @@ pub async fn start_proposer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
     signer: PrivateKeySigner,
-    new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
+    new_blocks_rx: UnboundedReceiver<ProposerEvent>,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 
@@ -32,7 +32,6 @@ pub async fn start_proposer(
         config.l2.router_contract,
     )
     .await?;
-    let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);
 
     let l2_provider =
         ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
@@ -40,8 +39,18 @@ pub async fn start_proposer(
         .disable_recommended_fillers()
         .on_http(taiko_config.preconf_url.clone());
 
+    let proposer = ProposerManager::new(
+        proposer_config,
+        context,
+        includer,
+        new_blocks_rx,
+        l2_provider,
+        preconf_provider,
+        taiko_config,
+    );
+
     // start proposer
-    proposer.resync(l2_provider, preconf_provider, taiko_config).await?;
+    proposer.resync().await?;
     spawn(proposer.run());
 
     Ok(())

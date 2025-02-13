@@ -4,7 +4,7 @@ use crossbeam_channel::Receiver;
 use pc_common::{
     config::{SequencerConfig, StaticConfig, TaikoConfig},
     fetcher::BlockFetcher,
-    proposer::NewSealedBlock,
+    proposer::ProposerEvent,
     runtime::spawn,
     sequencer::Order,
 };
@@ -21,7 +21,7 @@ pub fn start_sequencer(
     taiko_config: TaikoConfig,
     rpc_rx: Receiver<Order>,
     mempool_rx: Receiver<Order>,
-    new_blocks_tx: UnboundedSender<NewSealedBlock>,
+    new_blocks_tx: UnboundedSender<ProposerEvent>,
 ) {
     let sequencer_config: SequencerConfig = config.into();
 
@@ -38,6 +38,7 @@ pub fn start_sequencer(
     let sequencer = Sequencer::new(
         sequencer_config,
         taiko_config,
+        config.l2.clone(),
         rpc_rx,
         mempool_rx,
         new_blocks_tx,

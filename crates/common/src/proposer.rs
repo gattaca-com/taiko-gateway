@@ -9,6 +9,7 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     static ref IS_PROPOSE_DELAYED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    static ref IS_RESYNCING: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
 
 pub fn set_propose_ok() {
@@ -21,10 +22,25 @@ pub fn is_propose_delayed() -> bool {
     IS_PROPOSE_DELAYED.load(Ordering::Relaxed)
 }
 
+pub fn set_resyncing() {
+    IS_RESYNCING.store(true, Ordering::Relaxed);
+}
+
+pub fn set_resync_complete() {
+    IS_RESYNCING.store(false, Ordering::Relaxed);
+}
+
+pub fn is_resyncing() -> bool {
+    IS_RESYNCING.load(Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone)]
-pub struct NewSealedBlock {
-    pub block: Arc<Block>,
-    pub anchor_block_id: u64,
+pub enum ProposerEvent {
+    SealedBlock {
+        block: Arc<Block>,
+        anchor_block_id: u64,
+    },
+    NeedsResync,
 }
 
 pub struct ProposerContext {

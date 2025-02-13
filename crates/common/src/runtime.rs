@@ -31,3 +31,10 @@ pub fn build_tokio_runtime() -> Handle {
         .handle()
         .clone()
 }
+
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    match RUNTIME.get() {
+        Some(runtime) => runtime.block_on(future),
+        None => panic!("runtime has not been initialised!"),
+    }
+}

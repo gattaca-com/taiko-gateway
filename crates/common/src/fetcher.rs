@@ -9,6 +9,8 @@ use tokio::time::sleep;
 use tracing::{error, info};
 use url::Url;
 
+use crate::runtime::spawn;
+
 /// Fetches new blocks from rpc
 // TODO: fix error flows
 pub struct BlockFetcher {
@@ -85,4 +87,35 @@ async fn subscribe_blocks(ws_url: Url, tx: Sender<Header>) -> eyre::Result<()> {
     }
 
     Ok(())
+}
+
+/// Fetches the latest block header from the given RPC URL
+/// e.g. used to refresh the anchor when resyncing
+pub async fn fetch_latest_n_blocks(rpc_url: Url, num_blocks: u64) -> eyre::Result<Vec<Header>> {
+    let provider = ProviderBuilder::new().on_http(rpc_url);
+
+    let latest_block = provider
+        .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
+        .await?
+        .ok_or_eyre("failed to fetch latest block")?;
+
+    let last_block_number = latest_block.header.number;
+
+    let mut blocks = Vec::new();
+    for i in (0..num_blocks).rev() {
+        let block = provider
+            .get_block_by_number(BlockNumberOrTag::Number(last_block_number - i), BlockTransactionsKind::Hashes)
+            .await?
+            .ok_or_eyre("failed to fetch latest block")?;
+
+        blocks.push(block.header);
+    }
+
+    Ok(blocks)
+}
+
+pub fn fetch_latest_n_blocks_sync(rpc_url: Url, num_blocks: u64) -> eyre::Result<Vec<Header>> {
+    // use async block to fetch latest block
+    let blocks = crate::runtime::block_on(fetch_latest_n_blocks(rpc_url, num_blocks));
+    blocks
 }
