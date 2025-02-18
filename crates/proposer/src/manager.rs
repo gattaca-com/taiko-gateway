@@ -81,31 +81,42 @@ impl ProposerManager {
         preconf_provider: AlloyProvider,
         taiko_config: TaikoConfig,
     ) -> eyre::Result<()> {
-        // let mut l1_head = self
-        //     .client
-        //     .provider()
-        //     .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
-        //     .await?;
         let mut l1_head = self.client.provider().get_block_number().await?;
-        let mut chain_head = l2_provider.get_block_number().await?;
-        let mut preconf_head = preconf_provider.get_block_number().await?;
+        let mut chain_head = l2_provider
+            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+            .await?
+            .ok_or_eyre("missing last block")?;
 
-        info!(chain_head, preconf_head, "checking resync");
+        let mut preconf_head = preconf_provider
+            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+            .await?
+            .ok_or_eyre("missing last block")?;
+
+        info!(chain_head = %chain_head.header.number, preconf_head = %preconf_head.header.number, "checking resync");
 
         if chain_head == preconf_head {
-            return Ok(());
-        } else if chain_head > preconf_head {
+            ensure!(
+                chain_head.header.hash == preconf_head.header.hash,
+                "chain and preconf mismatch for block number {}",
+                chain_head.header.number
+            );
+        } else if chain_head.header.number > preconf_head.header.number {
             bail!("chain is ahead of preconf, simulator is out of sync (this should not happen)");
         }
 
         let mut to_verify = HashMap::new();
         let mut has_reorged = false;
 
-        while chain_head < preconf_head {
+        while chain_head.header.number < preconf_head.header.number {
             // TODO: double check this
             // NOTE: if a block with a given anchor block id is not proposed in the correct batch,
             // it will be necessarily reorged
-            let blocks = fetch_n_blocks(&preconf_provider, chain_head + 1, preconf_head).await?;
+            let blocks = fetch_n_blocks(
+                &preconf_provider,
+                chain_head.header.number + 1,
+                preconf_head.header.number,
+            )
+            .await?;
 
             let mut to_propose: BTreeMap<u64, Vec<Arc<Block>>> = BTreeMap::new();
 
@@ -130,15 +141,17 @@ impl ProposerManager {
             }
 
             for (anchor_block_id, blocks) in to_propose {
-                let reorg_by_number = l1_head.saturating_sub(anchor_block_id) >=
-                    taiko_config.params.max_anchor_height_offset;
+                let reorg_by_number = l1_head.saturating_sub(anchor_block_id)
+                    >= taiko_config.params.max_anchor_height_offset;
                 let reorg_by_timestamp = false; // TODO: implement
 
                 if reorg_by_number || reorg_by_timestamp {
                     has_reorged = true;
 
-                    let msg =
-                        format!("re-orged blocks {}-{}", blocks[0].header.number, preconf_head);
+                    let msg = format!(
+                        "re-orged blocks {}-{}",
+                        blocks[0].header.number, preconf_head.header.number
+                    );
                     warn!("{msg}");
                     alert_discord(&msg);
 
@@ -152,8 +165,16 @@ impl ProposerManager {
             }
 
             l1_head = self.client.provider().get_block_number().await?;
-            chain_head = l2_provider.get_block_number().await?;
-            preconf_head = preconf_provider.get_block_number().await?;
+
+            chain_head = l2_provider
+                .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+                .await?
+                .ok_or_eyre("missing last block")?;
+
+            preconf_head = preconf_provider
+                .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+                .await?
+                .ok_or_eyre("missing last block")?;
         }
 
         if !has_reorged {

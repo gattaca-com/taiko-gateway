@@ -6,20 +6,17 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-pc-common.workspace = true
-
-tokio.workspace = true
-alloy-primitives.workspace = true
 alloy-consensus.workspace = true
-alloy-rpc-types.workspace = true
+alloy-primitives.workspace = true
 alloy-provider.workspace = true
 alloy-rlp.workspace = true
-
+alloy-rpc-types.workspace = true
+crossbeam-channel.workspace = true
+eyre.workspace = true
+jsonrpsee.workspace = true
+pc-common.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-reqwest.workspace = true
-jsonrpsee.workspace = true
-crossbeam-channel.workspace = true
+tokio.workspace = true
 tracing.workspace = true
-
-eyre.workspace = true

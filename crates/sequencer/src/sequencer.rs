@@ -228,8 +228,8 @@ impl Sequencer {
     }
 
     fn is_ready(&self) -> bool {
-        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag &&
-            self.ctx.parent.block_number > 0
+        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag
+            && self.ctx.parent.block_number > 0
     }
 
     fn maybe_refresh_anchor(&mut self) {
@@ -362,6 +362,8 @@ impl Sequencer {
 
     #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
     fn gossip_soft_block(&self, block: Arc<Block>, anchor_params: AnchorParams) {
+        debug!(block_hash = %block.header.hash, "gossiping soft block");
+
         let request = BuildPreconfBlockRequestBody::new(
             block,
             anchor_params,

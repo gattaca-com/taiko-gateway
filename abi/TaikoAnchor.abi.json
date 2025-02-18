@@ -8,6 +8,11 @@
         "internalType": "address"
       },
       {
+        "name": "_signalService",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "_pacayaForkHeight",
         "type": "uint64",
         "internalType": "uint64"
@@ -615,6 +620,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "signalService",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ISignalService"
       }
     ],
     "stateMutability": "view"

@@ -498,6 +498,19 @@
   },
   {
     "type": "function",
+    "name": "inboxWrapper",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "init",
     "inputs": [
       {
@@ -659,6 +672,16 @@
               },
               {
                 "name": "pacaya",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "shasta",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "unzen",
                 "type": "uint64",
                 "internalType": "uint64"
               }
@@ -922,6 +945,19 @@
   },
   {
     "type": "function",
+    "name": "signalService",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ISignalService"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "state",
     "inputs": [],
     "outputs": [
@@ -1042,6 +1078,19 @@
     ],
     "outputs": [],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "verifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1882,7 +1931,7 @@
   },
   {
     "type": "error",
-    "name": "NotInboxOperator",
+    "name": "NotInboxWrapper",
     "inputs": []
   },
   {

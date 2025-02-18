@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "bin"]
+members = ["bin", "crates/*"]
 resolver = "2"
 
 [workspace.package]
@@ -8,57 +8,46 @@ rust-version = "1.82.0"
 edition = "2021"
 
 [workspace.dependencies]
-pc-common = { path = "crates/common" }
-pc-rpc = { path = "crates/rpc" }
-pc-sequencer = { path = "crates/sequencer" }
-pc-proposer = { path = "crates/proposer" }
-
-alloy-primitives = { version = "0.8.19", features = ["k256", "getrandom"] }
+alloy-consensus = { version = "0.11.0", features = ["k256"] }
+alloy-contract = "0.11.0"
+alloy-eips = { version = "0.11.0", features = ["kzg"] }
+alloy-network = "0.11.0"
+alloy-primitives = { version = "0.8.19", features = ["getrandom", "k256"] }
+alloy-provider = { version = "0.11.0", features = ["ws"] }
+alloy-rlp = "0.3.9"
 alloy-rpc-types = { version = "0.11.0", features = ["beacon"] }
 alloy-rpc-types-txpool = "0.11.0"
-alloy-rlp = "0.3.9"
-alloy-network = "0.11.0"
-alloy-provider = { version = "0.11.0", features = ["ws"] }
+alloy-serde = "0.11.0"
 alloy-signer = "0.11.0"
 alloy-signer-local = "0.11.0"
-alloy-eips = { version = "0.11.0", features = ["kzg"] }
-alloy-consensus = { version = "0.11.0", features = ["k256"] }
-alloy-serde = "0.11.0"
-alloy-sol-types = "0.8.19"
 alloy-sol-macro = { version = "0.8.19", features = ["json"] }
-alloy-contract = "0.11.0"
+alloy-sol-types = "0.8.19"
 alloy-transport-http = "0.11.0"
-
-# Networking
-axum = { version = "0.8.1", features = ["tokio"] }
-jsonrpsee = { version = "0.24", features = ["full"] }
-reqwest = { version = "0.12.4", features = ["blocking", "json"] }
-url = { version = "2.5.0", features = ["serde"] }
-
-# Async / Threads
 async-trait = "0.1.80"
-tokio = { version = "1.38.0", features = ["full"] }
-crossbeam-channel = "0.5.11"
-
-# Serialization
-serde = { version = "1.0.203", features = ["derive", "rc"] }
-serde_json = "1.0.117"
-toml = "0.8.14"
-
-# Logging
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tracing-appender = "0.2.3"
-
-# Misc
-thiserror = "2.0.11"
-eyre = "0.6.12"
-lazy_static = "1.5.0"
+axum = { version = "0.8.1", features = ["tokio"] }
 backtrace = "0.3.74"
 c-kzg = { version = "1.0.3", default-features = false }
-prometheus = "0.13.4"
+crossbeam-channel = "0.5.11"
 ecdsa = "0.16.9"
+eyre = "0.6.12"
+jsonrpsee = { version = "0.24", features = ["full"] }
+lazy_static = "1.5.0"
 libflate = "2.1.0"
+pc-common = { path = "crates/common" }
+pc-proposer = { path = "crates/proposer" }
+pc-rpc = { path = "crates/rpc" }
+pc-sequencer = { path = "crates/sequencer" }
+prometheus = "0.13.4"
+reqwest = { version = "0.12.4", features = ["blocking", "json"] }
+serde = { version = "1.0.203", features = ["derive", "rc"] }
+serde_json = "1.0.117"
+thiserror = "2.0.11"
+tokio = { version = "1.38.0", features = ["full"] }
+toml = "0.8.14"
+tracing = "0.1.37"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+url = { version = "2.5.0", features = ["serde"] }
 
 [profile.release]
 panic = 'abort'

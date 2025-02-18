@@ -6,25 +6,16 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-pc-common.workspace = true
-eyre.workspace = true
-
-# Ethereum Types
-alloy-primitives.workspace = true
 alloy-consensus.workspace = true
+alloy-primitives.workspace = true
 alloy-provider.workspace = true
 alloy-rpc-types-txpool.workspace = true
-
-# Networking
-jsonrpsee.workspace = true
-reqwest.workspace = true
-
-
-# Async / Threads
 async-trait.workspace = true
 crossbeam-channel.workspace = true
-tokio.workspace = true
-
-# Logging
-tracing.workspace = true
+eyre.workspace = true
+jsonrpsee.workspace = true
+pc-common.workspace = true
+reqwest.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

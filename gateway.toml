@@ -9,13 +9,13 @@ ws_url = "ws://18.199.195.154:8546"
 [l2]
 name = "taiko"
 chain_id = 167010
-rpc_url = "http://18.199.195.154:18545"                           # non-preconf rpc
-ws_url = "ws://18.199.195.154:18546"                              # non-preconf ws
-taiko_token = "0x6866A70100DeF26aF56e4A7A5e78F6eF3Ed5e5c2"        # taikoTokenAddress
-l1_contract = "0x55FC9869E51885B6523D25d20A82A4bD9787998F"        # taikoInboxAddress
-l2_contract = "0x1670100000000000000000000000000000010001"        # taikoAnchorAddress
-router_contract = "0xcd1115B40120cCB7F233DC3B86c7D6Bb633c03d3"    # preconfRouterAddress
-whitelist_contract = "0x896A084Add909028DCd92754D4408Acdfd11cbbc" # preconfWhitelistAddress
+rpc_url = "http://18.199.195.154:18545"                             # non-preconf rpc
+ws_url = "ws://18.199.195.154:18546"                                # non-preconf ws
+taiko_token = "0x920565d143E239c2E6B86B0083A9D9A932E2D4b3"          # taikoTokenAddress
+l1_contract = "0xd32ff51351AAda02Af609F573Cbf9F14CbD01f54"          # taikoInboxAddress
+l2_contract = "0x1670100000000000000000000000000000010001"          # taikoAnchorAddress
+router_contract = "0x73f771188C5065ece0478739F89DdE67C88eD2d4"      # preconfRouterAddress
+whitelist_contract = "0xC442Ef9E98f9C5FE2124a0Cba44d8169E2Cd0471"   # preconfWhitelistAddress
 
 [gateway]
 rpc_port = 10001
@@ -29,5 +29,5 @@ force_reorgs = false
 l1_delay_secs = 48                                                  # if gateway doesnt receive a new L1 block for this amount of time, stop sequencing
 l1_safe_lag = 3
 anchor_batch_lag = 0
-# soft_block_url = "http://18.199.195.154:9998/preconfBlocks"
-soft_block_url = "http://0.0.0.0:9999/preconfBlocks"
+soft_block_url = "http://18.199.195.154:9998/preconfBlocks"
+# soft_block_url = "http://0.0.0.0:9999/preconfBlocks"

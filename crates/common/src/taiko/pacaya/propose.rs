@@ -70,15 +70,13 @@ pub fn propose_batch_calldata(
         },
     };
 
-    let encoded_params = batch_params.abi_encode();
+    let forced_tx_list = Bytes::new();
+    let encoded_params =
+        (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    PreconfRouter::proposePreconfedBlocksCall {
-        _0: Bytes::new(),
-        _batchParams: encoded_params.into(),
-        _batchTxList: compressed.into(),
-    }
-    .abi_encode()
-    .into()
+    PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed.into() }
+        .abi_encode()
+        .into()
 }
 
 /// Returns the calldata and blob sidecar for the proposeBatchCall
@@ -144,14 +142,14 @@ pub fn propose_batch_blobs(
         blocks,
     };
 
-    let encoded_params = batch_params.abi_encode();
-    let input = PreconfRouter::proposePreconfedBlocksCall {
-        _0: Bytes::new(),
-        _batchParams: encoded_params.into(),
-        _batchTxList: Bytes::new(),
-    }
-    .abi_encode()
-    .into();
+    let forced_tx_list = Bytes::new();
+    let encoded_params =
+        (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
+
+    let input =
+        PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
+            .abi_encode()
+            .into();
 
     (input, sidecar)
 }

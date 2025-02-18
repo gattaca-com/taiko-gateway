@@ -5,7 +5,10 @@ use alloy_primitives::{Address, PrimitiveSignature, B256};
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::core::Serialize;
-use pc_common::taiko::{AnchorParams, BaseFeeConfig, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS};
+use pc_common::taiko::{
+    pacaya::encode_and_compress_tx_list, AnchorParams, BaseFeeConfig, ANCHOR_GAS_LIMIT,
+    GOLDEN_TOUCH_ADDRESS,
+};
 
 #[derive(Debug, Default, Serialize, RlpEncodable)]
 #[serde(rename_all = "camelCase")]
@@ -56,8 +59,7 @@ impl BuildPreconfBlockRequestBody {
                     }
                 })
                 .collect();
-        // let compressed = encode_and_compress_tx_list(tx_list);
-        let compressed = alloy_rlp::encode(tx_list);
+        let compressed = encode_and_compress_tx_list(tx_list);
 
         let executable_data = ExecutableData {
             parent_hash: block.header.parent_hash,

@@ -3,7 +3,12 @@
         "type": "constructor",
         "inputs": [
             {
-                "name": "_resolver",
+                "name": "_proposeBlockEntrypoint",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_preconfWhitelist",
                 "type": "address",
                 "internalType": "address"
             }
@@ -104,25 +109,154 @@
     },
     {
         "type": "function",
-        "name": "proposePreconfedBlocks",
-        "inputs": [
+        "name": "preconfWhitelist",
+        "inputs": [],
+        "outputs": [
             {
                 "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "proposeBatch",
+        "inputs": [
+            {
+                "name": "_params",
                 "type": "bytes",
                 "internalType": "bytes"
             },
             {
-                "name": "_batchParams",
-                "type": "bytes",
-                "internalType": "bytes"
-            },
-            {
-                "name": "_batchTxList",
+                "name": "_txList",
                 "type": "bytes",
                 "internalType": "bytes"
             }
         ],
         "outputs": [
+            {
+                "name": "info_",
+                "type": "tuple",
+                "internalType": "struct ITaikoInbox.BatchInfo",
+                "components": [
+                    {
+                        "name": "txsHash",
+                        "type": "bytes32",
+                        "internalType": "bytes32"
+                    },
+                    {
+                        "name": "blocks",
+                        "type": "tuple[]",
+                        "internalType": "struct ITaikoInbox.BlockParams[]",
+                        "components": [
+                            {
+                                "name": "numTransactions",
+                                "type": "uint16",
+                                "internalType": "uint16"
+                            },
+                            {
+                                "name": "timeShift",
+                                "type": "uint8",
+                                "internalType": "uint8"
+                            },
+                            {
+                                "name": "signalSlots",
+                                "type": "bytes32[]",
+                                "internalType": "bytes32[]"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "blobHashes",
+                        "type": "bytes32[]",
+                        "internalType": "bytes32[]"
+                    },
+                    {
+                        "name": "extraData",
+                        "type": "bytes32",
+                        "internalType": "bytes32"
+                    },
+                    {
+                        "name": "coinbase",
+                        "type": "address",
+                        "internalType": "address"
+                    },
+                    {
+                        "name": "proposedIn",
+                        "type": "uint64",
+                        "internalType": "uint64"
+                    },
+                    {
+                        "name": "blobByteOffset",
+                        "type": "uint32",
+                        "internalType": "uint32"
+                    },
+                    {
+                        "name": "blobByteSize",
+                        "type": "uint32",
+                        "internalType": "uint32"
+                    },
+                    {
+                        "name": "gasLimit",
+                        "type": "uint32",
+                        "internalType": "uint32"
+                    },
+                    {
+                        "name": "lastBlockId",
+                        "type": "uint64",
+                        "internalType": "uint64"
+                    },
+                    {
+                        "name": "lastBlockTimestamp",
+                        "type": "uint64",
+                        "internalType": "uint64"
+                    },
+                    {
+                        "name": "anchorBlockId",
+                        "type": "uint64",
+                        "internalType": "uint64"
+                    },
+                    {
+                        "name": "anchorBlockHash",
+                        "type": "bytes32",
+                        "internalType": "bytes32"
+                    },
+                    {
+                        "name": "baseFeeConfig",
+                        "type": "tuple",
+                        "internalType": "struct LibSharedData.BaseFeeConfig",
+                        "components": [
+                            {
+                                "name": "adjustmentQuotient",
+                                "type": "uint8",
+                                "internalType": "uint8"
+                            },
+                            {
+                                "name": "sharingPctg",
+                                "type": "uint8",
+                                "internalType": "uint8"
+                            },
+                            {
+                                "name": "gasIssuancePerSecond",
+                                "type": "uint32",
+                                "internalType": "uint32"
+                            },
+                            {
+                                "name": "minGasExcess",
+                                "type": "uint64",
+                                "internalType": "uint64"
+                            },
+                            {
+                                "name": "maxGasIssuancePerBlock",
+                                "type": "uint32",
+                                "internalType": "uint32"
+                            }
+                        ]
+                    }
+                ]
+            },
             {
                 "name": "meta_",
                 "type": "tuple",
@@ -152,6 +286,19 @@
             }
         ],
         "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "proposeBlockEntrypoint",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -367,6 +514,11 @@
     {
         "type": "error",
         "name": "FUNC_NOT_IMPLEMENTED",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "ForcedInclusionNotSupported",
         "inputs": []
     },
     {
