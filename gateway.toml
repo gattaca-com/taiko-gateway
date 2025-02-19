@@ -11,16 +11,16 @@ name = "taiko"
 chain_id = 167010
 rpc_url = "http://18.199.195.154:18545"                             # non-preconf rpc
 ws_url = "ws://18.199.195.154:18546"                                # non-preconf ws
-taiko_token = "0x920565d143E239c2E6B86B0083A9D9A932E2D4b3"          # taikoTokenAddress
-l1_contract = "0xd32ff51351AAda02Af609F573Cbf9F14CbD01f54"          # taikoInboxAddress
+taiko_token = "0xaDf33C22d0fB31bEA7861528A358C9cfD0E7AF98"          # taikoTokenAddress
+l1_contract = "0xD1D5e6A666b7a41a775645fbFaB01bD2b4B29061"          # taikoInboxAddress
 l2_contract = "0x1670100000000000000000000000000000010001"          # taikoAnchorAddress
-router_contract = "0x73f771188C5065ece0478739F89DdE67C88eD2d4"      # preconfRouterAddress
-whitelist_contract = "0xC442Ef9E98f9C5FE2124a0Cba44d8169E2Cd0471"   # preconfWhitelistAddress
+router_contract = "0xFE28357BD8fFCD5f67b0E1276283Fc115941D0cF"      # preconfRouterAddress
+whitelist_contract = "0x0045F84Ebed47f99552C8fEfFf8179A335b3473a"   # preconfWhitelistAddress
 
 [gateway]
 rpc_port = 10001
 simulator_url = "http://0.0.0.0:8545"
-propose_frequency_secs = 1
+propose_frequency_secs = 30
 l2_target_block_time_ms = 2_000
 coinbase = "0xB851706411c088A2c43e6AfCb2794be5dd2f2A51"
 dry_run = false

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use alloy_consensus::TxEnvelope;
-use alloy_primitives::{Address, PrimitiveSignature, B256};
+use alloy_primitives::{Address, Bytes, PrimitiveSignature, B256};
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::core::Serialize;
 use pc_common::taiko::{
     pacaya::encode_and_compress_tx_list, AnchorParams, BaseFeeConfig, ANCHOR_GAS_LIMIT,
-    GOLDEN_TOUCH_ADDRESS,
 };
+use tracing::debug;
 
 #[derive(Debug, Default, Serialize, RlpEncodable)]
 #[serde(rename_all = "camelCase")]
@@ -18,7 +18,7 @@ pub struct ExecutableData {
     block_number: u64,
     gas_limit: u64,
     timestamp: u64,
-    transactions: Vec<u8>,
+    transactions: Bytes,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,18 +47,21 @@ impl BuildPreconfBlockRequestBody {
         base_fee_config: BaseFeeConfig,
     ) -> Self {
         // filter out anchor tx
-        let tx_list: Vec<TxEnvelope> =
-            block
-                .transactions
-                .txns()
-                .filter_map(|tx| {
-                    if tx.from == GOLDEN_TOUCH_ADDRESS {
-                        None
-                    } else {
-                        Some(tx.inner.clone())
-                    }
-                })
-                .collect();
+        let tx_list: Vec<TxEnvelope> = block
+            .transactions
+            .txns()
+            .map(|tx| tx.inner.clone())
+            // .filter_map(|tx| {
+            //     if tx.from == GOLDEN_TOUCH_ADDRESS {
+            //         None
+            //     } else {
+            //         Some(tx.inner.clone())
+            //     }
+            // })
+            .collect();
+
+        debug!(n_txs = tx_list.len(), "creating soft block");
+
         let compressed = encode_and_compress_tx_list(tx_list);
 
         let executable_data = ExecutableData {
@@ -67,7 +70,7 @@ impl BuildPreconfBlockRequestBody {
             block_number: block.header.number,
             gas_limit: block.header.gas_limit - ANCHOR_GAS_LIMIT,
             timestamp: block.header.timestamp,
-            transactions: compressed,
+            transactions: compressed.into(),
         };
 
         BuildPreconfBlockRequestBody {
