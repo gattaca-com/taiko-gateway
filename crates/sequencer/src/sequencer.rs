@@ -9,6 +9,7 @@ use std::{
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
 use alloy_rpc_types::{Block, Header};
+use alloy_signer_local::PrivateKeySigner;
 use crossbeam_channel::Receiver;
 use eyre::bail;
 use pc_common::{
@@ -45,6 +46,7 @@ pub struct Sequencer {
     l1_blocks_rx: Receiver<Header>,
     // Receiver of L2 non preconf blocks
     l2_blocks_rx: Receiver<Header>,
+    signer: PrivateKeySigner,
 }
 
 impl Sequencer {
@@ -56,6 +58,7 @@ impl Sequencer {
         new_blocks_tx: UnboundedSender<NewSealedBlock>,
         l1_blocks_rx: Receiver<Header>,
         l2_blocks_rx: Receiver<Header>,
+        signer: PrivateKeySigner,
     ) -> Self {
         let chain_config = taiko_config.params;
         let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config);
@@ -74,6 +77,7 @@ impl Sequencer {
             new_blocks_tx,
             l1_blocks_rx,
             l2_blocks_rx,
+            signer,
         }
     }
 
@@ -363,14 +367,17 @@ impl Sequencer {
     #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
     fn gossip_soft_block(&self, block: Arc<Block>) {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
-
-        let request = BuildPreconfBlockRequestBody::new(
-            block,
-        );
+        let signer = self.signer.clone();
 
         let url = self.config.soft_block_url.clone();
+
         spawn(
             async move {
+                let request = BuildPreconfBlockRequestBody::new(
+                    block,
+                    signer,
+                ).await.unwrap();
+                
                 let raw = serde_json::to_string(&request).unwrap();
                 match Client::new().post(url).json(&request).send().await {
                     Ok(res) => {

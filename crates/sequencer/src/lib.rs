@@ -15,6 +15,7 @@ mod sequencer;
 mod simulator;
 mod soft_block;
 mod txpool;
+use alloy_signer_local::PrivateKeySigner;
 
 pub fn start_sequencer(
     config: &StaticConfig,
@@ -22,6 +23,7 @@ pub fn start_sequencer(
     rpc_rx: Receiver<Order>,
     mempool_rx: Receiver<Order>,
     new_blocks_tx: UnboundedSender<NewSealedBlock>,
+    signer: PrivateKeySigner,
 ) {
     let sequencer_config: SequencerConfig = config.into();
 
@@ -43,6 +45,7 @@ pub fn start_sequencer(
         new_blocks_tx,
         l1_blocks_rx,
         l2_blocks_rx,
+        signer,
     );
 
     std::thread::Builder::new()
