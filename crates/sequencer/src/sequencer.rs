@@ -347,7 +347,7 @@ impl Sequencer {
         self.txpool.clear_mined(txs);
 
         self.ctx.new_preconf_l2_block(&block.header);
-        self.gossip_soft_block(block.clone(), anchor_params);
+        self.gossip_soft_block(block.clone());
 
         self.send_block_to_proposer(block, anchor_params.block_id);
 
@@ -361,13 +361,11 @@ impl Sequencer {
     }
 
     #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
-    fn gossip_soft_block(&self, block: Arc<Block>, anchor_params: AnchorParams) {
+    fn gossip_soft_block(&self, block: Arc<Block>) {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
 
         let request = BuildPreconfBlockRequestBody::new(
             block,
-            anchor_params,
-            self.chain_config.base_fee_config,
         );
 
         let url = self.config.soft_block_url.clone();
