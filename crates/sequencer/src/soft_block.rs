@@ -19,8 +19,8 @@ pub struct ExecutableData {
     gas_limit: u64,
     timestamp: u64,
     transactions: Bytes,
-    base_fee_per_gas: u64,
     extra_data: Bytes,
+    base_fee_per_gas: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,7 +74,6 @@ impl BuildPreconfBlockRequestBody {
 
         // Modify the last byte (v value) to match Go's expected format
         signature_bytes[64] = signature_bytes[64].saturating_sub(27);
-
 
         Ok(BuildPreconfBlockRequestBody {
             executable_data,
