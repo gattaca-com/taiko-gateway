@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use alloy_consensus::TxEnvelope;
-use alloy_primitives::{Address, Bytes, B256, keccak256};
+use alloy_primitives::{keccak256, Address, Bytes, B256};
 use alloy_rlp::{encode, RlpEncodable};
-use alloy_signer_local::PrivateKeySigner;
-use alloy_signer::Signer;
 use alloy_rpc_types::{Block, Header};
+use alloy_signer::Signer;
+use alloy_signer_local::PrivateKeySigner;
 use jsonrpsee::core::Serialize;
 use pc_common::taiko::pacaya::encode_and_compress_tx_list;
 use tracing::debug;
@@ -38,16 +38,10 @@ pub struct BuildPreconfBlockResponseBody {
 
 // FIXME
 impl BuildPreconfBlockRequestBody {
-    pub async fn new(
-        block: Arc<Block>,
-        signer: PrivateKeySigner,
-    ) -> eyre::Result<Self> {
+    pub async fn new(block: Arc<Block>, signer: PrivateKeySigner) -> eyre::Result<Self> {
         // filter out anchor tx
-        let tx_list: Vec<TxEnvelope> = block
-            .transactions
-            .txns()
-            .map(|tx| tx.inner.clone())
-            .collect();
+        let tx_list: Vec<TxEnvelope> =
+            block.transactions.txns().map(|tx| tx.inner.clone()).collect();
 
         debug!(n_txs = tx_list.len(), "creating soft block");
 
@@ -77,7 +71,7 @@ impl BuildPreconfBlockRequestBody {
 
         Ok(BuildPreconfBlockRequestBody {
             executable_data,
-            signature: alloy_primitives::hex::encode_prefixed(&signature_bytes),
+            signature: alloy_primitives::hex::encode_prefixed(signature_bytes),
         })
     }
 }

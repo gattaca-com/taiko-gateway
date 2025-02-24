@@ -91,11 +91,10 @@ pub fn load_env_vars() -> EnvConfig {
         .parse()
         .expect("invalid proposer private key");
 
-
     let sequencer_signer_key = std::env::var("SEQUENCER_SIGNER_KEY")
-    .expect("SEQUENCER_SIGNER_KEY must be set")
-    .parse()
-    .expect("invalid sequencer private key");
+        .expect("SEQUENCER_SIGNER_KEY must be set")
+        .parse()
+        .expect("invalid sequencer private key");
 
     EnvConfig { proposer_signer_key, sequencer_signer_key }
 }

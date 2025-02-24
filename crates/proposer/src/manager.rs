@@ -141,8 +141,8 @@ impl ProposerManager {
             }
 
             for (anchor_block_id, blocks) in to_propose {
-                let reorg_by_number = l1_head.saturating_sub(anchor_block_id)
-                    >= taiko_config.params.max_anchor_height_offset;
+                let reorg_by_number = l1_head.saturating_sub(anchor_block_id) >=
+                    taiko_config.params.max_anchor_height_offset;
                 let reorg_by_timestamp = false; // TODO: implement
 
                 if reorg_by_number || reorg_by_timestamp {

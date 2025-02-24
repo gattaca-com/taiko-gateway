@@ -50,6 +50,7 @@ pub struct Sequencer {
 }
 
 impl Sequencer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
@@ -232,8 +233,8 @@ impl Sequencer {
     }
 
     fn is_ready(&self) -> bool {
-        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag
-            && self.ctx.parent.block_number > 0
+        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag &&
+            self.ctx.parent.block_number > 0
     }
 
     fn maybe_refresh_anchor(&mut self) {
@@ -373,11 +374,8 @@ impl Sequencer {
 
         spawn(
             async move {
-                let request = BuildPreconfBlockRequestBody::new(
-                    block,
-                    signer,
-                ).await.unwrap();
-                
+                let request = BuildPreconfBlockRequestBody::new(block, signer).await.unwrap();
+
                 let raw = serde_json::to_string(&request).unwrap();
                 match Client::new().post(url).json(&request).send().await {
                     Ok(res) => {
