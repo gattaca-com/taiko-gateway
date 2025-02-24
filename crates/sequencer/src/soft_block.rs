@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use alloy_consensus::TxEnvelope;
-use alloy_primitives::{Address, Bytes, PrimitiveSignature, B256};
-use alloy_rlp::RlpEncodable;
+use alloy_primitives::{Address, Bytes, B256, keccak256};
+use alloy_rlp::{encode, RlpEncodable};
+use alloy_signer_local::PrivateKeySigner;
+use alloy_signer::Signer;
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::core::Serialize;
 use pc_common::taiko::pacaya::encode_and_compress_tx_list;
@@ -17,8 +19,8 @@ pub struct ExecutableData {
     gas_limit: u64,
     timestamp: u64,
     transactions: Bytes,
-    base_fee_per_gas: u64,
     extra_data: Bytes,
+    base_fee_per_gas: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,21 +38,15 @@ pub struct BuildPreconfBlockResponseBody {
 
 // FIXME
 impl BuildPreconfBlockRequestBody {
-    pub fn new(
+    pub async fn new(
         block: Arc<Block>,
-    ) -> Self {
+        signer: PrivateKeySigner,
+    ) -> eyre::Result<Self> {
         // filter out anchor tx
         let tx_list: Vec<TxEnvelope> = block
             .transactions
             .txns()
             .map(|tx| tx.inner.clone())
-            // .filter_map(|tx| {
-            //     if tx.from == GOLDEN_TOUCH_ADDRESS {
-            //         None
-            //     } else {
-            //         Some(tx.inner.clone())
-            //     }
-            // })
             .collect();
 
         debug!(n_txs = tx_list.len(), "creating soft block");
@@ -68,12 +64,21 @@ impl BuildPreconfBlockRequestBody {
             base_fee_per_gas: block.header.base_fee_per_gas.unwrap(),
         };
 
-        BuildPreconfBlockRequestBody {
+        let rlp_encoded = encode(&executable_data);
+
+        let hash = keccak256(&rlp_encoded);
+
+        let signature = signer.sign_hash(&hash).await.unwrap();
+
+        let mut signature_bytes = signature.as_bytes();
+
+        // Modify the last byte (v value) to match Go's expected format
+        signature_bytes[64] = signature_bytes[64].saturating_sub(27);
+
+        Ok(BuildPreconfBlockRequestBody {
             executable_data,
-            signature: alloy_primitives::hex::encode_prefixed(
-                PrimitiveSignature::test_signature().as_bytes(),
-            ),
-        }
+            signature: alloy_primitives::hex::encode_prefixed(&signature_bytes),
+        })
     }
 }
 

@@ -2674,6 +2674,8 @@ dependencies = [
  "alloy-provider",
  "alloy-rlp",
  "alloy-rpc-types",
+ "alloy-signer",
+ "alloy-signer-local",
  "crossbeam-channel",
  "eyre",
  "jsonrpsee",

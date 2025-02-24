@@ -81,15 +81,23 @@ pub fn load_static_config() -> StaticConfig {
 pub struct EnvConfig {
     /// Private key to send L1 transactions
     pub proposer_signer_key: PrivateKeySigner,
+    /// Private key to sequence and sign executable data for soft block API
+    pub sequencer_signer_key: PrivateKeySigner,
 }
 
 pub fn load_env_vars() -> EnvConfig {
     let proposer_signer_key = std::env::var("PROPOSER_SIGNER_KEY")
         .expect("PROPOSER_SIGNER_KEY must be set")
         .parse()
-        .expect("invalid private key");
+        .expect("invalid proposer private key");
 
-    EnvConfig { proposer_signer_key }
+
+    let sequencer_signer_key = std::env::var("SEQUENCER_SIGNER_KEY")
+    .expect("SEQUENCER_SIGNER_KEY must be set")
+    .parse()
+    .expect("invalid sequencer private key");
+
+    EnvConfig { proposer_signer_key, sequencer_signer_key }
 }
 
 pub struct RpcConfig {
