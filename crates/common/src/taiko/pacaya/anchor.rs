@@ -52,7 +52,7 @@ pub fn assemble_anchor_v3(
     .abi_encode();
 
     let tx = TxEip1559 {
-        chain_id: config.chain_id,
+        chain_id: config.params.chain_id,
         nonce: parent.block_number, // one anchor tx per L2 block -> block number = nonce
         gas_limit: ANCHOR_GAS_LIMIT,
         max_fee_per_gas: l2_base_fee,
@@ -85,7 +85,9 @@ mod tests {
             pacaya::{
                 l1::TaikoL1::{proposeBatchCall, TaikoL1Errors},
                 l2::TaikoL2::{self, TaikoL2Errors},
-                preconf::PreconfRouter::PreconfRouterErrors,
+                preconf::{
+                    PreconfRouter::PreconfRouterErrors, PreconfWhitelist::PreconfWhitelistErrors,
+                },
                 BatchParams,
             },
             GOLDEN_TOUCH_ADDRESS,
@@ -186,7 +188,6 @@ mod tests {
             preconf_url: "http://abc.xyz".parse().unwrap(),
             config: L2ChainConfig {
                 name: "".to_string(),
-                chain_id: 167010,
                 rpc_url: "http://abc.xyz".parse().unwrap(),
                 ws_url: "http://abc.xyz".parse().unwrap(),
                 taiko_token: Address::ZERO,
@@ -294,7 +295,7 @@ mod tests {
         let bytes = hex!("d719258d");
 
         let err = TaikoL2Errors::abi_decode(&bytes, true).unwrap();
-        print!("{:?}", err);
+        println!("{:?}", err);
     }
 
     #[ignore]
@@ -303,15 +304,24 @@ mod tests {
         let bytes = hex!("1999aed2");
 
         let err = TaikoL1Errors::abi_decode(&bytes, true).unwrap();
-        print!("{:?}", err);
+        println!("{:?}", err);
+    }
+
+    #[ignore]
+    #[test]
+    fn test_decode_router_error() {
+        let bytes = hex!("1999aed2");
+
+        let err = PreconfRouterErrors::abi_decode(&bytes, true).unwrap();
+        println!("{:?}", err);
     }
 
     #[ignore]
     #[test]
     fn test_decode_whitelist_error() {
-        let bytes = hex!("1999aed2");
+        let bytes = hex!("83738f36");
 
-        let err = PreconfRouterErrors::abi_decode(&bytes, true).unwrap();
-        print!("{:?}", err);
+        let err = PreconfWhitelistErrors::abi_decode(&bytes, true).unwrap();
+        println!("{:?}", err);
     }
 }

@@ -7,25 +7,27 @@ use pc_common::{
     proposer::NewSealedBlock,
     runtime::spawn,
     sequencer::Order,
+    taiko::lookahead::LookaheadHandle,
 };
-use sequencer::Sequencer;
+use sequencer::{Sequencer, SequencerSpine};
 use tokio::sync::mpsc::UnboundedSender;
 mod context;
 mod sequencer;
 mod simulator;
 mod soft_block;
-mod txpool;
+mod tx_pool;
 use alloy_signer_local::PrivateKeySigner;
 
 pub fn start_sequencer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
+    lookahead: LookaheadHandle,
     rpc_rx: Receiver<Order>,
     mempool_rx: Receiver<Order>,
     new_blocks_tx: UnboundedSender<NewSealedBlock>,
-    signer: PrivateKeySigner,
+    coinbase_signer: PrivateKeySigner,
 ) {
-    let sequencer_config: SequencerConfig = config.into();
+    let sequencer_config: SequencerConfig = (config, coinbase_signer.address()).into();
 
     let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l1.rpc_url.clone();
@@ -37,15 +39,15 @@ pub fn start_sequencer(
     let ws_url = config.l2.ws_url.clone();
     spawn(BlockFetcher::new(rpc_url, ws_url, l2_blocks_tx).run("l2", 1));
 
+    let spine = SequencerSpine { rpc_rx, new_blocks_tx, l1_blocks_rx, l2_blocks_rx };
+
     let sequencer = Sequencer::new(
         sequencer_config,
         taiko_config,
-        rpc_rx,
         mempool_rx,
-        new_blocks_tx,
-        l1_blocks_rx,
-        l2_blocks_rx,
-        signer,
+        spine,
+        lookahead,
+        coinbase_signer,
     );
 
     std::thread::Builder::new()

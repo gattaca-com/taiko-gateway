@@ -1,9 +1,10 @@
 use pc_common::{
+    beacon::init_beacon,
     config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
     erc20::check_and_approve_balance,
     metrics::start_metrics_server,
     runtime::init_runtime,
-    taiko::get_and_validate_config,
+    taiko::{get_and_validate_config, lookahead::start_looahead_loop},
     utils::{initialize_panic_hook, initialize_tracing_log},
 };
 use pc_proposer::start_proposer;
@@ -37,6 +38,16 @@ async fn main() {
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
 
+    let beacon_handle = init_beacon(config.l1.beacon_url.clone()).await?;
+
+    let lookahead = start_looahead_loop(
+        config.l1.rpc_url.clone(),
+        config.l2.whitelist_contract,
+        beacon_handle,
+        config.gateway.lookahead,
+    )
+    .await?;
+
     check_and_approve_balance(
         config.l2.taiko_token,
         config.l2.l1_contract,
@@ -56,7 +67,14 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     let taiko_config = TaikoConfig::new(&config, chain_config);
 
     let (new_blocks_tx, new_blocks_rx) = mpsc::unbounded_channel();
-    start_proposer(&config, taiko_config.clone(), envs.proposer_signer_key, new_blocks_rx).await?;
+    start_proposer(
+        &config,
+        taiko_config.clone(),
+        envs.proposer_signer_key.clone(),
+        envs.sequencer_signer_key.address(),
+        new_blocks_rx,
+    )
+    .await?;
 
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
@@ -64,6 +82,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     start_sequencer(
         &config,
         taiko_config,
+        lookahead,
         rpc_rx,
         mempool_rx,
         new_blocks_tx,

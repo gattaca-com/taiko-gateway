@@ -1,4 +1,5 @@
 pub mod api;
+pub mod beacon;
 pub mod config;
 pub mod erc20;
 pub mod fetcher;

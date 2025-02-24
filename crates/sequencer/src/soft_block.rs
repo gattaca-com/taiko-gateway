@@ -36,10 +36,8 @@ pub struct BuildPreconfBlockResponseBody {
     block_header: Header,
 }
 
-// FIXME
 impl BuildPreconfBlockRequestBody {
     pub async fn new(block: Arc<Block>, signer: PrivateKeySigner) -> eyre::Result<Self> {
-        // filter out anchor tx
         let tx_list: Vec<TxEnvelope> =
             block.transactions.txns().map(|tx| tx.inner.clone()).collect();
 

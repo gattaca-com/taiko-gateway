@@ -1,5 +1,6 @@
 //! Handles creating and landing L1 blockPropose transactions.
 
+use alloy_primitives::Address;
 use alloy_provider::ProviderBuilder;
 use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
@@ -17,17 +18,19 @@ mod manager;
 pub async fn start_proposer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
-    signer: PrivateKeySigner,
+    proposer_signer: PrivateKeySigner,
+    coinbase_address: Address,
     new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 
-    let context = ProposerContext { proposer: signer.address(), coinbase: config.gateway.coinbase };
+    let context =
+        ProposerContext { proposer: proposer_signer.address(), coinbase: coinbase_address };
 
     let includer = L1Client::new(
         config.l1.rpc_url.clone(),
         taiko_config.l1_contract,
-        signer,
+        proposer_signer,
         proposer_config.l1_safe_lag,
         config.l2.router_contract,
     )

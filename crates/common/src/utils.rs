@@ -152,3 +152,23 @@ fn get_crate_filter(crates_level: tracing::Level) -> EnvFilter {
 
     env_filter
 }
+
+// serde
+pub mod quoted_u64 {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(x: &u64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&x.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse::<u64>().map_err(serde::de::Error::custom)
+    }
+}

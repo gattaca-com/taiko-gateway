@@ -17,7 +17,9 @@ use pc_common::{
     proposer::{is_propose_delayed, NewSealedBlock},
     runtime::spawn,
     sequencer::{ExecutionResult, Order, StateId},
-    taiko::{get_difficulty, get_extra_data, AnchorParams, ANCHOR_GAS_LIMIT},
+    taiko::{
+        get_difficulty, get_extra_data, lookahead::LookaheadHandle, AnchorParams, ANCHOR_GAS_LIMIT,
+    },
     types::BlockEnv,
 };
 use reqwest::Client;
@@ -28,37 +30,39 @@ use crate::{
     context::{SequencerContext, SequencerState},
     simulator::SimulatorClient,
     soft_block::BuildPreconfBlockRequestBody,
-    txpool::TxPool,
+    tx_pool::TxPool,
 };
+
+pub struct SequencerSpine {
+    /// Receive txs and bundles from RPC
+    pub rpc_rx: Receiver<Order>,
+    /// Send blocks to proposer for inclusion
+    pub new_blocks_tx: UnboundedSender<NewSealedBlock>,
+    // Receiver of L1 blocks
+    pub l1_blocks_rx: Receiver<Header>,
+    // Receiver of L2 non preconf blocks
+    pub l2_blocks_rx: Receiver<Header>,
+}
 
 pub struct Sequencer {
     config: SequencerConfig,
     chain_config: TaikoChainParams,
     ctx: SequencerContext,
     simulator: SimulatorClient,
-    /// Receive txs and bundles from RPC
-    rpc_rx: Receiver<Order>,
-    /// Mempool transactions
-    txpool: TxPool,
-    /// Send blocks to proposer for inclusion
-    new_blocks_tx: UnboundedSender<NewSealedBlock>,
-    // Receiver of L1 blocks
-    l1_blocks_rx: Receiver<Header>,
-    // Receiver of L2 non preconf blocks
-    l2_blocks_rx: Receiver<Header>,
+    tx_pool: TxPool,
+    spine: SequencerSpine,
+    lookahead: LookaheadHandle,
     signer: PrivateKeySigner,
+    can_sequence_lookahead: bool,
 }
 
 impl Sequencer {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
-        rpc_rx: Receiver<Order>,
         mempool_rx: Receiver<Order>,
-        new_blocks_tx: UnboundedSender<NewSealedBlock>,
-        l1_blocks_rx: Receiver<Header>,
-        l2_blocks_rx: Receiver<Header>,
+        spine: SequencerSpine,
+        lookahead: LookaheadHandle,
         signer: PrivateKeySigner,
     ) -> Self {
         let chain_config = taiko_config.params;
@@ -66,19 +70,18 @@ impl Sequencer {
 
         // this doesn't handle well the restarts if we had pending orders in the rpc
         let ctx = SequencerContext::new(config.l1_safe_lag);
-        let txpool = TxPool::new(mempool_rx);
+        let tx_pool = TxPool::new(mempool_rx);
 
         Self {
             config,
             chain_config,
             ctx,
             simulator,
-            rpc_rx,
-            txpool,
-            new_blocks_tx,
-            l1_blocks_rx,
-            l2_blocks_rx,
+            tx_pool,
+            spine,
+            lookahead,
             signer,
+            can_sequence_lookahead: false,
         }
     }
 
@@ -96,7 +99,7 @@ impl Sequencer {
         loop {
             // fetch new data
             self.recv_blocks();
-            self.txpool.fetch();
+            self.tx_pool.fetch();
             self.maybe_refresh_anchor();
 
             // state transition
@@ -214,20 +217,30 @@ impl Sequencer {
             self.ctx.l1_delayed = false;
         }
 
-        !self.ctx.l1_delayed
+        if self.lookahead.can_sequence(self.signer.address()) {
+            if !self.can_sequence_lookahead {
+                warn!("can now sequence based on lookahead");
+                self.can_sequence_lookahead = true;
+            }
+        } else if self.can_sequence_lookahead {
+            warn!("can no longer sequence based on lookahead");
+            self.can_sequence_lookahead = false;
+        }
+
+        !self.ctx.l1_delayed && self.can_sequence_lookahead
     }
 
     // TODO: if sim fails, rpc orders are lost
     fn next_order(&mut self) -> Option<Order> {
-        self.rpc_rx.try_recv().ok().or(self.txpool.next_sequence())
+        self.spine.rpc_rx.try_recv().ok().or(self.tx_pool.next_sequence())
     }
 
     fn recv_blocks(&mut self) {
-        if let Ok(new_header) = self.l1_blocks_rx.try_recv() {
+        if let Ok(new_header) = self.spine.l1_blocks_rx.try_recv() {
             self.ctx.new_l1_block(new_header);
         }
 
-        if let Ok(new_header) = self.l2_blocks_rx.try_recv() {
+        if let Ok(new_header) = self.spine.l2_blocks_rx.try_recv() {
             self.ctx.new_l2_block(&new_header);
         }
     }
@@ -349,7 +362,7 @@ impl Sequencer {
         );
 
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
-        self.txpool.clear_mined(txs);
+        self.tx_pool.clear_mined(txs);
 
         self.ctx.new_preconf_l2_block(&block.header);
         self.gossip_soft_block(block.clone());
@@ -360,7 +373,7 @@ impl Sequencer {
     }
 
     fn send_block_to_proposer(&self, block: Arc<Block>, anchor_block_id: u64) {
-        if let Err(err) = self.new_blocks_tx.send(NewSealedBlock { block, anchor_block_id }) {
+        if let Err(err) = self.spine.new_blocks_tx.send(NewSealedBlock { block, anchor_block_id }) {
             error!(%err, "failed sequencer->proposer");
         };
     }

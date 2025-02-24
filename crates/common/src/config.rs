@@ -19,15 +19,14 @@ pub struct StaticConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct L1ChainConfig {
     pub name: String,
-    pub chain_id: u64,
     pub rpc_url: Url,
     pub ws_url: Url,
+    pub beacon_url: Url,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct L2ChainConfig {
     pub name: String,
-    pub chain_id: u64,
     /// non-preconf RPC
     pub rpc_url: Url,
     /// non-preconf WS
@@ -45,10 +44,8 @@ pub struct GatewayConfig {
     pub simulator_url: Url,
     pub propose_frequency_secs: u64,
     pub l2_target_block_time_ms: u64,
-    pub coinbase: Address,
     pub dry_run: bool,
     pub use_blobs: bool,
-    pub force_reorgs: bool,
     /// If we dont receive a new L1 block for this amount of time, stop sequencing
     pub l1_delay_secs: u64,
     /// Wait until this many blocks have passed to check that the L1 propose tx hasnt reorged out
@@ -61,6 +58,7 @@ pub struct GatewayConfig {
     pub anchor_batch_lag: u64,
     /// Url to post soft blocks to
     pub soft_block_url: Url,
+    pub lookahead: LookaheadConfig,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -99,6 +97,15 @@ pub fn load_env_vars() -> EnvConfig {
     EnvConfig { proposer_signer_key, sequencer_signer_key }
 }
 
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+pub struct LookaheadConfig {
+    // If current_operator = A, next_operator = B, delay_slots = 3, A stops creating new blocks
+    // 32 - 3 = 29 slots in the epoch (this leaves 3 slots for posting the final batches)
+    pub delay_slots: u64,
+    // In example above, B will start creating blocks buffer_secs after A stops
+    pub buffer_secs: u64,
+}
+
 pub struct RpcConfig {
     /// Port to open the RPC server on
     pub port: u16,
@@ -129,12 +136,12 @@ pub struct SequencerConfig {
     pub soft_block_url: Url,
 }
 
-impl From<&StaticConfig> for SequencerConfig {
-    fn from(config: &StaticConfig) -> Self {
+impl From<(&StaticConfig, Address)> for SequencerConfig {
+    fn from((config, coinbase_address): (&StaticConfig, Address)) -> Self {
         Self {
             simulator_url: config.gateway.simulator_url.clone(),
             target_block_time: Duration::from_millis(config.gateway.l2_target_block_time_ms),
-            coinbase_address: config.gateway.coinbase,
+            coinbase_address,
             l1_delay: Duration::from_secs(config.gateway.l1_delay_secs),
             l1_safe_lag: config.gateway.l1_safe_lag,
             anchor_batch_lag: config.gateway.anchor_batch_lag,
@@ -145,7 +152,6 @@ impl From<&StaticConfig> for SequencerConfig {
 
 pub struct ProposerConfig {
     pub propose_frequency: Duration,
-    pub force_reorgs: bool,
     pub use_blobs: bool,
     pub dry_run: bool,
     /// time
@@ -156,7 +162,6 @@ impl From<&StaticConfig> for ProposerConfig {
     fn from(config: &StaticConfig) -> Self {
         Self {
             propose_frequency: Duration::from_secs(config.gateway.propose_frequency_secs),
-            force_reorgs: config.gateway.force_reorgs,
             use_blobs: config.gateway.use_blobs,
             dry_run: config.gateway.dry_run,
             l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
@@ -193,6 +198,7 @@ impl TaikoConfig {
 /// Config with dynamic params stored on-chain
 #[derive(Debug, Clone, Copy)]
 pub struct TaikoChainParams {
+    pub chain_id: u64,
     pub base_fee_config: BaseFeeConfig,
     /// Max difference between l1 block number of where proposeBlock is called and the anchored one
     pub max_anchor_height_offset: u64,
@@ -204,11 +210,13 @@ pub struct TaikoChainParams {
 
 impl TaikoChainParams {
     pub const fn new(
+        chain_id: u64,
         base_fee_config: BaseFeeConfig,
         max_anchor_height_offset: u64,
         block_max_gas_limit: u64,
     ) -> Self {
         Self {
+            chain_id,
             base_fee_config,
             max_anchor_height_offset,
             max_anchor_timestamp_offset: max_anchor_height_offset * 12,
@@ -230,6 +238,13 @@ impl TaikoChainParams {
         const MAX_ANCHOR_HEIGHT_OFFSET: u64 = 64;
         const BLOCK_MAX_GAS_LIMIT: u64 = 240_000_000;
 
-        Self::new(BASE_FEE_CONFIG, MAX_ANCHOR_HEIGHT_OFFSET, BLOCK_MAX_GAS_LIMIT)
+        const HELDER_TAIKO_CHAIN_ID: u64 = 167010;
+
+        Self::new(
+            HELDER_TAIKO_CHAIN_ID,
+            BASE_FEE_CONFIG,
+            MAX_ANCHOR_HEIGHT_OFFSET,
+            BLOCK_MAX_GAS_LIMIT,
+        )
     }
 }

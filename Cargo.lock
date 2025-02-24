@@ -2610,6 +2610,7 @@ dependencies = [
  "jsonrpsee",
  "lazy_static",
  "libflate",
+ "parking_lot",
  "prometheus",
  "reqwest",
  "serde",
