@@ -45,7 +45,6 @@ pub struct GatewayConfig {
     pub propose_frequency_secs: u64,
     pub l2_target_block_time_ms: u64,
     pub dry_run: bool,
-    pub use_blobs: bool,
     /// If we dont receive a new L1 block for this amount of time, stop sequencing
     pub l1_delay_secs: u64,
     /// Wait until this many blocks have passed to check that the L1 propose tx hasnt reorged out
@@ -152,7 +151,6 @@ impl From<(&StaticConfig, Address)> for SequencerConfig {
 
 pub struct ProposerConfig {
     pub propose_frequency: Duration,
-    pub use_blobs: bool,
     pub dry_run: bool,
     /// time
     pub l1_safe_lag: Duration,
@@ -162,7 +160,6 @@ impl From<&StaticConfig> for ProposerConfig {
     fn from(config: &StaticConfig) -> Self {
         Self {
             propose_frequency: Duration::from_secs(config.gateway.propose_frequency_secs),
-            use_blobs: config.gateway.use_blobs,
             dry_run: config.gateway.dry_run,
             l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
         }

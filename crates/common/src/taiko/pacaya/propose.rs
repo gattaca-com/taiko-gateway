@@ -1,19 +1,17 @@
-use std::{io::Write, sync::Arc};
+use std::io::Write;
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::{Bytes, B256};
-use alloy_rpc_types::Block;
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
 
-use super::{preconf::PreconfRouter, BatchParams, BlockParams};
+use super::{preconf::PreconfRouter, BatchParams};
 use crate::{
-    proposer::ProposerContext,
+    proposer::{ProposalRequest, ProposerContext},
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
         pacaya::BlobParams,
-        GOLDEN_TOUCH_ADDRESS,
     },
 };
 
@@ -22,45 +20,21 @@ use crate::{
 /// - need to share the same anchor_block_id
 /// - are assumed to be sorted by block number and have all the same timestamp
 pub fn propose_batch_calldata(
-    full_blocks: Vec<Arc<Block>>,
-    anchor_block_id: u64,
+    request: ProposalRequest,
     parent_meta_hash: B256,
     context: &ProposerContext,
 ) -> Bytes {
-    let mut blocks = Vec::with_capacity(full_blocks.len());
-    let mut tx_list = Vec::new();
-    let mut last_timestamp = 0;
-
-    for block in full_blocks {
-        let block = Arc::unwrap_or_clone(block);
-
-        blocks.push(BlockParams {
-            numTransactions: (block.transactions.len() - 1) as u16, // remove anchor
-            timeShift: 0,
-            signalSlots: vec![], // TODO
-        });
-
-        let txs = block
-            .transactions
-            .into_transactions()
-            .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| tx.inner);
-
-        tx_list.extend(txs);
-        last_timestamp = block.header.timestamp;
-    }
-
-    let compressed = encode_and_compress_tx_list(tx_list);
+    let compressed = encode_and_compress_tx_list(request.all_tx_list);
 
     // TODO: check the offsets here
     let batch_params = BatchParams {
         proposer: context.proposer,
         coinbase: context.coinbase,
         parentMetaHash: parent_meta_hash,
-        anchorBlockId: anchor_block_id,
-        lastBlockTimestamp: last_timestamp,
+        anchorBlockId: request.anchor_block_id,
+        lastBlockTimestamp: request.last_timestamp,
         revertIfNotFirstProposal: false,
-        blocks,
+        blocks: request.block_params,
         blobParams: BlobParams {
             blobHashes: vec![],
             firstBlobIndex: 0,
@@ -85,35 +59,11 @@ pub fn propose_batch_calldata(
 /// - are assumed to be sorted by block number and have all the same timestamp
 /// - are assumed to have less transactions in total that would fit in all available blobs
 pub fn propose_batch_blobs(
-    full_blocks: Vec<Arc<Block>>,
-    anchor_block_id: u64,
+    request: ProposalRequest,
     parent_meta_hash: B256,
     context: &ProposerContext,
 ) -> (Bytes, BlobTransactionSidecar) {
-    let mut blocks = Vec::with_capacity(full_blocks.len());
-    let mut tx_list = Vec::new();
-    let mut last_timestamp = 0;
-
-    for block in full_blocks {
-        let block = Arc::unwrap_or_clone(block);
-
-        blocks.push(BlockParams {
-            numTransactions: block.transactions.len() as u16,
-            timeShift: 0,
-            signalSlots: vec![], // TODO
-        });
-
-        let txs = block
-            .transactions
-            .into_transactions()
-            .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| tx.inner);
-
-        tx_list.extend(txs);
-        last_timestamp = block.header.timestamp;
-    }
-
-    let compressed = encode_and_compress_tx_list(tx_list);
+    let compressed = encode_and_compress_tx_list(request.all_tx_list);
 
     assert!(
         compressed.len() % MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
@@ -135,11 +85,11 @@ pub fn propose_batch_blobs(
         proposer: context.proposer,
         coinbase: context.coinbase,
         parentMetaHash: parent_meta_hash,
-        anchorBlockId: anchor_block_id,
-        lastBlockTimestamp: last_timestamp,
+        anchorBlockId: request.anchor_block_id,
+        lastBlockTimestamp: request.last_timestamp,
         revertIfNotFirstProposal: false,
         blobParams: blob_params,
-        blocks,
+        blocks: request.block_params,
     };
 
     let forced_tx_list = Bytes::new();

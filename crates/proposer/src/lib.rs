@@ -7,7 +7,7 @@ use client::L1Client;
 use manager::ProposerManager;
 use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
-    proposer::{NewSealedBlock, ProposerContext},
+    proposer::{ProposalRequest, ProposerContext},
     runtime::spawn,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -20,7 +20,7 @@ pub async fn start_proposer(
     taiko_config: TaikoConfig,
     proposer_signer: PrivateKeySigner,
     coinbase_address: Address,
-    new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
+    new_blocks_rx: UnboundedReceiver<ProposalRequest>,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 

@@ -66,7 +66,7 @@ pub async fn init_beacon(beacon_url: Url) -> eyre::Result<BeaconHandle> {
         client.get(headers_url).send().await?.json::<BeaconApiResponse<Header>>().await?.data;
     let head_slot = header.header.message.slot;
 
-    // head slot is within 1 of beacon handle slot
+    // head slot is within 2 of beacon handle slot
     ensure!(
         (head_slot as i64 - beacon_handle.current_slot() as i64).abs() <= 2,
         "head slot is too far from current slot, head_slot={head_slot}, current_slot={}",

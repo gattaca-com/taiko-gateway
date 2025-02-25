@@ -310,7 +310,7 @@ mod tests {
     #[ignore]
     #[test]
     fn test_decode_router_error() {
-        let bytes = hex!("1999aed2");
+        let bytes = hex!("47fac6c1");
 
         let err = PreconfRouterErrors::abi_decode(&bytes, true).unwrap();
         println!("{:?}", err);

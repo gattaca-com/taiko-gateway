@@ -3,9 +3,11 @@ use std::sync::{
     Arc,
 };
 
+use alloy_consensus::TxEnvelope;
 use alloy_primitives::Address;
-use alloy_rpc_types::Block;
 use lazy_static::lazy_static;
+
+use crate::taiko::pacaya::BlockParams;
 
 lazy_static! {
     static ref IS_PROPOSE_DELAYED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -21,10 +23,15 @@ pub fn is_propose_delayed() -> bool {
     IS_PROPOSE_DELAYED.load(Ordering::Relaxed)
 }
 
-#[derive(Debug, Clone)]
-pub struct NewSealedBlock {
-    pub block: Arc<Block>,
+#[derive(Debug, Default, Clone)]
+pub struct ProposalRequest {
     pub anchor_block_id: u64,
+    pub start_block_num: u64,
+    pub end_block_num: u64,
+    pub last_timestamp: u64,
+    pub block_params: Vec<BlockParams>,
+    /// all txs in the blocks, without anchor tx
+    pub all_tx_list: Vec<TxEnvelope>,
 }
 
 pub struct ProposerContext {

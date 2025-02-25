@@ -104,20 +104,23 @@ impl LookaheadHandle {
         Self { lookahead, checked: Instant::now(), last, config, beacon }
     }
 
-    fn read(&mut self) -> Lookahead {
+    fn maybe_refresh(&mut self) {
         if self.checked.elapsed() > Duration::from_secs(2) {
             self.last = *self.lookahead.read();
             self.checked = Instant::now();
         }
-
-        self.last
     }
 
-    pub fn can_sequence(&mut self, operator: Address) -> bool {
-        let lookahead = self.read();
+    pub fn can_sequence(&mut self, operator: &Address) -> bool {
+        self.maybe_refresh();
+        let lookahead = &self.last;
+
+        if &lookahead.curr == operator && &lookahead.next == operator {
+            return true;
+        }
 
         // either current operator before delay slots
-        let current_check = lookahead.curr == operator &&
+        let current_check = &lookahead.curr == operator &&
             (self.beacon.slot_in_epoch() <
                 self.beacon.slots_per_epoch - self.config.delay_slots);
 
@@ -126,8 +129,21 @@ impl LookaheadHandle {
             self.beacon.slot_epoch_start() + self.beacon.slots_per_epoch - self.config.delay_slots;
         let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) + self.config.buffer_secs;
 
-        let next_check = lookahead.next == operator && (utcnow_sec() > cutoff_time);
+        let next_check = &lookahead.next == operator && (utcnow_sec() > cutoff_time);
 
         current_check || next_check
+    }
+
+    // Clear all remaining batches if we're approaching a different operator turn
+    pub fn should_clear_proposal(&mut self, operator: &Address) -> bool {
+        self.maybe_refresh();
+        let lookahead = &self.last;
+
+        // current operator after delay slots
+        let current_check = &lookahead.curr == operator &&
+            (self.beacon.slot_in_epoch() >=
+                self.beacon.slots_per_epoch - self.config.delay_slots);
+
+        current_check && &lookahead.next != operator
     }
 }
