@@ -230,13 +230,15 @@ impl Sequencer {
             self.ctx.l1_delayed = false;
         }
 
-        if self.lookahead.can_sequence(&self.signer.address()) {
+        let (can_sequence, reason) = self.lookahead.can_sequence(&self.signer.address());
+
+        if can_sequence {
             if !self.can_sequence_lookahead {
-                warn!("can now sequence based on lookahead");
+                warn!("can now sequence based on lookahead: {reason}");
                 self.can_sequence_lookahead = true;
             }
         } else if self.can_sequence_lookahead {
-            warn!("can no longer sequence based on lookahead");
+            warn!("can no longer sequence based on lookahead: {reason}");
             self.can_sequence_lookahead = false;
         }
 

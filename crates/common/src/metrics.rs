@@ -13,7 +13,7 @@ use prometheus::{
     IntCounterVec, TextEncoder,
 };
 use tokio::net::TcpListener;
-use tracing::{error, info, trace};
+use tracing::{error, info};
 
 use crate::runtime::spawn;
 
@@ -48,8 +48,6 @@ impl MetricsProvider {
 }
 
 async fn handle_metrics() -> Response {
-    trace!("handling metrics request");
-
     match prepare_metrics() {
         Ok(response) => response,
         Err(err) => {

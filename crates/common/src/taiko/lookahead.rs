@@ -111,18 +111,22 @@ impl LookaheadHandle {
         }
     }
 
-    pub fn can_sequence(&mut self, operator: &Address) -> bool {
+    pub fn can_sequence(&mut self, operator: &Address) -> (bool, &str) {
         self.maybe_refresh();
         let lookahead = &self.last;
 
         if &lookahead.curr == operator && &lookahead.next == operator {
-            return true;
+            return (true, "operator is the same for both current and next");
         }
 
         // either current operator before delay slots
         let current_check = &lookahead.curr == operator &&
             (self.beacon.slot_in_epoch() <
                 self.beacon.slots_per_epoch - self.config.delay_slots);
+
+        if current_check {
+            return (true, "current operator before delay slots");
+        }
 
         // or next operator after buffer_secs
         let cutoff_slot =
@@ -131,7 +135,11 @@ impl LookaheadHandle {
 
         let next_check = &lookahead.next == operator && (utcnow_sec() > cutoff_time);
 
-        current_check || next_check
+        if next_check {
+            return (true, "next operator after buffer_secs");
+        }
+
+        (false, "operator is not the current or next operator")
     }
 
     // Clear all remaining batches if we're approaching a different operator turn
