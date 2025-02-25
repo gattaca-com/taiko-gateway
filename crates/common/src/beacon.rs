@@ -34,8 +34,8 @@ impl BeaconHandle {
     }
 
     /// First slot in the current epoch
-    pub fn slot_epoch_start(&self) -> u64 {
-        self.current_epoch() * self.slots_per_epoch
+    pub fn slot_epoch_start(&self, epoch: u64) -> u64 {
+        epoch * self.slots_per_epoch
     }
 
     pub fn timestamp_of_slot(&self, slot: u64) -> u64 {

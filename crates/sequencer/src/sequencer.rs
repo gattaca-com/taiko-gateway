@@ -230,15 +230,28 @@ impl Sequencer {
             self.ctx.l1_delayed = false;
         }
 
+        let beacon = self.lookahead.beacon.clone();
+        let curr_operator = self.lookahead.last.curr;
+        let next_operator = self.lookahead.last.next;
         let (can_sequence, reason) = self.lookahead.can_sequence(&self.signer.address());
 
         if can_sequence {
             if !self.can_sequence_lookahead {
-                warn!("can now sequence based on lookahead: {reason}");
+                warn!(
+                    %curr_operator,
+                    %next_operator,
+                    slot_in_epoch = beacon.slot_in_epoch(),
+                    "can now sequence based on lookahead: {reason}"
+                );
                 self.can_sequence_lookahead = true;
             }
         } else if self.can_sequence_lookahead {
-            warn!("can no longer sequence based on lookahead: {reason}");
+            warn!(
+                %curr_operator,
+                %next_operator,
+                slot_in_epoch = beacon.slot_in_epoch(),
+                "can no longer sequence based on lookahead: {reason}"
+            );
             self.can_sequence_lookahead = false;
         }
 

@@ -29,8 +29,13 @@ pub async fn start_looahead_loop(
     let current_operator = whitelist.getOperatorForCurrentEpoch().call().await?._0;
     let next_operator = whitelist.getOperatorForNextEpoch().call().await?._0;
 
-    let lookahead =
-        Arc::new(RwLock::new(Lookahead { curr: current_operator, next: next_operator }));
+    let current_epoch = beacon_handle.current_epoch();
+    let lookahead = Arc::new(RwLock::new(Lookahead {
+        curr: current_operator,
+        curr_epoch: current_epoch,
+        next: next_operator,
+        next_epoch: current_epoch + 1,
+    }));
 
     let lookahead_rw = lookahead.clone();
 
@@ -40,35 +45,53 @@ pub async fn start_looahead_loop(
 
     spawn(async move {
         loop {
-            match fetch_operators(&whitelist).await {
-                Ok((current_operator, next_operator)) => {
-                    let current_slot = beacon_handle.current_slot();
-                    let current_epoch = beacon_handle.current_epoch();
-                    let remaining_slots =
-                        beacon_handle.slots_per_epoch - beacon_handle.slot_in_epoch();
+            let lookahead = { lookahead_rw.read().clone() };
+            let current_slot = beacon_handle.current_slot();
+            let current_epoch = beacon_handle.current_epoch();
+            let remaining_slots = beacon_handle.slots_per_epoch - beacon_handle.slot_in_epoch();
 
-                    info!(current_slot, remaining_slots, current_epoch, %current_operator, %next_operator, "fetched operators");
+            let current_operator = lookahead.curr;
+            let next_operator = lookahead.next;
 
-                    {
-                        let mut lookahead = lookahead_rw.write();
-                        lookahead.curr = current_operator;
-                        lookahead.next = next_operator;
-                    }
-                }
+            info!(current_slot, remaining_slots, current_epoch, %current_operator, %next_operator, "lookahead");
 
-                Err(err) => {
-                    // ignore  OperatorNotAvailableYet err
-                    if !err.to_string().contains(&err_operator_not_available_yet) {
-                        error!(%err, "failed to fetch operators");
-                        std::process::exit(1);
-                    }
-
-                }
-            }
-
-            tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 2)).await;
+            tokio::time::sleep(Duration::from_secs(10)).await;
         }
-    }.in_current_span());
+    });
+
+    let lookahead_rw = lookahead.clone();
+    spawn(
+        async move {
+            loop {
+                if beacon_handle.slot_in_epoch() > 5 && beacon_handle.slot_in_epoch() < 20 {
+                    match fetch_operators(&whitelist).await {
+                        Ok((current_operator, next_operator)) => {
+                            let current_epoch = beacon_handle.current_epoch();
+
+                            {
+                                let mut lookahead = lookahead_rw.write();
+                                lookahead.curr = current_operator;
+                                lookahead.curr_epoch = current_epoch;
+                                lookahead.next = next_operator;
+                                lookahead.next_epoch = current_epoch + 1;
+                            }
+                        }
+
+                        Err(err) => {
+                            // ignore  OperatorNotAvailableYet err
+                            if !err.to_string().contains(&err_operator_not_available_yet) {
+                                error!(%err, "failed to fetch operators");
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 2)).await;
+            }
+        }
+        .in_current_span(),
+    );
 
     Ok(LookaheadHandle::new(lookahead, config, beacon_handle))
 }
@@ -83,15 +106,17 @@ async fn fetch_operators(whitelist: &PreconfWhitelist) -> eyre::Result<(Address,
 #[derive(Debug, Clone, Copy)]
 pub struct Lookahead {
     pub curr: Address,
+    pub curr_epoch: u64,
     pub next: Address,
+    pub next_epoch: u64,
 }
 
 pub struct LookaheadHandle {
     lookahead: Arc<RwLock<Lookahead>>,
     checked: Instant,
-    last: Lookahead,
-    config: LookaheadConfig,
-    beacon: BeaconHandle,
+    pub last: Lookahead,
+    pub config: LookaheadConfig,
+    pub beacon: BeaconHandle,
 }
 
 impl LookaheadHandle {
@@ -105,7 +130,7 @@ impl LookaheadHandle {
     }
 
     fn maybe_refresh(&mut self) {
-        if self.checked.elapsed() > Duration::from_secs(2) {
+        if self.checked.elapsed() > Duration::from_millis(500) {
             self.last = *self.lookahead.read();
             self.checked = Instant::now();
         }
@@ -120,17 +145,19 @@ impl LookaheadHandle {
         }
 
         // either current operator before delay slots
-        let current_check = &lookahead.curr == operator &&
-            (self.beacon.slot_in_epoch() <
-                self.beacon.slots_per_epoch - self.config.delay_slots);
+        let cutoff_slot = self.beacon.slot_epoch_start(lookahead.curr_epoch) +
+            self.beacon.slots_per_epoch -
+            self.config.delay_slots;
+
+        let current_check =
+            &lookahead.curr == operator && (self.beacon.current_slot() < cutoff_slot);
 
         if current_check {
             return (true, "current operator before delay slots");
         }
 
         // or next operator after buffer_secs
-        let cutoff_slot =
-            self.beacon.slot_epoch_start() + self.beacon.slots_per_epoch - self.config.delay_slots;
+
         let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) + self.config.buffer_secs;
 
         let next_check = &lookahead.next == operator && (utcnow_sec() > cutoff_time);
@@ -139,7 +166,7 @@ impl LookaheadHandle {
             return (true, "next operator after buffer_secs");
         }
 
-        (false, "operator is not the current or next operator")
+        (false, "operator cannot sequence")
     }
 
     // Clear all remaining batches if we're approaching a different operator turn
