@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-rust-version = "1.82.0"
+rust-version = "1.84.0"
 edition = "2021"
 
 [workspace.dependencies]
