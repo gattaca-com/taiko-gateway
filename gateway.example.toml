@@ -2,14 +2,14 @@ app_id = "taiko_helder"
 
 [l1]
 name = "helder"
-rpc_url = "https://rpc.helder-devnets.xyz"
-ws_url = "ws://18.199.195.154:8546"
-beacon_url = "https://bn.bootnode.helder-devnets.xyz"
+rpc_url = ""
+ws_url = ""
+beacon_url = ""
 
 [l2]
 name = "taiko"
-rpc_url = "http://18.199.195.154:18545"                             # non-preconf rpc
-ws_url = "ws://18.199.195.154:18546"                                # non-preconf ws
+rpc_url = ""
+ws_url = ""
 taiko_token = "0xaDf33C22d0fB31bEA7861528A358C9cfD0E7AF98"          # taikoTokenAddress
 l1_contract = "0xD1D5e6A666b7a41a775645fbFaB01bD2b4B29061"          # taikoInboxAddress
 l2_contract = "0x1670100000000000000000000000000000010001"          # taikoAnchorAddress
@@ -29,5 +29,5 @@ l1_safe_lag = 2
 # Number of blocks to wait before refreshing the anchor, the larger this is the more blocks we can fit in a batch, but we risk it getting stale when proposing
 # This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep blocks up to anchor_batch_lag + l1_safe_lag old
 anchor_batch_lag = 6
-soft_block_url = "http://18.199.195.154:9998/preconfBlocks"
+soft_block_url = ""
 lookahead = { delay_slots = 4, buffer_secs = 6 }
