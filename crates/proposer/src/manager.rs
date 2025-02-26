@@ -65,19 +65,17 @@ impl ProposerManager {
     }
 
     #[tracing::instrument(skip_all, name = "resync")]
-    pub async fn resync(
+    pub async fn needs_resync(
         &self,
-        l2_provider: AlloyProvider,
-        preconf_provider: AlloyProvider,
-        taiko_config: TaikoConfig,
-    ) -> eyre::Result<()> {
-        let mut l1_head = self.client.provider().get_block_number().await?;
-        let mut chain_head = l2_provider
+        l2_provider: &AlloyProvider,
+        preconf_provider: &AlloyProvider,
+    ) -> eyre::Result<bool> {
+        let chain_head = l2_provider
             .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
             .await?
             .ok_or_eyre("missing last block")?;
 
-        let mut preconf_head = preconf_provider
+        let preconf_head = preconf_provider
             .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
             .await?
             .ok_or_eyre("missing last block")?;
@@ -90,9 +88,31 @@ impl ProposerManager {
                 "chain and preconf mismatch for block number {}",
                 chain_head.header.number
             );
+            Ok(false)
         } else if chain_head.header.number > preconf_head.header.number {
             bail!("chain is ahead of preconf, simulator is out of sync (this should not happen)");
+        } else {
+            Ok(true)
         }
+    }
+
+    #[tracing::instrument(skip_all, name = "resync")]
+    pub async fn resync(
+        &self,
+        l2_provider: &AlloyProvider,
+        preconf_provider: &AlloyProvider,
+        taiko_config: &TaikoConfig,
+    ) -> eyre::Result<()> {
+        let mut l1_head = self.client.provider().get_block_number().await?;
+        let mut chain_head = l2_provider
+            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+            .await?
+            .ok_or_eyre("missing last block")?;
+
+        let mut preconf_head = preconf_provider
+            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+            .await?
+            .ok_or_eyre("missing last block")?;
 
         let mut to_verify = HashMap::new();
         let mut has_reorged = false;
@@ -102,7 +122,7 @@ impl ProposerManager {
             // NOTE: if a block with a given anchor block id is not proposed in the correct batch,
             // it will be necessarily reorged
             let blocks = fetch_n_blocks(
-                &preconf_provider,
+                preconf_provider,
                 chain_head.header.number + 1,
                 preconf_head.header.number,
             )

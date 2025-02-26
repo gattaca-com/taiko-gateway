@@ -108,6 +108,7 @@ pub struct Lookahead {
     pub next_epoch: u64,
 }
 
+#[derive(Debug, Clone)]
 pub struct LookaheadHandle {
     lookahead: Arc<RwLock<Lookahead>>,
     checked: Instant,

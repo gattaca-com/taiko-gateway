@@ -62,6 +62,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         envs.proposer_signer_key.address(),
     )
     .await?;
+
     info!("initial checks ok");
 
     let taiko_config = TaikoConfig::new(&config, chain_config);
@@ -73,6 +74,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         envs.proposer_signer_key.clone(),
         envs.sequencer_signer_key.address(),
         new_blocks_rx,
+        lookahead.clone(),
     )
     .await?;
 

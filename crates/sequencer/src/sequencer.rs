@@ -440,7 +440,7 @@ impl Sequencer {
                         let body = res.text().await.unwrap();
 
                         if status.is_success() {
-                            debug!("soft block posted: response {}, raw {}", body, raw);
+                            debug!(response = %body, %raw, "soft block posted");
                         } else {
                             error!(code = status.as_u16(), err = body, %raw, "soft block failed");
                         }
