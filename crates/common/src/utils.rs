@@ -118,7 +118,9 @@ pub fn initialize_tracing_log() -> WorkerGuard {
         .map(|lev| lev.parse().expect("invalid RUST_LOG, change to eg 'info'"))
         .unwrap_or(tracing::Level::INFO);
 
-    let (writer, guard) = if is_test_env() {
+    let is_kubernetes = std::env::var("KUBERNETES_SERVICE_HOST").is_ok();
+
+    let (writer, guard) = if is_test_env() || is_kubernetes {
         tracing_appender::non_blocking(std::io::stdout())
     } else {
         let log_path = std::env::var("LOG_PATH").unwrap_or("/logs".into());
