@@ -113,30 +113,61 @@ pub fn initialize_test_tracing() {
     tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 }
 
-pub fn initialize_tracing_log() -> WorkerGuard {
+pub fn initialize_tracing_log() -> (WorkerGuard, Option<WorkerGuard>) {
+    let format = tracing_subscriber::fmt::format()
+        .with_level(true)
+        .with_thread_ids(false)
+        .with_target(false);
+
     let log_level = std::env::var("RUST_LOG")
         .map(|lev| lev.parse().expect("invalid RUST_LOG, change to eg 'info'"))
         .unwrap_or(tracing::Level::INFO);
 
-    let (writer, guard) = if is_test_env() {
-        tracing_appender::non_blocking(std::io::stdout())
+    if is_test_env() {
+        let (writer, guard) = tracing_appender::non_blocking(std::io::stdout());
+        let layer = tracing_subscriber::fmt::layer()
+            .event_format(format)
+            .with_writer(writer)
+            .with_filter(get_crate_filter(log_level));
+
+        tracing_subscriber::registry().with(layer).init();
+
+        (guard, None)
     } else {
-        let log_path = std::env::var("LOG_PATH").unwrap_or("/logs".into());
-        let file_appender = tracing_appender::rolling::Builder::new()
-            .max_log_files(30)
-            .rotation(Rotation::DAILY)
-            .build(log_path)
-            .expect("failed to create log appender!");
+        let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+        let layer = tracing_subscriber::fmt::layer()
+            .event_format(format.clone())
+            .with_writer(stdout_writer)
+            .with_filter(get_crate_filter(log_level));
 
-        tracing_appender::non_blocking(file_appender)
-    };
+        let registry = tracing_subscriber::registry().with(layer);
 
-    let filter = get_crate_filter(log_level);
-    let layer =
-        tracing_subscriber::fmt::layer().with_target(false).with_writer(writer).with_filter(filter);
-    tracing_subscriber::registry().with(layer).init();
+        if let Ok(path) = std::env::var("LOG_PATH") {
+            let max_logs = std::env::var("MAX_LOGS")
+                .unwrap_or("30".to_string())
+                .parse::<usize>()
+                .expect("invalid MAX_LOGS, change to eg '30'");
 
-    guard
+            let file_appender = tracing_appender::rolling::Builder::new()
+                .max_log_files(max_logs)
+                .rotation(Rotation::DAILY)
+                .build(path)
+                .expect("failed to create file log appender");
+
+            let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
+            let layer = tracing_subscriber::fmt::layer()
+                .event_format(format)
+                .with_ansi(false)
+                .with_writer(file_writer)
+                .with_filter(get_crate_filter(log_level));
+
+            registry.with(layer).init();
+            (stdout_guard, Some(file_guard))
+        } else {
+            registry.init();
+            (stdout_guard, None)
+        }
+    }
 }
 
 pub const OUR_CRATES: [&str; 4] = ["common", "proposer", "rpc", "sequencer"];
