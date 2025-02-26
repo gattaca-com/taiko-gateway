@@ -11,6 +11,7 @@ alloy-primitives.workspace = true
 alloy-provider.workspace = true
 alloy-rlp.workspace = true
 alloy-rpc-types.workspace = true
+alloy-eips.workspace = true
 alloy-signer-local.workspace = true
 alloy-signer.workspace = true
 crossbeam-channel.workspace = true

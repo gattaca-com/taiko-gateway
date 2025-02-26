@@ -1,5 +1,9 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
@@ -14,31 +18,32 @@ use tracing::debug;
 /// Sequencing state
 pub struct SequencerContext {
     pub l1_safe_lag: u64,
-    pub l1_delayed: bool,
     pub last_l1_receive: Instant,
     /// Current state
     pub state: SequencerState,
     /// Anchor data to use for next batches
     pub anchor: AnchorParams,
-    /// Either last preconfed or last from chain
+    /// L2 parent block info
     pub parent: ParentParams,
     /// Last confirmed L1 header, keep a buffer to account for L1 reorgs
     pub l1_headers: BTreeMap<u64, Header>,
-    /// L2 blocks to verify
+    /// L2 blocks which have been posted on the L1
     pub to_verify: HashMap<u64, Header>,
+    /// Last synced L2 block number
+    pub l2_origin: Arc<AtomicU64>,
 }
 
 impl SequencerContext {
-    pub fn new(l1_safe_lag: u64) -> Self {
+    pub fn new(l1_safe_lag: u64, l2_origin: Arc<AtomicU64>) -> Self {
         Self {
             l1_safe_lag,
-            l1_delayed: false,
             last_l1_receive: Instant::now(),
             state: SequencerState::default(),
             anchor: AnchorParams::default(),
             l1_headers: BTreeMap::new(),
             parent: Default::default(),
             to_verify: HashMap::new(),
+            l2_origin,
         }
     }
 
@@ -51,13 +56,12 @@ impl SequencerContext {
         self.last_l1_receive = Instant::now();
     }
 
-    pub fn new_l2_block(&mut self, new_header: &Header) {
-        debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
+    /// Insert a new preconfed L2 block, this could be sequenced by us or another gateway, we only
+    /// verify our blocks
+    pub fn new_preconf_l2_block(&mut self, new_header: &Header, ours: bool) {
+        debug!(number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
 
         if new_header.number > self.parent.block_number {
-            // we should never receive a new block while we're sequencing
-            assert!(matches!(self.state, SequencerState::Sync));
-
             self.parent = ParentParams {
                 timestamp: new_header.timestamp,
                 gas_used: new_header.gas_used.try_into().unwrap(),
@@ -65,22 +69,19 @@ impl SequencerContext {
             };
         }
 
-        if let Some(preconf_header) = self.to_verify.remove(&new_header.number) {
-            verify_and_log_block(&preconf_header, new_header, true);
+        if ours {
+            self.to_verify.insert(new_header.number, new_header.clone());
         }
     }
 
-    pub fn new_preconf_l2_block(&mut self, new_header: &Header) {
-        debug!(number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
-        assert!(new_header.number > self.parent.block_number);
+    /// Process a new L2 block as confirmed by L1 batch transaction.
+    /// This is always <= the preconf block (assuming remote RPC is well peered)
+    pub fn new_origin_l2_block(&mut self, new_header: &Header) {
+        debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
 
-        self.parent = ParentParams {
-            timestamp: new_header.timestamp,
-            gas_used: new_header.gas_used.try_into().unwrap(),
-            block_number: new_header.number,
-        };
-
-        self.to_verify.insert(new_header.number, new_header.clone());
+        if let Some(preconf_header) = self.to_verify.remove(&new_header.number) {
+            verify_and_log_block(&preconf_header, new_header, true);
+        }
     }
 
     pub fn safe_l1_header(&self) -> Option<&Header> {
@@ -90,6 +91,10 @@ impl SequencerContext {
     pub fn current_anchor_id(&self) -> u64 {
         self.anchor.block_id
     }
+
+    pub fn l2_origin(&self) -> u64 {
+        self.l2_origin.load(Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -97,6 +102,8 @@ pub enum SequencerState {
     /// Syncing L1/L2 blocks
     #[default]
     Sync,
+    /// Resyncing batches to L1
+    Resync { target: u64 },
     /// After simulating anchor tx, ready to sequence
     Anchor {
         /// Data used in anchor sim

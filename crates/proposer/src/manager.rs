@@ -14,7 +14,9 @@ use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
     config::{ProposerConfig, TaikoConfig},
-    proposer::{set_propose_delayed, set_propose_ok, ProposalRequest, ProposerContext},
+    proposer::{
+        set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, ProposerContext,
+    },
     taiko::{
         pacaya::{
             encode_and_compress_tx_list, l2::TaikoL2, propose_batch_blobs, propose_batch_calldata,
@@ -41,6 +43,7 @@ pub struct ProposerManager {
 impl ProposerManager {
     pub fn new(
         config: ProposerConfig,
+
         context: ProposerContext,
         client: L1Client,
         new_blocks_rx: UnboundedReceiver<ProposalRequest>,
@@ -49,50 +52,35 @@ impl ProposerManager {
     }
 
     #[tracing::instrument(skip_all, name = "proposer")]
-    pub async fn run(mut self) {
+    pub async fn run(
+        mut self,
+        l2_provider: AlloyProvider,
+        preconf_provider: AlloyProvider,
+        taiko_config: TaikoConfig,
+    ) {
         info!(proposer_address = %self.client.address(), "starting l1 proposer");
 
         while let Some(request) = self.new_blocks_rx.recv().await {
-            info!(
-                n_blocks = request.block_params.len(),
-                all_txs = request.all_tx_list.len(),
-                "proposing batch for blocks {}-{}",
-                request.start_block_num,
-                request.end_block_num
-            );
-            self.propose_batch_with_retry(request).await;
-        }
-    }
-
-    #[tracing::instrument(skip_all, name = "resync")]
-    pub async fn needs_resync(
-        &self,
-        l2_provider: &AlloyProvider,
-        preconf_provider: &AlloyProvider,
-    ) -> eyre::Result<bool> {
-        let chain_head = l2_provider
-            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
-            .await?
-            .ok_or_eyre("missing last block")?;
-
-        let preconf_head = preconf_provider
-            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
-            .await?
-            .ok_or_eyre("missing last block")?;
-
-        info!(chain_head = %chain_head.header.number, preconf_head = %preconf_head.header.number, "checking resync");
-
-        if chain_head == preconf_head {
-            ensure!(
-                chain_head.header.hash == preconf_head.header.hash,
-                "chain and preconf mismatch for block number {}",
-                chain_head.header.number
-            );
-            Ok(false)
-        } else if chain_head.header.number > preconf_head.header.number {
-            bail!("chain is ahead of preconf, simulator is out of sync (this should not happen)");
-        } else {
-            Ok(true)
+            match request {
+                ProposalRequest::Batch(request) => {
+                    info!(
+                        n_blocks = request.block_params.len(),
+                        all_txs = request.all_tx_list.len(),
+                        "proposing batch for blocks {}-{}",
+                        request.start_block_num,
+                        request.end_block_num
+                    );
+                    self.propose_batch_with_retry(request).await;
+                }
+                ProposalRequest::Resync => {
+                    while let Err(err) =
+                        self.resync(&l2_provider, &preconf_provider, &taiko_config).await
+                    {
+                        error!("failed to resync: {err}");
+                        tokio::time::sleep(Duration::from_secs(12)).await;
+                    }
+                }
+            }
         }
     }
 
@@ -116,6 +104,8 @@ impl ProposerManager {
 
         let mut to_verify = HashMap::new();
         let mut has_reorged = false;
+
+        info!(chain_head = %chain_head.header.number, preconf_head = %preconf_head.header.number, "checking resync");
 
         while chain_head.header.number < preconf_head.header.number {
             // TODO: double check this
@@ -196,14 +186,14 @@ impl ProposerManager {
                     .await?
                     .ok_or(eyre!("missing proposed block {bn}"))?;
 
-                verify_and_log_block(&block.header, &new_block.header, true);
+                verify_and_log_block(&block.header, &new_block.header, false);
             }
         }
 
         Ok(())
     }
 
-    async fn propose_batch_with_retry(&self, request: ProposalRequest) {
+    async fn propose_batch_with_retry(&self, request: ProposeBatchParams) {
         let start_bn = request.start_block_num;
         let end_bn = request.end_block_num;
 
@@ -319,7 +309,7 @@ async fn fetch_n_blocks(
     Ok(blocks)
 }
 
-fn request_from_blocks(anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) -> ProposalRequest {
+fn request_from_blocks(anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) -> ProposeBatchParams {
     let start_block_num = full_blocks[0].header.number;
     let end_block_num = full_blocks[full_blocks.len() - 1].header.number;
 
@@ -346,7 +336,7 @@ fn request_from_blocks(anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) -> Pr
         last_timestamp = block.header.timestamp;
     }
 
-    ProposalRequest {
+    ProposeBatchParams {
         anchor_block_id,
         start_block_num,
         end_block_num,

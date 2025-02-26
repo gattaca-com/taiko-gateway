@@ -143,7 +143,7 @@ impl LookaheadHandle {
         // current operator only sequences until here
         let cutoff_slot = self.beacon.slot_epoch_start(lookahead.curr_epoch) +
             self.beacon.slots_per_epoch -
-            self.config.delay_slots;
+            self.config.delay_sequence_slots;
 
         // next operator sequences after this time
         let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) + self.config.buffer_secs;
@@ -179,6 +179,21 @@ impl LookaheadHandle {
         }
     }
 
+    pub fn can_propose(&mut self, operator: &Address) -> bool {
+        self.maybe_refresh();
+        let lookahead = &self.last;
+
+        let is_operator = if self.beacon.current_epoch() == lookahead.next_epoch {
+            // lookahead hasnt been updated yet
+            operator == &lookahead.next
+        } else {
+            operator == &lookahead.curr
+        };
+
+        // this makes sure we dont propose right at the beginning of the epoch
+        is_operator && self.beacon.slot_in_epoch() > self.config.delay_sequence_slots
+    }
+
     // Clear all remaining batches if we're approaching a different operator turn
     pub fn should_clear_proposal(&mut self, operator: &Address) -> bool {
         self.maybe_refresh();
@@ -187,7 +202,7 @@ impl LookaheadHandle {
         // current operator after delay slots
         let current_check = &lookahead.curr == operator &&
             (self.beacon.slot_in_epoch() >=
-                self.beacon.slots_per_epoch - self.config.delay_slots);
+                self.beacon.slots_per_epoch - self.config.delay_sequence_slots);
 
         current_check && &lookahead.next != operator
     }

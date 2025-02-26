@@ -30,4 +30,4 @@ l1_safe_lag = 2
 # This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep blocks up to anchor_batch_lag + l1_safe_lag old
 anchor_batch_lag = 6
 soft_block_url = ""
-lookahead = { delay_slots = 4, buffer_secs = 6 }
+lookahead = { delay_sequence_slots = 4, delay_propose_slots = 2, buffer_secs = 6 }

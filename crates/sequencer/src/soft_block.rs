@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use alloy_consensus::TxEnvelope;
 use alloy_primitives::{keccak256, Address, Bytes, B256};
-use alloy_rlp::{encode, RlpEncodable};
+use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Block, Header};
-use alloy_signer::Signer;
+use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use jsonrpsee::core::Serialize;
 use pc_common::taiko::pacaya::encode_and_compress_tx_list;
@@ -37,7 +37,7 @@ pub struct BuildPreconfBlockResponseBody {
 }
 
 impl BuildPreconfBlockRequestBody {
-    pub async fn new(block: Arc<Block>, signer: PrivateKeySigner) -> eyre::Result<Self> {
+    pub fn new(block: Arc<Block>, signer: PrivateKeySigner) -> Self {
         let tx_list: Vec<TxEnvelope> =
             block.transactions.txns().map(|tx| tx.inner.clone()).collect();
 
@@ -56,20 +56,17 @@ impl BuildPreconfBlockRequestBody {
             base_fee_per_gas: block.header.base_fee_per_gas.unwrap(),
         };
 
-        let rlp_encoded = encode(&executable_data);
-
+        let rlp_encoded = alloy_rlp::encode(&executable_data);
         let hash = keccak256(&rlp_encoded);
-
-        let signature = signer.sign_hash(&hash).await.unwrap();
+        let signature = signer.sign_hash_sync(&hash).unwrap();
 
         let mut signature_bytes = signature.as_bytes();
-
         // Modify the last byte (v value) to match Go's expected format
         signature_bytes[64] = signature_bytes[64].saturating_sub(27);
 
-        Ok(BuildPreconfBlockRequestBody {
+        BuildPreconfBlockRequestBody {
             executable_data,
             signature: alloy_primitives::hex::encode_prefixed(signature_bytes),
-        })
+        }
     }
 }

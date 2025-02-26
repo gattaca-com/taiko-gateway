@@ -8,7 +8,7 @@ use libflate::zlib::Encoder as zlibEncoder;
 
 use super::{preconf::PreconfRouter, BatchParams};
 use crate::{
-    proposer::{ProposalRequest, ProposerContext},
+    proposer::{ProposeBatchParams, ProposerContext},
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
         pacaya::BlobParams,
@@ -20,7 +20,7 @@ use crate::{
 /// - need to share the same anchor_block_id
 /// - are assumed to be sorted by block number and have all the same timestamp
 pub fn propose_batch_calldata(
-    request: ProposalRequest,
+    request: ProposeBatchParams,
     parent_meta_hash: B256,
     context: &ProposerContext,
 ) -> Bytes {
@@ -59,7 +59,7 @@ pub fn propose_batch_calldata(
 /// - are assumed to be sorted by block number and have all the same timestamp
 /// - are assumed to have less transactions in total that would fit in all available blobs
 pub fn propose_batch_blobs(
-    request: ProposalRequest,
+    request: ProposeBatchParams,
     parent_meta_hash: B256,
     context: &ProposerContext,
 ) -> (Bytes, BlobTransactionSidecar) {

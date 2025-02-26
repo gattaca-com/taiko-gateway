@@ -45,14 +45,8 @@ pub async fn start_proposer(
         .disable_recommended_fillers()
         .on_http(taiko_config.preconf_url.clone());
 
-    // FIXME: move this to sequencer? we can only resync if it's our turn in lookahead + should
-    // resync other gateways' blocks
-    if proposer.needs_resync(&l2_provider, &preconf_provider).await? {
-        proposer.resync(&l2_provider, &preconf_provider, &taiko_config).await?;
-    }
-
     // start proposer
-    spawn(proposer.run());
+    spawn(proposer.run(l2_provider, preconf_provider, taiko_config));
 
     Ok(())
 }
