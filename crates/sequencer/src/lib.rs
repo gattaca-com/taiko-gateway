@@ -1,10 +1,12 @@
 //! Builds blocks and sends to proposer loop
 
+use std::sync::Arc;
+
 use crossbeam_channel::Receiver;
 use pc_common::{
     config::{SequencerConfig, StaticConfig, TaikoConfig},
     fetcher::BlockFetcher,
-    proposer::NewSealedBlock,
+    proposer::ProposalRequest,
     runtime::spawn,
     sequencer::Order,
     taiko::lookahead::LookaheadHandle,
@@ -22,9 +24,9 @@ pub fn start_sequencer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
     lookahead: LookaheadHandle,
-    rpc_rx: Receiver<Order>,
-    mempool_rx: Receiver<Order>,
-    new_blocks_tx: UnboundedSender<NewSealedBlock>,
+    rpc_rx: Receiver<Arc<Order>>,
+    mempool_rx: Receiver<Arc<Order>>,
+    new_blocks_tx: UnboundedSender<ProposalRequest>,
     coinbase_signer: PrivateKeySigner,
 ) {
     let sequencer_config: SequencerConfig = (config, coinbase_signer.address()).into();
@@ -39,7 +41,7 @@ pub fn start_sequencer(
     let ws_url = config.l2.ws_url.clone();
     spawn(BlockFetcher::new(rpc_url, ws_url, l2_blocks_tx).run("l2", 1));
 
-    let spine = SequencerSpine { rpc_rx, new_blocks_tx, l1_blocks_rx, l2_blocks_rx };
+    let spine = SequencerSpine { rpc_rx, proposer_tx: new_blocks_tx, l1_blocks_rx, l2_blocks_rx };
 
     let sequencer = Sequencer::new(
         sequencer_config,

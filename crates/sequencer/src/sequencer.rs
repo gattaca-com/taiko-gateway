@@ -14,11 +14,12 @@ use crossbeam_channel::Receiver;
 use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
-    proposer::{is_propose_delayed, NewSealedBlock},
+    proposer::{is_propose_delayed, ProposalRequest},
     runtime::spawn,
     sequencer::{ExecutionResult, Order, StateId},
     taiko::{
-        get_difficulty, get_extra_data, lookahead::LookaheadHandle, AnchorParams, ANCHOR_GAS_LIMIT,
+        get_difficulty, get_extra_data, lookahead::LookaheadHandle, pacaya::BlockParams,
+        AnchorParams, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
     },
     types::BlockEnv,
 };
@@ -35,9 +36,9 @@ use crate::{
 
 pub struct SequencerSpine {
     /// Receive txs and bundles from RPC
-    pub rpc_rx: Receiver<Order>,
+    pub rpc_rx: Receiver<Arc<Order>>,
     /// Send blocks to proposer for inclusion
-    pub new_blocks_tx: UnboundedSender<NewSealedBlock>,
+    pub proposer_tx: UnboundedSender<ProposalRequest>,
     // Receiver of L1 blocks
     pub l1_blocks_rx: Receiver<Header>,
     // Receiver of L2 non preconf blocks
@@ -52,15 +53,16 @@ pub struct Sequencer {
     tx_pool: TxPool,
     spine: SequencerSpine,
     lookahead: LookaheadHandle,
-    signer: PrivateKeySigner,
     can_sequence_lookahead: bool,
+    signer: PrivateKeySigner,
+    proposer_request: Option<ProposalRequest>,
 }
 
 impl Sequencer {
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
-        mempool_rx: Receiver<Order>,
+        mempool_rx: Receiver<Arc<Order>>,
         spine: SequencerSpine,
         lookahead: LookaheadHandle,
         signer: PrivateKeySigner,
@@ -82,9 +84,13 @@ impl Sequencer {
             lookahead,
             signer,
             can_sequence_lookahead: false,
+            proposer_request: None,
         }
     }
 
+    /// Main sequencer loop:
+    /// - we send batches for proposal when we have a new anchor or if we're approaching the next
+    ///   operator in the lookahead
     #[tracing::instrument(skip_all, name = "sequencer")]
     pub fn run(mut self) {
         info!("waiting for block fetch");
@@ -101,6 +107,11 @@ impl Sequencer {
             self.recv_blocks();
             self.tx_pool.fetch();
             self.maybe_refresh_anchor();
+
+            // clear proposal if it's late
+            if self.lookahead.should_clear_proposal(&self.signer.address()) {
+                self.send_request_to_proposer();
+            }
 
             // state transition
             match self.ctx.state {
@@ -174,10 +185,13 @@ impl Sequencer {
                     let seal_by_time = start.elapsed() > self.config.target_block_time;
                     let seal_by_gas = false;
 
-                    if seal_by_time || seal_by_gas || !self.can_sequence() {
+                    let should_seal = seal_by_time || seal_by_gas;
+
+                    if should_seal || !self.can_sequence() {
                         if let Err(err) = self.commit_seal(tip_state_id, start, anchor_params) {
                             // todo: add a failsafe so we're not stuck forever here
                             error!(%err, "failed commit seal");
+                            panic!("failed commit seal");
                         } else {
                             // reset state for next block
                             self.ctx.state = SequencerState::Sync;
@@ -201,7 +215,6 @@ impl Sequencer {
         }
     }
 
-    // TODO: this need to be aware of the preconf schedule
     fn can_sequence(&mut self) -> bool {
         if is_propose_delayed() {
             return false;
@@ -217,13 +230,15 @@ impl Sequencer {
             self.ctx.l1_delayed = false;
         }
 
-        if self.lookahead.can_sequence(self.signer.address()) {
+        let (can_sequence, reason) = self.lookahead.can_sequence(&self.signer.address());
+
+        if can_sequence {
             if !self.can_sequence_lookahead {
-                warn!("can now sequence based on lookahead");
+                warn!("can now sequence based on lookahead: {reason}");
                 self.can_sequence_lookahead = true;
             }
         } else if self.can_sequence_lookahead {
-            warn!("can no longer sequence based on lookahead");
+            warn!("can no longer sequence based on lookahead: {reason}");
             self.can_sequence_lookahead = false;
         }
 
@@ -231,7 +246,7 @@ impl Sequencer {
     }
 
     // TODO: if sim fails, rpc orders are lost
-    fn next_order(&mut self) -> Option<Order> {
+    fn next_order(&mut self) -> Option<Arc<Order>> {
         self.spine.rpc_rx.try_recv().ok().or(self.tx_pool.next_sequence())
     }
 
@@ -257,10 +272,13 @@ impl Sequencer {
         };
 
         // if current anchor has been used for enough blocks, refresh it
-        let should_refresh_anchor =
+        let is_anchor_old =
             self.ctx.current_anchor_id() + self.config.anchor_batch_lag < safe_l1_header.number;
 
-        if should_refresh_anchor {
+        // if the blocks with this anchor has too many txs, refresh it
+        let is_batch_big = false; // TODO
+
+        if is_anchor_old || is_batch_big {
             let new = AnchorParams {
                 block_id: safe_l1_header.number,
                 state_root: safe_l1_header.state_root,
@@ -270,6 +288,8 @@ impl Sequencer {
             self.ctx.anchor = new;
 
             debug!(anchor =? self.ctx.anchor, "refreshed anchor params");
+
+            self.send_request_to_proposer();
         }
     }
 
@@ -305,7 +325,7 @@ impl Sequencer {
         }
     }
 
-    fn simulate_tx(&self, origin_state_id: StateId, order: Order) -> Option<(StateId, u128)> {
+    fn simulate_tx(&self, origin_state_id: StateId, order: Arc<Order>) -> Option<(StateId, u128)> {
         let hash = *order.tx_hash();
 
         match self.simulator.simulate_tx(order, origin_state_id) {
@@ -367,15 +387,39 @@ impl Sequencer {
         self.ctx.new_preconf_l2_block(&block.header);
         self.gossip_soft_block(block.clone());
 
-        self.send_block_to_proposer(block, anchor_params.block_id);
+        // self.send_request_to_proposer();
+
+        let is_first_block = self.proposer_request.is_none();
+        let request = &mut self.proposer_request.get_or_insert(ProposalRequest::default());
+
+        if is_first_block {
+            request.anchor_block_id = anchor_params.block_id;
+            request.start_block_num = block_number;
+        } else {
+            assert_eq!(request.anchor_block_id, anchor_params.block_id);
+        }
+
+        request.end_block_num = block_number;
+        request.last_timestamp = block.header.timestamp;
+        request.block_params.push(BlockParams {
+            numTransactions: (block.transactions.len() - 1) as u16, // exclude anchor tx
+            timeShift: 0,
+            signalSlots: vec![],
+        });
+        let txs = Arc::unwrap_or_clone(block)
+            .transactions
+            .into_transactions()
+            .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
+            .map(|tx| tx.inner);
+        request.all_tx_list.extend(txs);
 
         Ok(())
     }
 
-    fn send_block_to_proposer(&self, block: Arc<Block>, anchor_block_id: u64) {
-        if let Err(err) = self.spine.new_blocks_tx.send(NewSealedBlock { block, anchor_block_id }) {
-            error!(%err, "failed sequencer->proposer");
-        };
+    fn send_request_to_proposer(&mut self) {
+        if let Some(request) = std::mem::take(&mut self.proposer_request) {
+            let _ = self.spine.proposer_tx.send(request);
+        }
     }
 
     #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
@@ -396,7 +440,7 @@ impl Sequencer {
                         let body = res.text().await.unwrap();
 
                         if status.is_success() {
-                            debug!("soft block posted: response {}, raw {}", body, raw);
+                            debug!(response = %body, %raw, "soft block posted");
                         } else {
                             error!(code = status.as_u16(), err = body, %raw, "soft block failed");
                         }

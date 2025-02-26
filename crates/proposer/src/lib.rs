@@ -7,8 +7,9 @@ use client::L1Client;
 use manager::ProposerManager;
 use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
-    proposer::{NewSealedBlock, ProposerContext},
+    proposer::{ProposalRequest, ProposerContext},
     runtime::spawn,
+    taiko::lookahead::LookaheadHandle,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -20,7 +21,8 @@ pub async fn start_proposer(
     taiko_config: TaikoConfig,
     proposer_signer: PrivateKeySigner,
     coinbase_address: Address,
-    new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
+    new_blocks_rx: UnboundedReceiver<ProposalRequest>,
+    _lookahead: LookaheadHandle,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 
@@ -43,8 +45,13 @@ pub async fn start_proposer(
         .disable_recommended_fillers()
         .on_http(taiko_config.preconf_url.clone());
 
+    // FIXME: move this to sequencer? we can only resync if it's our turn in lookahead + should
+    // resync other gateways' blocks
+    if proposer.needs_resync(&l2_provider, &preconf_provider).await? {
+        proposer.resync(&l2_provider, &preconf_provider, &taiko_config).await?;
+    }
+
     // start proposer
-    proposer.resync(l2_provider, preconf_provider, taiko_config).await?;
     spawn(proposer.run());
 
     Ok(())

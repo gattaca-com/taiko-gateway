@@ -73,24 +73,3 @@ impl BuildPreconfBlockRequestBody {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use alloy_primitives::PrimitiveSignature;
-
-    use super::{BuildPreconfBlockRequestBody, ExecutableData};
-
-    #[test]
-    fn test_encode() {
-        let a = BuildPreconfBlockRequestBody {
-            executable_data: ExecutableData::default(),
-            signature: alloy_primitives::hex::encode_prefixed(
-                PrimitiveSignature::test_signature().as_bytes(),
-            ),
-        };
-
-        let a = serde_json::to_string(&a).unwrap();
-
-        println!("{a}")
-    }
-}

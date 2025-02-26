@@ -14,9 +14,12 @@ use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
     config::{ProposerConfig, TaikoConfig},
-    proposer::{set_propose_delayed, set_propose_ok, NewSealedBlock, ProposerContext},
+    proposer::{set_propose_delayed, set_propose_ok, ProposalRequest, ProposerContext},
     taiko::{
-        pacaya::{l2::TaikoL2, propose_batch_blobs, propose_batch_calldata},
+        pacaya::{
+            encode_and_compress_tx_list, l2::TaikoL2, propose_batch_blobs, propose_batch_calldata,
+            BlockParams,
+        },
         GOLDEN_TOUCH_ADDRESS,
     },
     utils::{alert_discord, verify_and_log_block},
@@ -32,7 +35,7 @@ pub struct ProposerManager {
     config: ProposerConfig,
     context: ProposerContext,
     client: L1Client,
-    new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
+    new_blocks_rx: UnboundedReceiver<ProposalRequest>,
 }
 
 impl ProposerManager {
@@ -40,7 +43,7 @@ impl ProposerManager {
         config: ProposerConfig,
         context: ProposerContext,
         client: L1Client,
-        new_blocks_rx: UnboundedReceiver<NewSealedBlock>,
+        new_blocks_rx: UnboundedReceiver<ProposalRequest>,
     ) -> Self {
         Self { config, context, client, new_blocks_rx }
     }
@@ -49,45 +52,30 @@ impl ProposerManager {
     pub async fn run(mut self) {
         info!(proposer_address = %self.client.address(), "starting l1 proposer");
 
-        // todo: this should be considering the time of preconfer switch, and how old is the oldest
-        // anchor block id
-
-        // NOTE: this probably conflicts with the reorg check so cant be too low
-        let mut tick = tokio::time::interval(self.config.propose_frequency);
-
-        // batches to propose sorted by anchor block id
-        let mut to_propose: BTreeMap<u64, Vec<Arc<Block>>> = BTreeMap::new();
-
-        loop {
-            tokio::select! {
-                Some(sealed_block) = self.new_blocks_rx.recv() => {
-                    to_propose.entry(sealed_block.anchor_block_id).or_default().push(sealed_block.block);
-                }
-
-                _ = tick.tick() => {
-                    if let Some((anchor_block_id, blocks)) = to_propose.pop_first() {
-                        info!(anchor_block_id, n_blocks = blocks.len(), "proposing batch");
-                        self.propose_batch_with_retry(anchor_block_id, blocks).await;
-                    }
-                }
-            }
+        while let Some(request) = self.new_blocks_rx.recv().await {
+            info!(
+                n_blocks = request.block_params.len(),
+                all_txs = request.all_tx_list.len(),
+                "proposing batch for blocks {}-{}",
+                request.start_block_num,
+                request.end_block_num
+            );
+            self.propose_batch_with_retry(request).await;
         }
     }
 
     #[tracing::instrument(skip_all, name = "resync")]
-    pub async fn resync(
+    pub async fn needs_resync(
         &self,
-        l2_provider: AlloyProvider,
-        preconf_provider: AlloyProvider,
-        taiko_config: TaikoConfig,
-    ) -> eyre::Result<()> {
-        let mut l1_head = self.client.provider().get_block_number().await?;
-        let mut chain_head = l2_provider
+        l2_provider: &AlloyProvider,
+        preconf_provider: &AlloyProvider,
+    ) -> eyre::Result<bool> {
+        let chain_head = l2_provider
             .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
             .await?
             .ok_or_eyre("missing last block")?;
 
-        let mut preconf_head = preconf_provider
+        let preconf_head = preconf_provider
             .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
             .await?
             .ok_or_eyre("missing last block")?;
@@ -100,9 +88,31 @@ impl ProposerManager {
                 "chain and preconf mismatch for block number {}",
                 chain_head.header.number
             );
+            Ok(false)
         } else if chain_head.header.number > preconf_head.header.number {
             bail!("chain is ahead of preconf, simulator is out of sync (this should not happen)");
+        } else {
+            Ok(true)
         }
+    }
+
+    #[tracing::instrument(skip_all, name = "resync")]
+    pub async fn resync(
+        &self,
+        l2_provider: &AlloyProvider,
+        preconf_provider: &AlloyProvider,
+        taiko_config: &TaikoConfig,
+    ) -> eyre::Result<()> {
+        let mut l1_head = self.client.provider().get_block_number().await?;
+        let mut chain_head = l2_provider
+            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+            .await?
+            .ok_or_eyre("missing last block")?;
+
+        let mut preconf_head = preconf_provider
+            .get_block_by_number(alloy_eips::BlockNumberOrTag::Latest, false.into())
+            .await?
+            .ok_or_eyre("missing last block")?;
 
         let mut to_verify = HashMap::new();
         let mut has_reorged = false;
@@ -112,7 +122,7 @@ impl ProposerManager {
             // NOTE: if a block with a given anchor block id is not proposed in the correct batch,
             // it will be necessarily reorged
             let blocks = fetch_n_blocks(
-                &preconf_provider,
+                preconf_provider,
                 chain_head.header.number + 1,
                 preconf_head.header.number,
             )
@@ -157,10 +167,12 @@ impl ProposerManager {
 
                     // this can happen if we waited too long before restarting the proposer, a
                     // re-org is inevitable
-                    self.propose_batch_with_retry(l1_head - 1, blocks).await;
+                    let request = request_from_blocks(l1_head - 1, blocks);
+                    self.propose_batch_with_retry(request).await;
                 } else {
                     // propose same batch
-                    self.propose_batch_with_retry(anchor_block_id, blocks).await;
+                    let request = request_from_blocks(anchor_block_id, blocks);
+                    self.propose_batch_with_retry(request).await;
                 }
             }
 
@@ -191,29 +203,26 @@ impl ProposerManager {
         Ok(())
     }
 
-    async fn propose_batch_with_retry(&self, anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) {
-        assert!(!full_blocks.is_empty(), "no blocks to propose");
+    async fn propose_batch_with_retry(&self, request: ProposalRequest) {
+        let start_bn = request.start_block_num;
+        let end_bn = request.end_block_num;
+
+        debug_assert!(!request.block_params.is_empty(), "no blocks to propose");
 
         if self.config.dry_run {
             warn!("dry run, skipping proposal");
             return;
         }
 
-        let bns = full_blocks.iter().map(|b| b.header.number).collect::<Vec<_>>();
-        let hashes = full_blocks.iter().map(|b| b.header.hash).collect::<Vec<_>>();
         let parent_meta_hash = self.client.last_meta_hash().await;
 
-        let (input, maybe_sidecar) = if self.config.use_blobs {
-            let (input, sidecar) =
-                propose_batch_blobs(full_blocks, anchor_block_id, parent_meta_hash, &self.context);
+        let compressed = encode_and_compress_tx_list(request.all_tx_list.clone()).into(); // FIXME
+        let should_use_blobs = self.should_use_blobs(&compressed);
+        let (input, maybe_sidecar) = if should_use_blobs {
+            let (input, sidecar) = propose_batch_blobs(request, parent_meta_hash, &self.context);
             (input, Some(sidecar))
         } else {
-            let input = propose_batch_calldata(
-                full_blocks,
-                anchor_block_id,
-                parent_meta_hash,
-                &self.context,
-            );
+            let input = propose_batch_calldata(request, parent_meta_hash, &self.context);
             (input, None)
         };
 
@@ -226,15 +235,16 @@ impl ProposerManager {
 
             if retries == 1 {
                 let msg = format!(
-                    "failed to propose batch, retrying in 12 secs. hashes={hashes:?}, bns={bns:?}, err={err:?}"
+                    "failed to propose batch, retrying in 12 secs. bns={start_bn}-{end_bn}, err={err:?}"
                 );
                 error!("{msg}");
                 alert_discord(&msg);
             }
 
             if retries == MAX_RETRIES {
-                let msg =
-                    format!("max retries reached to propose batch. hashes={hashes:?}, bns={bns:?}, err={err}");
+                let msg = format!(
+                    "max retries reached to propose batch. bns={start_bn}-{end_bn}, err={err}"
+                );
                 panic!("{}", msg);
             }
 
@@ -244,7 +254,7 @@ impl ProposerManager {
         set_propose_ok();
 
         if retries > 0 {
-            let msg = format!("resolved propose batch, hashes={hashes:?}, bns={bns:?}");
+            let msg = format!("resolved propose batch, bns={start_bn}-{end_bn}");
             alert_discord(&msg);
         }
     }
@@ -281,6 +291,14 @@ impl ProposerManager {
             bail!("failed to propose block: l1_bn={block_number}, tx_hash={tx_hash}, receipt={receipt_json}");
         }
     }
+
+    fn should_use_blobs(&self, compressed: &Bytes) -> bool {
+        const CALLDATA_SIZE: usize = 100_000; // max calldata with some buffer
+        const _BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
+        const _MAX_BLOBS_SIZE: usize = 3 * _BLOBS_SAFE_SIZE; // use at most 3 blobs
+
+        compressed.len() > CALLDATA_SIZE
+    }
 }
 
 async fn fetch_n_blocks(
@@ -299,4 +317,41 @@ async fn fetch_n_blocks(
     }
 
     Ok(blocks)
+}
+
+fn request_from_blocks(anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) -> ProposalRequest {
+    let start_block_num = full_blocks[0].header.number;
+    let end_block_num = full_blocks[full_blocks.len() - 1].header.number;
+
+    let mut blocks = Vec::with_capacity(full_blocks.len());
+    let mut tx_list = Vec::new();
+    let mut last_timestamp = 0;
+
+    for block in full_blocks {
+        let block = Arc::unwrap_or_clone(block);
+
+        blocks.push(BlockParams {
+            numTransactions: (block.transactions.len() - 1) as u16, // remove anchor
+            timeShift: 0,
+            signalSlots: vec![], // TODO
+        });
+
+        let txs = block
+            .transactions
+            .into_transactions()
+            .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
+            .map(|tx| tx.inner);
+
+        tx_list.extend(txs);
+        last_timestamp = block.header.timestamp;
+    }
+
+    ProposalRequest {
+        anchor_block_id,
+        start_block_num,
+        end_block_num,
+        block_params: blocks,
+        all_tx_list: tx_list,
+        last_timestamp,
+    }
 }

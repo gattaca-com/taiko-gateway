@@ -47,10 +47,10 @@ pub async fn get_and_validate_config(
         operators.push(operator);
     }
 
-    let gateway_index = operators.iter().position(|&op| op == signer_address).ok_or(eyre!(
+    let this_index = operators.iter().position(|&op| op == signer_address).ok_or(eyre!(
         "provided address is not in whitelist! operator={signer_address}, whitelist={operators:?}"
     ))?;
-    info!(gateway_index, ?operators, "fetched operators");
+    info!(this_index, ?operators, "fetched operators");
 
     let chain_config = TaikoChainParams::new(
         l2_chain_id,

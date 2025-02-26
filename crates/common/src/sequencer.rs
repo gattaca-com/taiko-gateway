@@ -6,7 +6,7 @@ use std::{
 
 use alloy_consensus::TxEnvelope;
 use alloy_eips::eip2718::Encodable2718;
-use alloy_primitives::Bytes;
+use alloy_primitives::{Address, Bytes};
 use alloy_rlp::Decodable;
 use alloy_rpc_types::Block;
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 /// Request to sequence a transaction
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Order {
-    tx: Arc<TxEnvelope>,
+    /// Recoverred signer
+    sender: Address,
+    tx: TxEnvelope,
     /// Raw RLP encoded transaction
     raw: Bytes,
 }
@@ -22,12 +24,18 @@ pub struct Order {
 impl Order {
     pub fn decode(raw: Bytes) -> eyre::Result<Self> {
         let tx = TxEnvelope::decode(&mut raw.as_ref())?;
-        Ok(Self::new(tx))
+        Self::new(tx)
     }
 
-    pub fn new(tx: TxEnvelope) -> Self {
+    pub fn new_with_sender(tx: TxEnvelope, sender: Address) -> Self {
         let raw = tx.encoded_2718().into();
-        Self { tx: Arc::new(tx), raw }
+        Self { sender, tx, raw }
+    }
+
+    pub fn new(tx: TxEnvelope) -> eyre::Result<Self> {
+        let raw = tx.encoded_2718().into();
+        let sender = tx.recover_signer()?;
+        Ok(Self { sender, tx, raw })
     }
 
     pub fn raw(&self) -> &Bytes {
@@ -36,6 +44,10 @@ impl Order {
 
     pub fn tx(&self) -> &TxEnvelope {
         &self.tx
+    }
+
+    pub fn sender(&self) -> &Address {
+        &self.sender
     }
 }
 
