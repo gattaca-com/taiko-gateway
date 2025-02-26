@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alloy_primitives::Bytes;
 use alloy_provider::ProviderBuilder;
 use eyre::eyre;
@@ -14,7 +16,7 @@ use pc_common::{
             self,
             l2::TaikoL2::{self},
         },
-        AnchorParams, ParentParams, TaikoL2Client,
+        AnchorParams, ParentParams, TaikoL2Client, GOLDEN_TOUCH_ADDRESS,
     },
     types::BlockEnv,
 };
@@ -64,7 +66,11 @@ impl SimulatorClient {
     }
 
     /// Simulate a tx at a given state id
-    pub fn simulate_tx(&self, order: Order, state_id: StateId) -> eyre::Result<ExecutionResult> {
+    pub fn simulate_tx(
+        &self,
+        order: Arc<Order>,
+        state_id: StateId,
+    ) -> eyre::Result<ExecutionResult> {
         debug!(hash = %order.tx_hash(), ?state_id, "simulate tx");
 
         let response = self.runtime.block_on(async move {
@@ -98,7 +104,8 @@ impl SimulatorClient {
         ))?;
 
         let tx = pacaya::assemble_anchor_v3(&self.config, parent, anchor, l2_base_fee);
+        let order = Order::new_with_sender(tx, GOLDEN_TOUCH_ADDRESS);
 
-        Ok((Order::new(tx), l2_base_fee))
+        Ok((order, l2_base_fee))
     }
 }

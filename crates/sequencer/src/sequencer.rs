@@ -36,7 +36,7 @@ use crate::{
 
 pub struct SequencerSpine {
     /// Receive txs and bundles from RPC
-    pub rpc_rx: Receiver<Order>,
+    pub rpc_rx: Receiver<Arc<Order>>,
     /// Send blocks to proposer for inclusion
     pub proposer_tx: UnboundedSender<ProposalRequest>,
     // Receiver of L1 blocks
@@ -62,7 +62,7 @@ impl Sequencer {
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
-        mempool_rx: Receiver<Order>,
+        mempool_rx: Receiver<Arc<Order>>,
         spine: SequencerSpine,
         lookahead: LookaheadHandle,
         signer: PrivateKeySigner,
@@ -246,7 +246,7 @@ impl Sequencer {
     }
 
     // TODO: if sim fails, rpc orders are lost
-    fn next_order(&mut self) -> Option<Order> {
+    fn next_order(&mut self) -> Option<Arc<Order>> {
         self.spine.rpc_rx.try_recv().ok().or(self.tx_pool.next_sequence())
     }
 
@@ -325,7 +325,7 @@ impl Sequencer {
         }
     }
 
-    fn simulate_tx(&self, origin_state_id: StateId, order: Order) -> Option<(StateId, u128)> {
+    fn simulate_tx(&self, origin_state_id: StateId, order: Arc<Order>) -> Option<(StateId, u128)> {
         let hash = *order.tx_hash();
 
         match self.simulator.simulate_tx(order, origin_state_id) {

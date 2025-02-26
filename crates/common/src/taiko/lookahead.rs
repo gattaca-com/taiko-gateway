@@ -80,12 +80,12 @@ pub async fn start_looahead_loop(
             let current_slot = beacon_handle.current_slot();
             let current_epoch = beacon_handle.current_epoch();
             let remaining_slots = beacon_handle.slots_per_epoch - beacon_handle.slot_in_epoch();
-            
+
             let current_operator = lookahead.curr;
             let next_operator = lookahead.next;
-            
+
             info!(current_slot, remaining_slots, current_epoch, %current_operator, %next_operator, "lookahead");
-            
+
             tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 2)).await;
         }
     }.in_current_span());

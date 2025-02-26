@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use alloy_consensus::Transaction;
 use alloy_primitives::Address;
@@ -6,21 +9,20 @@ use crossbeam_channel::Receiver;
 use pc_common::sequencer::Order;
 
 pub struct TxPool {
-    mempool_rx: Receiver<Order>,
+    mempool_rx: Receiver<Arc<Order>>,
     // sender -> nonce -> txs
-    txs: HashMap<Address, BTreeMap<u64, Order>>,
+    txs: HashMap<Address, BTreeMap<u64, Arc<Order>>>,
 }
 
 // TODO: improve this
 impl TxPool {
-    pub fn new(mempool_rx: Receiver<Order>) -> Self {
+    pub fn new(mempool_rx: Receiver<Arc<Order>>) -> Self {
         Self { mempool_rx, txs: HashMap::new() }
     }
 
     pub fn fetch(&mut self) {
         for tx in self.mempool_rx.try_iter().take(50) {
-            let sender = tx.recover_signer().unwrap();
-            self.txs.entry(sender).or_default().insert(tx.nonce(), tx);
+            self.txs.entry(*tx.sender()).or_default().insert(tx.nonce(), tx);
         }
     }
 
@@ -35,7 +37,7 @@ impl TxPool {
         self.txs.retain(|_, txs| !txs.is_empty());
     }
 
-    pub fn next_sequence(&mut self) -> Option<Order> {
+    pub fn next_sequence(&mut self) -> Option<Arc<Order>> {
         for txs in self.txs.values_mut() {
             if let Some((_, tx)) = txs.pop_first() {
                 return Some(tx);

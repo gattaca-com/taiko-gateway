@@ -1,5 +1,7 @@
 //! Builds blocks and sends to proposer loop
 
+use std::sync::Arc;
+
 use crossbeam_channel::Receiver;
 use pc_common::{
     config::{SequencerConfig, StaticConfig, TaikoConfig},
@@ -22,8 +24,8 @@ pub fn start_sequencer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
     lookahead: LookaheadHandle,
-    rpc_rx: Receiver<Order>,
-    mempool_rx: Receiver<Order>,
+    rpc_rx: Receiver<Arc<Order>>,
+    mempool_rx: Receiver<Arc<Order>>,
     new_blocks_tx: UnboundedSender<ProposalRequest>,
     coinbase_signer: PrivateKeySigner,
 ) {
