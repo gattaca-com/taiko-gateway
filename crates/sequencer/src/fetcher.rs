@@ -120,6 +120,11 @@ async fn fetch_origin_blocks(
 ) -> eyre::Result<()> {
     let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(url);
 
+    let l2_new_origin =
+        provider.client().request_noparams::<L1Origin>("taiko_headL1Origin").await?.block_number();
+
+    l2_origin.store(l2_new_origin, Ordering::Relaxed);
+
     loop {
         let l2_new_origin = provider
             .client()
@@ -127,13 +132,11 @@ async fn fetch_origin_blocks(
             .await?
             .block_number();
 
-        l2_origin.store(l2_new_origin, Ordering::Relaxed);
+        let last = l2_origin.swap(l2_new_origin, Ordering::Relaxed);
 
-        let preconf_origin = provider.get_block_number().await?;
-
-        if preconf_origin > l2_new_origin {
+        if l2_new_origin > last {
             // fetch all the proposed blocks
-            fetch_last_blocks(&provider, tx.clone(), l2_new_origin + 1, preconf_origin).await?;
+            fetch_last_blocks(&provider, tx.clone(), last + 1, l2_new_origin).await?;
         }
 
         sleep(Duration::from_secs(12)).await;

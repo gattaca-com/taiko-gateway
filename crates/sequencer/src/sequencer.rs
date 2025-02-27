@@ -147,14 +147,6 @@ impl Sequencer {
                     };
                 }
 
-                SequencerState::Resync { target } => {
-                    if self.ctx.l2_origin() >= target {
-                        self.ctx.state = SequencerState::Sync;
-                    } else {
-                        self.ctx.state = SequencerState::Resync { target };
-                    }
-                }
-
                 SequencerState::Anchor { anchor_params, block_number, state_id } => {
                     if !self.flags.can_sequence {
                         self.ctx.state = SequencerState::Sync;
@@ -285,10 +277,15 @@ impl Sequencer {
     // if some blocks havent landed yet, we resync to the latest anchor
     fn check_resync(&mut self) {
         let l2_origin = self.ctx.l2_origin();
-        if l2_origin < self.ctx.parent.block_number {
-            assert!(matches!(self.ctx.state, SequencerState::Sync));
-            self.ctx.state = SequencerState::Resync { target: self.ctx.anchor.block_id };
-            self.send_resync_to_proposer();
+        let end = self
+            .proposer_request
+            .as_ref()
+            .map(|p| p.start_block_num - 1) // assumption is that we're still in the first batch being sequenced
+            .unwrap_or(self.ctx.parent.block_number);
+
+        if l2_origin < end {
+            warn!("resyncing to L2 origin: {l2_origin} -> {end}");
+            let _ = self.spine.proposer_tx.send(ProposalRequest::Resync { origin: l2_origin, end });
         }
     }
 
@@ -470,10 +467,6 @@ impl Sequencer {
         if let Some(request) = std::mem::take(&mut self.proposer_request) {
             let _ = self.spine.proposer_tx.send(ProposalRequest::Batch(request));
         }
-    }
-
-    fn send_resync_to_proposer(&mut self) {
-        let _ = self.spine.proposer_tx.send(ProposalRequest::Resync);
     }
 
     #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]

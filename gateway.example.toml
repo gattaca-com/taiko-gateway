@@ -28,6 +28,7 @@ l1_delay_secs = 48
 l1_safe_lag = 2 
 # Number of blocks to wait before refreshing the anchor, the larger this is the more blocks we can fit in a batch, but we risk it getting stale when proposing
 # This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep blocks up to anchor_batch_lag + l1_safe_lag old
+# This should be higher than delay_sequence_slots, so we avoid reorging the previous gateway
 anchor_batch_lag = 6
 soft_block_url = ""
 lookahead = { delay_sequence_slots = 4, delay_propose_slots = 2, buffer_secs = 6 }

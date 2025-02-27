@@ -41,12 +41,9 @@ pub async fn start_proposer(
 
     let l2_provider =
         ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
-    let preconf_provider = ProviderBuilder::new()
-        .disable_recommended_fillers()
-        .on_http(taiko_config.preconf_url.clone());
 
     // start proposer
-    spawn(proposer.run(l2_provider, preconf_provider, taiko_config));
+    spawn(proposer.run(l2_provider, taiko_config));
 
     Ok(())
 }

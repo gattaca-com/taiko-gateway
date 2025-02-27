@@ -37,7 +37,7 @@ pub struct ProposeBatchParams {
 #[derive(Debug, Clone)]
 pub enum ProposalRequest {
     Batch(ProposeBatchParams),
-    Resync,
+    Resync { origin: u64, end: u64 },
 }
 
 pub struct ProposerContext {

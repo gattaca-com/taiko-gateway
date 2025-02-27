@@ -102,8 +102,6 @@ pub enum SequencerState {
     /// Syncing L1/L2 blocks
     #[default]
     Sync,
-    /// Resyncing batches to L1
-    Resync { target: u64 },
     /// After simulating anchor tx, ready to sequence
     Anchor {
         /// Data used in anchor sim
