@@ -142,11 +142,11 @@ impl ProposerManager {
 
                 // this can happen if we waited too long before restarting the proposer, a
                 // re-org is inevitable
-                let request = request_from_blocks(l1_head - 1, blocks);
+                let request = request_from_blocks(l1_head - 1, blocks, Some(l1_timestamp - 1));
                 self.propose_batch_with_retry(request).await;
             } else {
                 // propose same batch
-                let request = request_from_blocks(anchor_block_id, blocks);
+                let request = request_from_blocks(anchor_block_id, blocks, None);
                 self.propose_batch_with_retry(request).await;
             }
         }
@@ -281,7 +281,11 @@ async fn fetch_n_blocks(
     Ok(blocks)
 }
 
-fn request_from_blocks(anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) -> ProposeBatchParams {
+fn request_from_blocks(
+    anchor_block_id: u64,
+    full_blocks: Vec<Arc<Block>>,
+    timestamp_override: Option<u64>,
+) -> ProposeBatchParams {
     let start_block_num = full_blocks[0].header.number;
     let end_block_num = full_blocks[full_blocks.len() - 1].header.number;
 
@@ -307,6 +311,8 @@ fn request_from_blocks(anchor_block_id: u64, full_blocks: Vec<Arc<Block>>) -> Pr
         tx_list.extend(txs);
         last_timestamp = block.header.timestamp;
     }
+
+    let last_timestamp = timestamp_override.unwrap_or(last_timestamp);
 
     ProposeBatchParams {
         anchor_block_id,
