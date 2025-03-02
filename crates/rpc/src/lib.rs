@@ -44,11 +44,12 @@ async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sende
     spawn(
         async move {
             loop {
+                // refetch full txpool every 5 minutes
                 if let Err(err) = fetch_txpool(rpc_url.clone(), tx_clone.clone()).await {
                     error!(%err, backoff, "txpool fetch failed. Retrying..");
                 }
 
-                sleep(Duration::from_secs(30)).await;
+                sleep(Duration::from_secs(300)).await;
             }
         }
         .in_current_span(),
@@ -71,7 +72,7 @@ async fn subscribe_mempool(rpc_url: Url, mempool_tx: Sender<Arc<Order>>) -> eyre
     let mut sub = provider.subscribe_full_pending_transactions().await?;
 
     while let Ok(tx) = sub.recv().await {
-        debug!(hash = %tx.inner.tx_hash(), "pending tx");
+        // debug!(hash = %tx.inner.tx_hash(), "pending tx");
         let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from).into());
     }
 
@@ -85,7 +86,7 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Arc<Order>>) -> eyre::Res
     let mut count = 0;
     for txs in txpool.pending.into_values() {
         for tx in txs.into_values() {
-            debug!(hash = %tx.inner.tx_hash(), "pending txpool");
+            // debug!(hash = %tx.inner.tx_hash(), "pending txpool");
             let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from).into());
             count += 1;
         }
@@ -93,7 +94,7 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Arc<Order>>) -> eyre::Res
 
     for txs in txpool.queued.into_values() {
         for tx in txs.into_values() {
-            debug!(hash = %tx.inner.tx_hash(), "queued txpool");
+            // debug!(hash = %tx.inner.tx_hash(), "queued txpool");
             let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from).into());
             count += 1;
         }

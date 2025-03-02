@@ -1,13 +1,12 @@
 //! Handles creating and landing L1 blockPropose transactions.
 
-use alloy_primitives::Address;
 use alloy_provider::ProviderBuilder;
 use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
 use manager::ProposerManager;
 use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
-    proposer::{ProposalRequest, ProposerContext},
+    proposer::ProposalRequest,
     runtime::spawn,
     taiko::lookahead::LookaheadHandle,
 };
@@ -20,14 +19,10 @@ pub async fn start_proposer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
     proposer_signer: PrivateKeySigner,
-    coinbase_address: Address,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
     _lookahead: LookaheadHandle,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
-
-    let context =
-        ProposerContext { proposer: proposer_signer.address(), coinbase: coinbase_address };
 
     let includer = L1Client::new(
         config.l1.rpc_url.clone(),
@@ -37,22 +32,13 @@ pub async fn start_proposer(
         config.l2.router_contract,
     )
     .await?;
-    let proposer = ProposerManager::new(proposer_config, context, includer, new_blocks_rx);
+    let proposer = ProposerManager::new(proposer_config, includer, new_blocks_rx);
 
     let l2_provider =
         ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
-    let preconf_provider = ProviderBuilder::new()
-        .disable_recommended_fillers()
-        .on_http(taiko_config.preconf_url.clone());
-
-    // FIXME: move this to sequencer? we can only resync if it's our turn in lookahead + should
-    // resync other gateways' blocks
-    if proposer.needs_resync(&l2_provider, &preconf_provider).await? {
-        proposer.resync(&l2_provider, &preconf_provider, &taiko_config).await?;
-    }
 
     // start proposer
-    spawn(proposer.run());
+    spawn(proposer.run(l2_provider, taiko_config));
 
     Ok(())
 }

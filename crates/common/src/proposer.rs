@@ -24,7 +24,7 @@ pub fn is_propose_delayed() -> bool {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct ProposalRequest {
+pub struct ProposeBatchParams {
     pub anchor_block_id: u64,
     pub start_block_num: u64,
     pub end_block_num: u64,
@@ -32,6 +32,13 @@ pub struct ProposalRequest {
     pub block_params: Vec<BlockParams>,
     /// all txs in the blocks, without anchor tx
     pub all_tx_list: Vec<TxEnvelope>,
+    pub coinbase: Address,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProposalRequest {
+    Batch(ProposeBatchParams),
+    Resync { origin: u64, end: u64 },
 }
 
 pub struct ProposerContext {
