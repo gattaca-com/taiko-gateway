@@ -182,6 +182,7 @@ mod tests {
             gas_used: parent_gas_used,
             block_number: parent_block.header.number,
             timestamp: parent_block.header.timestamp,
+            hash: parent_block.header.hash,
         };
 
         let config = TaikoConfig {

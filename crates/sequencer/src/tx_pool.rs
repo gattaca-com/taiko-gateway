@@ -35,6 +35,7 @@ impl TxPool {
         }
     }
 
+    // TODO: this is not efficient, we should get some top of block payments at least
     pub fn next_sequence(&mut self) -> Option<Arc<Order>> {
         self.txs.values_mut().next().and_then(|txs| txs.first_ready())
     }

@@ -382,13 +382,14 @@ impl Sequencer {
 
         let extra_data = get_extra_data(self.chain_config.base_fee_config.sharing_pctg);
 
+        let start = Instant::now();
         match self.simulator.simulate_anchor(tx, block_env, extra_data) {
             Ok(res) => {
                 let ExecutionResult::Success { state_id, gas_used, builder_payment } = res else {
                     bail!("failed simulate anchor, res={res:?}");
                 };
 
-                debug!(anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
+                debug!(time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
                 Ok(state_id)
             }
             Err(err) => {
@@ -399,11 +400,12 @@ impl Sequencer {
 
     fn simulate_tx(&self, origin_state_id: StateId, order: Arc<Order>) -> Option<(StateId, u128)> {
         let hash = *order.tx_hash();
-
+        let start = Instant::now();
         match self.simulator.simulate_tx(order, origin_state_id) {
             Ok(res) => match res {
                 ExecutionResult::Success { state_id: new_state_id, gas_used, builder_payment } => {
                     debug!(
+                        time = ?start.elapsed(),
                         %hash,
                         %origin_state_id,
                         %new_state_id,
@@ -438,12 +440,14 @@ impl Sequencer {
         anchor_params: AnchorParams,
     ) -> eyre::Result<()> {
         // seal
+        let start = Instant::now();
         let res = self.simulator.seal_block(origin_state_id)?;
 
         let block = res.built_block;
         let block_number = block.header.number;
 
         info!(
+            time = ?start.elapsed(),
             bn = block_number,
             block_hash = %block.header.hash,
             block_time = ?start_block.elapsed(),

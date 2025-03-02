@@ -66,6 +66,7 @@ pub struct ParentParams {
     pub timestamp: u64,
     pub gas_used: u32,
     pub block_number: u64,
+    pub hash: B256,
 }
 
 #[cfg(test)]

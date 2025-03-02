@@ -66,6 +66,18 @@ impl SequencerContext {
                 timestamp: new_header.timestamp,
                 gas_used: new_header.gas_used.try_into().unwrap(),
                 block_number: new_header.number,
+                hash: new_header.hash,
+            };
+        } else if new_header.number == self.parent.block_number &&
+            new_header.hash != self.parent.hash
+        {
+            warn!(sequenced_locally = ours, number = new_header.number, new_hash = %new_header.hash, old_hash = %self.parent.hash, "l2 reorg");
+
+            self.parent = ParentParams {
+                timestamp: new_header.timestamp,
+                gas_used: new_header.gas_used.try_into().unwrap(),
+                block_number: new_header.number,
+                hash: new_header.hash,
             };
         }
 
