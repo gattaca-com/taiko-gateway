@@ -37,6 +37,8 @@ use crate::{
 pub struct SequencerSpine {
     /// Receive txs and bundles from RPC
     pub rpc_rx: Receiver<Arc<Order>>,
+    /// Receive txs from mempool
+    pub mempool_rx: Receiver<Arc<Order>>,
     /// Send blocks to proposer for inclusion
     pub proposer_tx: UnboundedSender<ProposalRequest>,
     // Receiver of L1 blocks
@@ -49,9 +51,16 @@ pub struct SequencerSpine {
 
 #[derive(Debug, Default)]
 struct SequencerFlags {
+    /// Can we sequence new blocks
     can_sequence: bool,
+    /// Can we propose new batches
     can_propose: bool,
+    /// Is block proposing delayed
+    proposing_delayed: bool,
+    /// Is the L1 block fetch delayed
     l1_delayed: bool,
+    /// Is it our turn to sequence based on the lookahead
+    lookahead_sequence: bool,
 }
 
 pub struct Sequencer {
@@ -71,7 +80,6 @@ impl Sequencer {
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
-        mempool_rx: Receiver<Arc<Order>>,
         spine: SequencerSpine,
         lookahead: LookaheadHandle,
         signer: PrivateKeySigner,
@@ -82,14 +90,13 @@ impl Sequencer {
 
         // this doesn't handle well the restarts if we have pending orders in the rpc
         let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin);
-        let tx_pool = TxPool::new(mempool_rx);
 
         Self {
             config,
             chain_config,
             ctx,
             simulator,
-            tx_pool,
+            tx_pool: TxPool::new(),
             spine,
             lookahead,
             signer,
@@ -115,15 +122,18 @@ impl Sequencer {
         loop {
             // fetch new data
             self.recv_blocks();
-            self.tx_pool.fetch();
-            self.maybe_refresh_anchor();
+            self.fetch_mempool();
 
             self.check_can_sequence();
             self.check_can_propose();
 
+            if self.flags.can_sequence {
+                self.maybe_refresh_anchor();
+            }
+
             // clear proposal if it's late
-            if self.lookahead.should_clear_proposal(&self.signer.address()) {
-                self.send_batch_to_proposer();
+            if self.lookahead.should_clear_proposal(&self.signer.address()).0 {
+                self.send_batch_to_proposer("approaching next operator");
             }
 
             // state transition
@@ -228,49 +238,57 @@ impl Sequencer {
         }
     }
 
+    /// We can sequence if:
+    /// - batch proposal is not delayed
+    /// - L1 block fetch is not delayed
+    /// - it's our turn to sequence based on the lookahead
     fn check_can_sequence(&mut self) {
-        if is_propose_delayed() {
-            self.flags.can_sequence = false;
-            return;
+        let is_propose_delayed = is_propose_delayed();
+        if is_propose_delayed != self.flags.proposing_delayed {
+            if is_propose_delayed {
+                warn!("block proposing is delayed, stop sequencing");
+            } else {
+                warn!("block proposing has resumed");
+            }
+            self.flags.proposing_delayed = is_propose_delayed;
         }
 
-        if self.ctx.last_l1_receive.elapsed() > self.config.l1_delay {
-            if !self.flags.l1_delayed {
-                warn!("l1 block fetch is delayed, stopping sequencing");
-                self.flags.l1_delayed = true;
+        let is_l1_delayed = self.ctx.last_l1_receive.elapsed() > self.config.l1_delay;
+        if is_l1_delayed != self.flags.l1_delayed {
+            if is_l1_delayed {
+                warn!(last_received = ?self.ctx.last_l1_receive.elapsed(), "l1 block fetch is delayed, stop sequencing");
+            } else {
+                warn!("l1 block fetch has resumed");
             }
-        } else if self.flags.l1_delayed {
-            warn!("l1 block fetch has resumed");
-            self.flags.l1_delayed = false;
+            self.flags.l1_delayed = is_l1_delayed;
         }
 
         let (can_sequence, reason) = self.lookahead.can_sequence(&self.signer.address());
-
-        if can_sequence {
-            if !self.flags.can_sequence {
+        if can_sequence != self.flags.lookahead_sequence {
+            if can_sequence {
                 warn!("can now sequence based on lookahead: {reason}");
-                self.flags.can_sequence = true;
+            } else {
+                warn!("can no longer sequence based on lookahead: {reason}");
             }
-        } else if self.flags.can_sequence {
-            warn!("can no longer sequence based on lookahead: {reason}");
-            self.flags.can_sequence = false;
+            self.flags.lookahead_sequence = can_sequence;
         }
 
-        self.flags.can_sequence = !self.flags.l1_delayed && self.flags.can_sequence
+        self.flags.can_sequence = !self.flags.proposing_delayed &&
+            !self.flags.l1_delayed &&
+            self.flags.lookahead_sequence;
     }
 
     fn check_can_propose(&mut self) {
-        let can_propose = self.lookahead.can_propose(&self.signer.address());
+        let (can_propose, reason) = self.lookahead.can_propose(&self.signer.address());
 
-        if can_propose {
-            if !self.flags.can_propose {
-                warn!("can now propose");
-                self.flags.can_propose = true;
+        if can_propose != self.flags.can_propose {
+            if can_propose {
+                warn!("can now propose: {reason}");
                 self.check_resync();
+            } else {
+                warn!("can no longer propose: {reason}");
             }
-        } else if self.flags.can_propose {
-            warn!("can no longer propose");
-            self.flags.can_propose = false;
+            self.flags.can_propose = can_propose;
         }
     }
 
@@ -308,6 +326,12 @@ impl Sequencer {
         }
     }
 
+    fn fetch_mempool(&mut self) {
+        for tx in self.spine.mempool_rx.try_iter().take(50) {
+            self.tx_pool.put(tx);
+        }
+    }
+
     fn is_ready(&self) -> bool {
         self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag &&
             self.ctx.parent.block_number > 0
@@ -323,7 +347,7 @@ impl Sequencer {
         let is_anchor_old =
             self.ctx.current_anchor_id() + self.config.anchor_batch_lag < safe_l1_header.number;
 
-        // if the blocks with this anchor has too many txs, refresh it
+        // if the batch with this anchor has too many txs, refresh it
         let is_batch_big = false; // TODO
 
         if is_anchor_old || is_batch_big {
@@ -337,7 +361,7 @@ impl Sequencer {
 
             debug!(anchor =? self.ctx.anchor, "refreshed anchor params");
 
-            self.send_batch_to_proposer();
+            self.send_batch_to_proposer("refreshed anchor");
         }
     }
 
@@ -442,6 +466,7 @@ impl Sequencer {
         if is_first_block {
             request.anchor_block_id = anchor_params.block_id;
             request.start_block_num = block_number;
+            request.coinbase = self.config.coinbase_address;
         } else {
             assert_eq!(request.anchor_block_id, anchor_params.block_id);
         }
@@ -460,11 +485,20 @@ impl Sequencer {
             .map(|tx| tx.inner);
         request.all_tx_list.extend(txs);
 
+        if self.ctx.anchor.block_id != anchor_params.block_id {
+            self.send_batch_to_proposer("sealed last for this anchor");
+        }
+
         Ok(())
     }
 
-    fn send_batch_to_proposer(&mut self) {
+    /// Triggered:
+    /// - if we're approaching the end of this operator's turn
+    /// - if we seal a block and next anchor will be different
+    /// - if we refresh the anchor and have some pending from the previous anchor
+    fn send_batch_to_proposer(&mut self, reason: &str) {
         if let Some(request) = std::mem::take(&mut self.proposer_request) {
+            warn!("sending batch to be proposed: {reason}");
             let _ = self.spine.proposer_tx.send(ProposalRequest::Batch(request));
         }
     }

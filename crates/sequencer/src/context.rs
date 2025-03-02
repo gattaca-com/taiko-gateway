@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -13,7 +13,7 @@ use pc_common::{
     taiko::{AnchorParams, ParentParams},
     utils::verify_and_log_block,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Sequencing state
 pub struct SequencerContext {
@@ -28,7 +28,7 @@ pub struct SequencerContext {
     /// Last confirmed L1 header, keep a buffer to account for L1 reorgs
     pub l1_headers: BTreeMap<u64, Header>,
     /// L2 blocks which have been posted on the L1
-    pub to_verify: HashMap<u64, Header>,
+    pub to_verify: BTreeMap<u64, Header>,
     /// Last synced L2 block number
     pub l2_origin: Arc<AtomicU64>,
 }
@@ -42,7 +42,7 @@ impl SequencerContext {
             anchor: AnchorParams::default(),
             l1_headers: BTreeMap::new(),
             parent: Default::default(),
-            to_verify: HashMap::new(),
+            to_verify: BTreeMap::new(),
             l2_origin,
         }
     }
@@ -59,9 +59,9 @@ impl SequencerContext {
     /// Insert a new preconfed L2 block, this could be sequenced by us or another gateway, we only
     /// verify our blocks
     pub fn new_preconf_l2_block(&mut self, new_header: &Header, ours: bool) {
-        debug!(number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
-
         if new_header.number > self.parent.block_number {
+            debug!(sequenced_locally = ours, number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
+
             self.parent = ParentParams {
                 timestamp: new_header.timestamp,
                 gas_used: new_header.gas_used.try_into().unwrap(),
@@ -77,10 +77,22 @@ impl SequencerContext {
     /// Process a new L2 block as confirmed by L1 batch transaction.
     /// This is always <= the preconf block (assuming remote RPC is well peered)
     pub fn new_origin_l2_block(&mut self, new_header: &Header) {
-        debug!(number = new_header.number, hash = %new_header.hash, "new l2 block");
+        debug!(number = new_header.number, hash = %new_header.hash, "new l2 origin block");
 
         if let Some(preconf_header) = self.to_verify.remove(&new_header.number) {
             verify_and_log_block(&preconf_header, new_header, true);
+        } else if self
+            .to_verify
+            .first_key_value()
+            .map(|(bn, _)| bn < &new_header.number)
+            .unwrap_or(false)
+        {
+            // we missed some blocks, clear the map anyways to avoid keeping them here
+            let n_before = self.to_verify.len();
+            self.to_verify.retain(|bn, _| *bn > new_header.number);
+            let n_after = self.to_verify.len();
+
+            warn!(pruned = n_before - n_after, "missed some blocks, pruning verifications");
         }
     }
 

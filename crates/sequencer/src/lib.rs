@@ -56,6 +56,7 @@ pub fn start_sequencer(
 
     let spine = SequencerSpine {
         rpc_rx,
+        mempool_rx,
         proposer_tx: new_blocks_tx,
         l1_blocks_rx,
         l2_blocks_rx,
@@ -65,7 +66,6 @@ pub fn start_sequencer(
     let sequencer = Sequencer::new(
         sequencer_config,
         taiko_config,
-        mempool_rx,
         spine,
         lookahead,
         coinbase_signer,

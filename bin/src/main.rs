@@ -1,3 +1,4 @@
+use eyre::eyre;
 use pc_common::{
     beacon::init_beacon,
     config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
@@ -38,6 +39,23 @@ async fn main() {
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
 
+    check_and_approve_balance(
+        config.l2.taiko_token,
+        config.l2.l1_contract,
+        config.l1.rpc_url.clone(),
+        envs.proposer_signer_key.clone(),
+    )
+    .await
+    .map_err(|e| eyre!("balance checks: {e}"))?;
+
+    let chain_config = get_and_validate_config(
+        config.l1.clone(),
+        config.l2.clone(),
+        envs.proposer_signer_key.address(),
+    )
+    .await
+    .map_err(|e| eyre!("get config: {e}"))?;
+
     let beacon_handle = init_beacon(config.l1.beacon_url.clone()).await?;
 
     let lookahead = start_looahead_loop(
@@ -46,24 +64,8 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         beacon_handle,
         config.gateway.lookahead,
     )
-    .await?;
-
-    check_and_approve_balance(
-        config.l2.taiko_token,
-        config.l2.l1_contract,
-        config.l1.rpc_url.clone(),
-        envs.proposer_signer_key.clone(),
-    )
-    .await?;
-
-    let chain_config = get_and_validate_config(
-        config.l1.clone(),
-        config.l2.clone(),
-        envs.proposer_signer_key.address(),
-    )
-    .await?;
-
-    info!("initial checks ok");
+    .await
+    .map_err(|e| eyre!("lookahead init: {e}"))?;
 
     let taiko_config = TaikoConfig::new(&config, chain_config);
 
@@ -72,11 +74,11 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         &config,
         taiko_config.clone(),
         envs.proposer_signer_key.clone(),
-        envs.sequencer_signer_key.address(),
         new_blocks_rx,
         lookahead.clone(),
     )
-    .await?;
+    .await
+    .map_err(|e| eyre!("proposer init: {e}"))?;
 
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
@@ -92,9 +94,14 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     );
     start_rpc(&config, rpc_tx, mempool_tx);
 
-    // Wait for SIGTERM
-    let mut signal = tokio::signal::unix::signal(SignalKind::terminate())?;
-    signal.recv().await;
+    // Wait for SIGTERM or SIGINT
+    let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
+    let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate())?;
+
+    tokio::select! {
+        _ = sigint.recv() => {}
+        _ = sigterm.recv() => {}
+    }
 
     Ok(())
 }

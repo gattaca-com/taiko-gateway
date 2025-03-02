@@ -1,10 +1,6 @@
 #![allow(clippy::comparison_chain)]
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
 use alloy_eips::BlockId;
@@ -15,9 +11,7 @@ use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
     config::{ProposerConfig, TaikoConfig},
-    proposer::{
-        set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, ProposerContext,
-    },
+    proposer::{set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams},
     taiko::{
         pacaya::{
             encode_and_compress_tx_list, l2::TaikoL2, propose_batch_blobs, propose_batch_calldata,
@@ -36,7 +30,6 @@ type AlloyProvider = alloy_provider::RootProvider;
 
 pub struct ProposerManager {
     config: ProposerConfig,
-    context: ProposerContext,
     client: L1Client,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
 }
@@ -44,12 +37,10 @@ pub struct ProposerManager {
 impl ProposerManager {
     pub fn new(
         config: ProposerConfig,
-
-        context: ProposerContext,
         client: L1Client,
         new_blocks_rx: UnboundedReceiver<ProposalRequest>,
     ) -> Self {
-        Self { config, context, client, new_blocks_rx }
+        Self { config, client, new_blocks_rx }
     }
 
     #[tracing::instrument(skip_all, name = "proposer")]
@@ -96,7 +87,7 @@ impl ProposerManager {
         let l1_head = l1_block.header.number;
         let l1_timestamp = l1_block.header.timestamp;
 
-        let mut to_verify = HashMap::new();
+        let mut to_verify = BTreeMap::new();
         let mut has_reorged = false;
 
         info!(origin, end, "resync");
@@ -126,6 +117,8 @@ impl ProposerManager {
         }
 
         for (anchor_block_id, blocks) in to_propose {
+            let bns = blocks.iter().map(|b| b.header.number).collect::<Vec<_>>();
+
             let reorg_by_number = l1_head.saturating_sub(anchor_block_id) >
                 taiko_config.params.max_anchor_height_offset;
             // assume all blocks in a batch have the same timestamp
@@ -133,10 +126,18 @@ impl ProposerManager {
             let reorg_by_timestamp = l1_timestamp.saturating_sub(last_timestamp) >
                 taiko_config.params.max_anchor_height_offset * 12;
 
+            if reorg_by_number {
+                warn!(anchor_block_id, ?bns, "reorg by number");
+            } else if reorg_by_timestamp {
+                warn!(anchor_block_id, ?bns, "reorg by timestamp");
+            } else {
+                info!(anchor_block_id, ?bns, "no reorg");
+            }
+
             if reorg_by_number || reorg_by_timestamp {
                 has_reorged = true;
 
-                let msg = format!("re-orged blocks {}-{}", blocks[0].header.number, 0);
+                let msg = format!("re-orged blocks {bns:?}");
                 warn!("{msg}");
                 alert_discord(&msg);
 
@@ -152,6 +153,8 @@ impl ProposerManager {
         }
 
         if !has_reorged {
+            // TODO: this could fetch from preconfs, fix
+
             for (bn, block) in to_verify {
                 let new_block = l2_provider
                     .get_block_by_number(bn.into(), BlockTransactionsKind::Hashes)
@@ -181,10 +184,11 @@ impl ProposerManager {
         let compressed = encode_and_compress_tx_list(request.all_tx_list.clone()).into(); // FIXME
         let should_use_blobs = self.should_use_blobs(&compressed);
         let (input, maybe_sidecar) = if should_use_blobs {
-            let (input, sidecar) = propose_batch_blobs(request, parent_meta_hash, &self.context);
+            let (input, sidecar) =
+                propose_batch_blobs(request, parent_meta_hash, self.client.address());
             (input, Some(sidecar))
         } else {
-            let input = propose_batch_calldata(request, parent_meta_hash, &self.context);
+            let input = propose_batch_calldata(request, parent_meta_hash, self.client.address());
             (input, None)
         };
 
@@ -288,6 +292,8 @@ fn request_from_blocks(
 ) -> ProposeBatchParams {
     let start_block_num = full_blocks[0].header.number;
     let end_block_num = full_blocks[full_blocks.len() - 1].header.number;
+    // assume that all blocks have the same coinbase
+    let coinbase = full_blocks[0].header.beneficiary;
 
     let mut blocks = Vec::with_capacity(full_blocks.len());
     let mut tx_list = Vec::new();
@@ -321,5 +327,6 @@ fn request_from_blocks(
         block_params: blocks,
         all_tx_list: tx_list,
         last_timestamp,
+        coinbase,
     }
 }

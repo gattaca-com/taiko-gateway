@@ -32,6 +32,7 @@ pub struct ProposeBatchParams {
     pub block_params: Vec<BlockParams>,
     /// all txs in the blocks, without anchor tx
     pub all_tx_list: Vec<TxEnvelope>,
+    pub coinbase: Address,
 }
 
 #[derive(Debug, Clone)]

@@ -2,13 +2,13 @@ use std::io::Write;
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
-use alloy_primitives::{Bytes, B256};
+use alloy_primitives::{Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
 
 use super::{preconf::PreconfRouter, BatchParams};
 use crate::{
-    proposer::{ProposeBatchParams, ProposerContext},
+    proposer::ProposeBatchParams,
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
         pacaya::BlobParams,
@@ -22,14 +22,14 @@ use crate::{
 pub fn propose_batch_calldata(
     request: ProposeBatchParams,
     parent_meta_hash: B256,
-    context: &ProposerContext,
+    proposer: Address,
 ) -> Bytes {
     let compressed = encode_and_compress_tx_list(request.all_tx_list);
 
     // TODO: check the offsets here
     let batch_params = BatchParams {
-        proposer: context.proposer,
-        coinbase: context.coinbase,
+        proposer,
+        coinbase: request.coinbase,
         parentMetaHash: parent_meta_hash,
         anchorBlockId: request.anchor_block_id,
         lastBlockTimestamp: request.last_timestamp,
@@ -61,7 +61,7 @@ pub fn propose_batch_calldata(
 pub fn propose_batch_blobs(
     request: ProposeBatchParams,
     parent_meta_hash: B256,
-    context: &ProposerContext,
+    proposer: Address,
 ) -> (Bytes, BlobTransactionSidecar) {
     let compressed = encode_and_compress_tx_list(request.all_tx_list);
 
@@ -82,8 +82,8 @@ pub fn propose_batch_blobs(
     };
 
     let batch_params = BatchParams {
-        proposer: context.proposer,
-        coinbase: context.coinbase,
+        proposer,
+        coinbase: request.coinbase,
         parentMetaHash: parent_meta_hash,
         anchorBlockId: request.anchor_block_id,
         lastBlockTimestamp: request.last_timestamp,

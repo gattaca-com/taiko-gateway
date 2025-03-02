@@ -301,7 +301,7 @@ mod tests {
     #[ignore]
     #[test]
     fn test_decode_l1_error() {
-        let bytes = hex!("1999aed2");
+        let bytes = hex!("fe1698b2");
 
         let err = TaikoL1Errors::abi_decode(&bytes, true).unwrap();
         println!("{:?}", err);
