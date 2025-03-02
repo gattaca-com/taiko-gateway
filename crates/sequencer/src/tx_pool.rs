@@ -36,11 +36,7 @@ impl TxPool {
     }
 
     pub fn next_sequence(&mut self) -> Option<Arc<Order>> {
-        for txs in self.txs.values_mut() {
-            return txs.first_ready();
-        }
-
-        None
+        self.txs.values_mut().next().and_then(|txs| txs.first_ready())
     }
 }
 

@@ -47,7 +47,7 @@ pub async fn start_looahead_loop(
                 if beacon_handle.slot_in_epoch() == 0 {
                     // avoid fetching on the first slot of the epoch in case it was a missed slot, 
                     // otherwise the previous "current" gets tagged as the new "current" for this epoch
-                    
+
                     continue;
                 }
 
