@@ -98,9 +98,6 @@ pub fn load_env_vars() -> EnvConfig {
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 pub struct LookaheadConfig {
-    /// We start proposing batches only after this many slots have passed since the start of our
-    /// epoch
-    pub delay_propose_slots: u64,
     // If current_operator = A, next_operator = B, delay_slots = 3, A stops creating new blocks
     // 32 - 3 = 29 slots in the epoch (this leaves 3 slots for posting the final batches)
     pub delay_sequence_slots: u64,
