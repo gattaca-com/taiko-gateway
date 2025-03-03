@@ -31,10 +31,12 @@ pub struct SequencerContext {
     pub to_verify: BTreeMap<u64, Header>,
     /// Last synced L2 block number
     pub l2_origin: Arc<AtomicU64>,
+    /// Last synced L1 block number
+    pub l1_number: Arc<AtomicU64>,
 }
 
 impl SequencerContext {
-    pub fn new(l1_safe_lag: u64, l2_origin: Arc<AtomicU64>) -> Self {
+    pub fn new(l1_safe_lag: u64, l2_origin: Arc<AtomicU64>, l1_number: Arc<AtomicU64>) -> Self {
         Self {
             l1_safe_lag,
             last_l1_receive: Instant::now(),
@@ -44,12 +46,14 @@ impl SequencerContext {
             parent: Default::default(),
             to_verify: BTreeMap::new(),
             l2_origin,
+            l1_number,
         }
     }
 
     pub fn new_l1_block(&mut self, new_header: Header) {
         debug!(sync_time = ?self.last_l1_receive.elapsed(), number = new_header.number, hash = %new_header.hash, "new l1 block");
 
+        self.l1_number.store(new_header.number, Ordering::Relaxed);
         self.l1_headers.retain(|n, _| *n >= new_header.number - self.l1_safe_lag);
         self.l1_headers.insert(new_header.number, new_header);
 

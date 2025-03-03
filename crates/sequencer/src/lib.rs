@@ -22,6 +22,7 @@ mod tx_pool;
 
 use alloy_signer_local::PrivateKeySigner;
 
+#[allow(clippy::too_many_arguments)]
 pub fn start_sequencer(
     config: &StaticConfig,
     taiko_config: TaikoConfig,
@@ -30,6 +31,7 @@ pub fn start_sequencer(
     mempool_rx: Receiver<Arc<Order>>,
     new_blocks_tx: UnboundedSender<ProposalRequest>,
     coinbase_signer: PrivateKeySigner,
+    l1_number: Arc<AtomicU64>,
 ) {
     let sequencer_config: SequencerConfig = (config, coinbase_signer.address()).into();
 
@@ -70,6 +72,7 @@ pub fn start_sequencer(
         lookahead,
         coinbase_signer,
         l2_origin,
+        l1_number,
     );
 
     std::thread::Builder::new()

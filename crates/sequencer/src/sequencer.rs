@@ -84,12 +84,13 @@ impl Sequencer {
         lookahead: LookaheadHandle,
         signer: PrivateKeySigner,
         l2_origin: Arc<AtomicU64>,
+        l1_number: Arc<AtomicU64>,
     ) -> Self {
         let chain_config = taiko_config.params;
         let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config);
 
         // this doesn't handle well the restarts if we have pending orders in the rpc
-        let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin);
+        let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin, l1_number);
 
         Self {
             config,
@@ -266,9 +267,9 @@ impl Sequencer {
         let (can_sequence, reason) = self.lookahead.can_sequence(&self.signer.address());
         if can_sequence != self.flags.lookahead_sequence {
             if can_sequence {
-                warn!("can now sequence based on lookahead: {reason}");
+                warn!(reason, "can now sequence based on lookahead");
             } else {
-                warn!("can no longer sequence based on lookahead: {reason}");
+                warn!(reason, "can no longer sequence based on lookahead");
             }
             self.flags.lookahead_sequence = can_sequence;
         }
@@ -283,10 +284,10 @@ impl Sequencer {
 
         if can_propose != self.flags.can_propose {
             if can_propose {
-                warn!("can now propose: {reason}");
+                warn!(reason, "can now propose");
                 self.check_resync();
             } else {
-                warn!("can no longer propose: {reason}");
+                warn!(reason, "can no longer propose");
             }
             self.flags.can_propose = can_propose;
         }
@@ -502,7 +503,7 @@ impl Sequencer {
     /// - if we refresh the anchor and have some pending from the previous anchor
     fn send_batch_to_proposer(&mut self, reason: &str) {
         if let Some(request) = std::mem::take(&mut self.proposer_request) {
-            warn!("sending batch to be proposed: {reason}");
+            warn!(reason, "sending batch to be proposed");
             let _ = self.spine.proposer_tx.send(ProposalRequest::Batch(request));
         }
     }

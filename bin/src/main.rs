@@ -1,3 +1,5 @@
+use std::sync::{atomic::AtomicU64, Arc};
+
 use eyre::eyre;
 use pc_common::{
     beacon::init_beacon,
@@ -57,12 +59,14 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     .map_err(|e| eyre!("get config: {e}"))?;
 
     let beacon_handle = init_beacon(config.l1.beacon_url.clone()).await?;
+    let l1_number = Arc::new(AtomicU64::new(0));
 
     let lookahead = start_looahead_loop(
         config.l1.rpc_url.clone(),
         config.l2.whitelist_contract,
         beacon_handle,
         config.gateway.lookahead,
+        l1_number.clone(),
     )
     .await
     .map_err(|e| eyre!("lookahead init: {e}"))?;
@@ -91,6 +95,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         mempool_rx,
         new_blocks_tx,
         envs.sequencer_signer_key,
+        l1_number,
     );
     start_rpc(&config, rpc_tx, mempool_tx);
 
