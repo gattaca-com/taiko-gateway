@@ -1,7 +1,8 @@
+use std::time::Duration;
+
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use eyre::eyre;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     config::{L1ChainConfig, L2ChainConfig, TaikoChainParams},
@@ -39,17 +40,28 @@ pub async fn get_and_validate_config(
     let chain_id = taiko_l2.l1ChainId().call().await?._0;
     assert_eq!(chain_id, l1_chain_id, "l1 chain id in l2 contract");
 
-    let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
+    // fetch forever till we are in the whitelist
+    let mut operators = Vec::new();
+    let this_index;
 
-    let mut operators = Vec::with_capacity(operator_count);
-    for i in 0..operator_count {
-        let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
-        operators.push(operator);
+    loop {
+        let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
+
+        for i in 0..operator_count {
+            let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
+            operators.push(operator);
+        }
+
+        if let Some(index) = operators.iter().position(|&op| op == signer_address) {
+            this_index = index;
+            break;
+        } else {
+            warn!(operator= %signer_address, whitelist=? operators, "provided address is not in whitelist! sleeping for 60s");
+        };
+
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 
-    let this_index = operators.iter().position(|&op| op == signer_address).ok_or(eyre!(
-        "provided address is not in whitelist! operator={signer_address}, whitelist={operators:?}"
-    ))?;
     info!(this_index, ?operators, "fetched operators");
 
     let chain_config = TaikoChainParams::new(
