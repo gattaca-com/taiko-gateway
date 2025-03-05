@@ -2,6 +2,7 @@
 
 use std::sync::{atomic::AtomicU64, Arc};
 
+use alloy_primitives::Address;
 use crossbeam_channel::Receiver;
 use fetcher::BlockFetcher;
 use jwt::parse_secret_from_file;
@@ -32,12 +33,13 @@ pub fn start_sequencer(
     mempool_rx: Receiver<Arc<Order>>,
     new_blocks_tx: UnboundedSender<ProposalRequest>,
     l1_number: Arc<AtomicU64>,
+    operator_address: Address,
 ) {
     let mut jwt_secret = Vec::new();
 
     // If jwt_path is not empty, read and add Authorization header
-    if !config.gateway.jwt_secret_path.is_empty() {
-        match parse_secret_from_file(&config.gateway.jwt_secret_path) {
+    if !config.gateway.jwt_secret_path.as_os_str().is_empty() {
+        match parse_secret_from_file(config.gateway.jwt_secret_path.clone()) {
             Ok(secret) => {
                 jwt_secret = secret;
             }
@@ -45,7 +47,7 @@ pub fn start_sequencer(
         }
     }
 
-    let sequencer_config: SequencerConfig = (config, jwt_secret).into();
+    let sequencer_config: SequencerConfig = (config, jwt_secret, operator_address).into();
 
     let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l1.rpc_url.clone();

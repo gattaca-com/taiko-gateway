@@ -1,11 +1,12 @@
 use std::{
     fs,
     io::Read,
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use alloy_primitives::hex;
-use eyre::{eyre, Result};
+use eyre::{bail, ensure, eyre, Result};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 
@@ -32,26 +33,23 @@ pub fn generate_jwt(secret: Vec<u8>) -> Result<String, jsonwebtoken::errors::Err
 
 // parse_secret_from_file matches the Golang API method of the same name, ensuring the same
 // validation rules.
-pub fn parse_secret_from_file(jwt_secret_file: &str) -> Result<Vec<u8>> {
-    if jwt_secret_file.is_empty() {
+pub fn parse_secret_from_file(jwt_secret_file: PathBuf) -> Result<Vec<u8>> {
+    if jwt_secret_file.as_os_str().is_empty() {
         bail!("JWT secret file path is empty");
     }
 
     // Read file contents
-    let mut file = fs::File::open(jwt_secret_file)
-        .map_err(|e| eyre!("Failed to open JWT secret file {}: {}", jwt_secret_file, e))?;
+    let mut file = fs::File::open(&jwt_secret_file).map_err(|e| {
+        eyre!("Failed to open JWT secret file {}: {}", jwt_secret_file.to_string_lossy(), e)
+    })?;
     let mut enc = String::new();
     file.read_to_string(&mut enc)?;
 
-    // Trim whitespace and remove "0x" prefix if present
-    let str_data = enc.trim();
-    let clean_secret = str_data.trim_start_matches("0x");
-
     // Decode hex to bytes
-    let secret = hex::decode(clean_secret)
-        .map_err(|e| eyre!("Failed to decode JWT secret as hex: {}", e))?;
+    let secret =
+        hex::decode(enc.trim()).map_err(|e| eyre!("Failed to decode JWT secret as hex: {}", e))?;
 
-    ensure!(secret.len() >= 32, "JWT secret should be at least 32 bytes")
+    ensure!(secret.len() >= 32, "JWT secret should be at least 32 bytes");
 
     Ok(secret)
 }

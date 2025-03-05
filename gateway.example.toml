@@ -34,4 +34,4 @@ coinbase = "0x591317B806B96262C07105CC06CB4831008AfDf2"
 anchor_batch_lag = 6
 soft_block_url = ""
 lookahead = { delay_sequence_slots = 4, buffer_secs = 6 }
-jwt_secret = "~/taiko-geth-gattaca/geth/jwtsecret"
+jwt_secret_path = "~/taiko-geth-gattaca/geth/jwtsecret"

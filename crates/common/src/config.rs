@@ -1,4 +1,4 @@
-use std::{fs, ops::Deref, time::Duration};
+use std::{fs, ops::Deref, path::PathBuf, time::Duration};
 
 use alloy_primitives::Address;
 use alloy_signer_local::PrivateKeySigner;
@@ -134,8 +134,8 @@ pub struct SequencerConfig {
     pub jwt_secret: Vec<u8>,
 }
 
-impl From<(&StaticConfig, Vec<u8>)> for SequencerConfig {
-    fn from((config, jwt_secret): (&StaticConfig, Vec<u8>)) -> Self {
+impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
+    fn from((config, jwt_secret, operator_address): (&StaticConfig, Vec<u8>, Address)) -> Self {
         Self {
             simulator_url: config.gateway.simulator_url.clone(),
             target_block_time: Duration::from_millis(config.gateway.l2_target_block_time_ms),
@@ -144,8 +144,8 @@ impl From<(&StaticConfig, Vec<u8>)> for SequencerConfig {
             anchor_batch_lag: config.gateway.anchor_batch_lag,
             soft_block_url: config.gateway.soft_block_url.clone(),
             jwt_secret,
-            coinbase_address: config.gateway.coinbase.parse().unwrap(),
-            operator_address: config.gateway.operator.parse().unwrap(),
+            coinbase_address: config.gateway.coinbase,
+            operator_address,
         }
     }
 }
