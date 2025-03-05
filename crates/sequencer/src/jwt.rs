@@ -34,7 +34,7 @@ pub fn generate_jwt(secret: Vec<u8>) -> Result<String, jsonwebtoken::errors::Err
 // validation rules.
 pub fn parse_secret_from_file(jwt_secret_file: &str) -> Result<Vec<u8>> {
     if jwt_secret_file.is_empty() {
-        return Err(eyre!("JWT secret file path is empty"));
+        bail!("JWT secret file path is empty");
     }
 
     // Read file contents
