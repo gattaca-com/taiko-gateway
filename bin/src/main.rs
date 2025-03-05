@@ -87,6 +87,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
 
+
     start_sequencer(
         &config,
         taiko_config,
@@ -94,7 +95,6 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         rpc_rx,
         mempool_rx,
         new_blocks_tx,
-        envs.sequencer_signer_key,
         l1_number,
     );
     start_rpc(&config, rpc_tx, mempool_tx);

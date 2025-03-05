@@ -9,7 +9,6 @@ use std::{
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
 use alloy_rpc_types::{Block, Header};
-use alloy_signer_local::PrivateKeySigner;
 use crossbeam_channel::Receiver;
 use eyre::bail;
 use pc_common::{
@@ -23,12 +22,13 @@ use pc_common::{
     },
     types::BlockEnv,
 };
-use reqwest::Client;
+use reqwest::{Client, header::AUTHORIZATION};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn, Instrument};
 
 use crate::{
     context::{SequencerContext, SequencerState},
+    jwt::generate_jwt,
     simulator::SimulatorClient,
     soft_block::BuildPreconfBlockRequestBody,
     tx_pool::TxPool,
@@ -72,7 +72,6 @@ pub struct Sequencer {
     spine: SequencerSpine,
     lookahead: LookaheadHandle,
     flags: SequencerFlags,
-    signer: PrivateKeySigner,
     proposer_request: Option<ProposeBatchParams>,
 }
 
@@ -82,7 +81,6 @@ impl Sequencer {
         taiko_config: TaikoConfig,
         spine: SequencerSpine,
         lookahead: LookaheadHandle,
-        signer: PrivateKeySigner,
         l2_origin: Arc<AtomicU64>,
         l1_number: Arc<AtomicU64>,
     ) -> Self {
@@ -91,7 +89,7 @@ impl Sequencer {
 
         // this doesn't handle well the restarts if we have pending orders in the rpc
         let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin, l1_number);
-
+        
         Self {
             config,
             chain_config,
@@ -100,7 +98,6 @@ impl Sequencer {
             tx_pool: TxPool::new(),
             spine,
             lookahead,
-            signer,
             flags: SequencerFlags::default(),
             proposer_request: None,
         }
@@ -133,7 +130,7 @@ impl Sequencer {
             }
 
             // clear proposal if it's late
-            if self.lookahead.should_clear_proposal(&self.signer.address()).0 {
+            if self.lookahead.should_clear_proposal(&self.config.operator_address).0 {
                 self.send_batch_to_proposer("approaching next operator");
             }
 
@@ -264,7 +261,7 @@ impl Sequencer {
             self.flags.l1_delayed = is_l1_delayed;
         }
 
-        let (can_sequence, reason) = self.lookahead.can_sequence(&self.signer.address());
+        let (can_sequence, reason) = self.lookahead.can_sequence(&self.config.operator_address);
         if can_sequence != self.flags.lookahead_sequence {
             if can_sequence {
                 warn!(reason, "can now sequence based on lookahead");
@@ -280,7 +277,7 @@ impl Sequencer {
     }
 
     fn check_can_propose(&mut self) {
-        let (can_propose, reason) = self.lookahead.can_propose(&self.signer.address());
+        let (can_propose, reason) = self.lookahead.can_propose(&self.config.operator_address);
 
         if can_propose != self.flags.can_propose {
             if can_propose {
@@ -511,16 +508,29 @@ impl Sequencer {
     #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
     fn gossip_soft_block(&self, block: Arc<Block>) {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
-        let signer = self.signer.clone();
-
         let url = self.config.soft_block_url.clone();
 
+        let jwt_secret = self.config.jwt_secret.clone();
+        
         spawn(
             async move {
-                let request = BuildPreconfBlockRequestBody::new(block, signer);
+                let request = BuildPreconfBlockRequestBody::new(block);
 
                 let raw = serde_json::to_string(&request).unwrap();
-                match Client::new().post(url).json(&request).send().await {
+
+                let mut req_builder = Client::new().post(url).json(&request);
+                
+                if !jwt_secret.is_empty() {
+                    let token = generate_jwt(jwt_secret);
+
+                    if let Ok(jwt) = token {
+                        req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
+                    } else {
+                        error!("Failed to generate JWT");
+                    }
+                }
+
+                match req_builder.send().await {
                     Ok(res) => {
                         let status = res.status();
                         let body = res.text().await.unwrap();
