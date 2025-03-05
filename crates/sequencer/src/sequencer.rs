@@ -527,6 +527,7 @@ impl Sequencer {
                         req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
                     } else {
                         error!("Failed to generate JWT");
+                        return
                     }
                 }
 
