@@ -26,7 +26,6 @@ dry_run = false
 l1_delay_secs = 48                                                  
 # wait until this many blocks have passed to check that the L1 propose tx hasnt reorged out
 l1_safe_lag = 2 
-operator = "0x591317B806B96262C07105CC06CB4831008AfDf2"
 coinbase = "0x591317B806B96262C07105CC06CB4831008AfDf2"
 # Number of blocks to wait before refreshing the anchor, the larger this is the more blocks we can fit in a batch, but we risk it getting stale when proposing
 # This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep blocks up to anchor_batch_lag + l1_safe_lag old

@@ -61,7 +61,6 @@ pub struct GatewayConfig {
 
     pub jwt_secret_path: PathBuf,
     pub coinbase: Address,
-    pub operator: Address,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
