@@ -22,7 +22,7 @@ use pc_common::{
     },
     types::BlockEnv,
 };
-use reqwest::{Client, header::AUTHORIZATION};
+use reqwest::{header::AUTHORIZATION, Client};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn, Instrument};
 
@@ -89,7 +89,7 @@ impl Sequencer {
 
         // this doesn't handle well the restarts if we have pending orders in the rpc
         let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin, l1_number);
-        
+
         Self {
             config,
             chain_config,
@@ -511,7 +511,7 @@ impl Sequencer {
         let url = self.config.soft_block_url.clone();
 
         let jwt_secret = self.config.jwt_secret.clone();
-        
+
         spawn(
             async move {
                 let request = BuildPreconfBlockRequestBody::new(block);
@@ -519,7 +519,7 @@ impl Sequencer {
                 let raw = serde_json::to_string(&request).unwrap();
 
                 let mut req_builder = Client::new().post(url).json(&request);
-                
+
                 if !jwt_secret.is_empty() {
                     let token = generate_jwt(jwt_secret);
 

@@ -1,6 +1,7 @@
 //! Builds blocks and sends to proposer loop
 
 use std::sync::{atomic::AtomicU64, Arc};
+
 use crossbeam_channel::Receiver;
 use fetcher::BlockFetcher;
 use jwt::parse_secret_from_file;
@@ -33,9 +34,9 @@ pub fn start_sequencer(
     l1_number: Arc<AtomicU64>,
 ) {
     let mut jwt_secret = Vec::new();
-    
-     // If jwt_path is not empty, read and add Authorization header
-     if !config.gateway.jwt_secret_path.is_empty() {
+
+    // If jwt_path is not empty, read and add Authorization header
+    if !config.gateway.jwt_secret_path.is_empty() {
         match parse_secret_from_file(&config.gateway.jwt_secret_path) {
             Ok(secret) => {
                 jwt_secret = secret;
@@ -76,14 +77,8 @@ pub fn start_sequencer(
         origin_blocks_rx,
     };
 
-    let sequencer = Sequencer::new(
-        sequencer_config,
-        taiko_config,
-        spine,
-        lookahead,
-        l2_origin,
-        l1_number,
-    );
+    let sequencer =
+        Sequencer::new(sequencer_config, taiko_config, spine, lookahead, l2_origin, l1_number);
 
     std::thread::Builder::new()
         .name("sequencer".to_string())

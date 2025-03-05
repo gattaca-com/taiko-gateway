@@ -52,8 +52,6 @@ impl BuildPreconfBlockRequestBody {
             extra_data: block.header.extra_data.clone(),
             base_fee_per_gas: block.header.base_fee_per_gas.unwrap(),
         };
-        BuildPreconfBlockRequestBody {
-            executable_data,
-        }
+        BuildPreconfBlockRequestBody { executable_data }
     }
 }

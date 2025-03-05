@@ -143,7 +143,7 @@ impl From<(&StaticConfig, Vec<u8>)> for SequencerConfig {
             l1_safe_lag: config.gateway.l1_safe_lag,
             anchor_batch_lag: config.gateway.anchor_batch_lag,
             soft_block_url: config.gateway.soft_block_url.clone(),
-            jwt_secret: jwt_secret,
+            jwt_secret,
             coinbase_address: config.gateway.coinbase.parse().unwrap(),
             operator_address: config.gateway.operator.parse().unwrap(),
         }

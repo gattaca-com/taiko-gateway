@@ -1,10 +1,13 @@
-use jsonwebtoken::{encode, EncodingKey, Header};
-use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::fs;
-use std::io::Read;
+use std::{
+    fs,
+    io::Read,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use alloy_primitives::hex;
 use eyre::{eyre, Result};
+use jsonwebtoken::{encode, EncodingKey, Header};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -25,7 +28,6 @@ pub fn generate_jwt(secret: Vec<u8>) -> Result<String, jsonwebtoken::errors::Err
 
     let key = EncodingKey::from_secret(&secret);
     encode(&Header::default(), &claims, &key)
-    
 }
 
 // parse_secret_from_file matches the Golang API method of the same name, ensuring the same
