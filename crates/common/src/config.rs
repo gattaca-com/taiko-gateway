@@ -59,9 +59,9 @@ pub struct GatewayConfig {
     pub soft_block_url: Url,
     pub lookahead: LookaheadConfig,
 
-    pub jwt_secret_path: String,
-    pub coinbase: String,
-    pub operator: String,
+    pub jwt_secret_path: PathBuf,
+    pub coinbase: Address,
+    pub operator: Address,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
