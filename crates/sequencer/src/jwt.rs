@@ -51,9 +51,7 @@ pub fn parse_secret_from_file(jwt_secret_file: &str) -> Result<Vec<u8>> {
     let secret = hex::decode(clean_secret)
         .map_err(|e| eyre!("Failed to decode JWT secret as hex: {}", e))?;
 
-    if secret.len() < 32 {
-        return Err(eyre!("JWT secret should be at least 32 bytes"));
-    }
+    ensure!(secret.len() >= 32, "JWT secret should be at least 32 bytes")
 
     Ok(secret)
 }
