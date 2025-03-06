@@ -41,19 +41,17 @@ pub async fn get_and_validate_config(
     assert_eq!(chain_id, l1_chain_id, "l1 chain id in l2 contract");
 
     // fetch forever till we are in the whitelist
-    let mut operators = Vec::new();
-    let this_index;
-
     loop {
         let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
+        let mut operators = Vec::with_capacity(operator_count);
 
         for i in 0..operator_count {
             let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
             operators.push(operator);
         }
 
-        if let Some(index) = operators.iter().position(|&op| op == signer_address) {
-            this_index = index;
+        if let Some(this_index) = operators.iter().position(|&op| op == signer_address) {
+            info!(this_index, ?operators, "fetched operators");
             break;
         } else {
             warn!(operator= %signer_address, whitelist=? operators, "provided address is not in whitelist! sleeping for 60s");
@@ -61,8 +59,6 @@ pub async fn get_and_validate_config(
 
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
-
-    info!(this_index, ?operators, "fetched operators");
 
     let chain_config = TaikoChainParams::new(
         l2_chain_id,
