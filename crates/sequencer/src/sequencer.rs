@@ -166,6 +166,12 @@ impl Sequencer {
                             }
                         };
                     } else if let Some(active) = self.tx_pool.active_orders() {
+                        debug!(
+                            txs = active.active_txs(),
+                            senders = active.active_senders(),
+                            "start block building"
+                        );
+
                         // we have orders, start building a block
                         let sort_data = SortData::new(
                             block_info,
@@ -189,14 +195,13 @@ impl Sequencer {
                             panic!("failed commit seal");
                         } else {
                             // reset state for next block
-
                             self.ctx.state = SequencerState::Sync;
                         }
                     } else {
                         sort_data
                             .maybe_sim_next_batch(&self.simulator, self.config.max_sims_per_loop);
 
-                        if sort_data.should_restart() {
+                        if sort_data.should_reset() {
                             // lets get another tx snapshot
                             debug!("exhausted active orders, restarting");
                             self.ctx.state = SequencerState::Sync;
@@ -322,11 +327,11 @@ impl Sequencer {
 
     fn fetch_txs(&mut self) {
         for tx in self.spine.rpc_rx.try_iter().take(10) {
-            self.tx_pool.put(tx, "rpc");
+            self.tx_pool.put(tx);
         }
 
         for tx in self.spine.mempool_rx.try_iter().take(10) {
-            self.tx_pool.put(tx, "mempool");
+            self.tx_pool.put(tx);
         }
     }
 
@@ -427,10 +432,10 @@ impl Sequencer {
         let block_number = block.header.number;
 
         info!(
-            seal_time = ?start.elapsed(),
             bn = block_number,
-            block_hash = %block.header.hash,
+            seal_time = ?start.elapsed(),
             block_time = ?start_block.elapsed(),
+            block_hash = %block.header.hash,
             payment = format_ether(res.cumulative_builder_payment),
             gas_used = res.cumulative_gas_used,
             gas_limit = block.header.gas_limit,

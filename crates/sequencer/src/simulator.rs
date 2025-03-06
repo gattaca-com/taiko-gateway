@@ -77,7 +77,7 @@ impl SimulatorClient {
     }
 
     pub fn spawn_sim_tx(&self, order: Arc<Order>, state_id: StateId) {
-        debug!(hash = %order.tx_hash(), ?state_id, "simulate tx task");
+        // debug!(hash = %order.tx_hash(), ?state_id, "simulate tx task");
 
         let sim_url = self.sim_url.clone();
         let sim_tx = self.sim_tx.clone();

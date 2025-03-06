@@ -5,7 +5,7 @@ use std::{
 };
 
 use alloy_consensus::Transaction;
-use alloy_primitives::Address;
+use alloy_primitives::{utils::format_ether, Address};
 use pc_common::sequencer::{ExecutionResult, Order, StateId};
 use tracing::{debug, info, warn};
 
@@ -48,20 +48,33 @@ pub struct ActiveOrders(VecDeque<TxList>);
 impl ActiveOrders {
     pub fn new(txs: &HashMap<Address, TxList>) -> Self {
         let mut active = txs.clone().into_values().collect::<Vec<_>>();
-        active.sort_unstable_by_key(|tx| tx.weight());
+        active.sort_unstable_by_key(|tx| std::cmp::Reverse(tx.weight()));
         Self(active.into())
     }
 
-    pub fn put(&mut self, _order: Arc<Order>) {
-        todo!()
+    pub fn put(&mut self, order: Arc<Order>) {
+        let sender = order.sender();
+        if let Some(tx_list) = self.0.iter_mut().find(|tx_list| tx_list.sender() == sender) {
+            tx_list.put(order);
+        } else {
+            let mut tx_list = TxList::new(*sender);
+            tx_list.put(order);
+            self.0.push_back(tx_list);
+        }
     }
 
-    pub fn len(&self) -> usize {
+    /// Returns the total number of txs in the active orders
+    pub fn active_txs(&self) -> usize {
+        self.0.iter().map(|tx_list| tx_list.len()).sum()
+    }
+
+    pub fn active_senders(&self) -> usize {
         self.0.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    /// Clear senders with no orders left
+    pub fn clear_senders(&mut self) {
+        self.0.retain(|tx_list| tx_list.len() > 0);
     }
 
     pub fn get_next_best(&mut self, max: usize) -> impl Iterator<Item = Arc<Order>> + '_ {
@@ -97,6 +110,7 @@ impl SortData {
         if let Some(next_best) = std::mem::take(&mut self.next_best) {
             assert!(self.is_valid(next_best.origin_state_id));
             assert!(self.gas_remaining >= next_best.gas_used);
+            debug!(origin = ?next_best.origin_state_id, new = ?next_best.new_state_id, tx_hash = ?next_best.order.tx_hash(), "applying next best");
 
             self.state_id = next_best.new_state_id;
             self.builder_payment += next_best.builder_payment;
@@ -113,10 +127,7 @@ impl SortData {
         }
 
         self.in_flight_sims -= 1;
-
         self.telemetry.tot_sim_time += sim.sim_time;
-
-        debug!(in_flight = self.in_flight_sims, sim_time = ?sim.sim_time, "sim result");
 
         let (state_id, gas_used, builder_payment) = match sim.execution_result {
             ExecutionResult::Success { state_id, gas_used, builder_payment } => {
@@ -157,20 +168,24 @@ impl SortData {
             return;
         }
 
-        let tx_to_put_back =
-            if self.next_best.as_ref().is_none_or(|t| t.builder_payment < builder_payment) {
-                let valid_order = ValidOrder {
-                    origin_state_id: sim.origin_state_id,
-                    new_state_id: state_id,
-                    gas_used,
-                    builder_payment,
-                    order: sim.order,
-                };
-
-                self.next_best.replace(valid_order).map(|prev_best| prev_best.order)
-            } else {
-                Some(sim.order)
+        let tx_to_put_back = if self
+            .next_best
+            .as_ref()
+            .is_none_or(|t| t.builder_payment < builder_payment)
+        {
+            let valid_order = ValidOrder {
+                origin_state_id: sim.origin_state_id,
+                new_state_id: state_id,
+                gas_used,
+                builder_payment,
+                order: sim.order,
             };
+
+            debug!(origin = ?valid_order.origin_state_id, new = ?valid_order.new_state_id, payment = format_ether(valid_order.builder_payment), hash = ?valid_order.order.tx_hash(), "next best");
+            self.next_best.replace(valid_order).map(|prev_best| prev_best.order)
+        } else {
+            Some(sim.order)
+        };
 
         if let Some(tx) = tx_to_put_back {
             self.active_orders.put(tx)
@@ -185,8 +200,8 @@ impl SortData {
         // Apply the next best order if there is one
         self.maybe_apply_next();
 
-        if self.active_orders.is_empty() {
-            debug!("no more txs to sequence");
+        self.active_orders.clear_senders();
+        if self.active_orders.active_senders() == 0 {
             return;
         }
 
@@ -202,17 +217,11 @@ impl SortData {
     }
 
     pub fn should_seal(&self) -> bool {
-        self.num_txs > 0 && Instant::now() > self.target_seal
+        self.num_txs > 0 &&
+            (Instant::now() > self.target_seal || self.active_orders.active_senders() == 0)
     }
 
-    pub fn should_restart(&self) -> bool {
-        // debug!(
-        //     "num_txs: {}, in_flight_sims: {}, active_orders: {}",
-        //     self.num_txs,
-        //     self.in_flight_sims,
-        //     self.active_orders.is_empty()
-        // );
-        // std::thread::sleep(Duration::from_millis(50));
+    pub fn should_reset(&self) -> bool {
         // went through all txs but none were actually valid
         self.num_txs == 0 && self.in_flight_sims == 0
     }

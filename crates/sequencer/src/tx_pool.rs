@@ -7,7 +7,6 @@ use alloy_consensus::Transaction;
 use alloy_primitives::Address;
 use lru::LruCache;
 use pc_common::sequencer::Order;
-use tracing::debug;
 
 use crate::sorting::ActiveOrders;
 
@@ -28,8 +27,7 @@ impl TxPool {
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
-    pub fn put(&mut self, tx: Arc<Order>, source: &str) {
-        let hash = *tx.tx_hash();
+    pub fn put(&mut self, tx: Arc<Order>) {
         let sender = *tx.sender();
         let nonce = tx.nonce();
 
@@ -40,8 +38,6 @@ impl TxPool {
         }
 
         self.txs.entry(*tx.sender()).or_insert(TxList::new(*tx.sender())).put(tx);
-
-        debug!(source, active = self.txs.len(), %hash, %sender, "new_tx");
     }
 
     /// Clear all mined nonces for each address
@@ -73,6 +69,10 @@ impl TxList {
         Self { sender, txs: BTreeMap::new() }
     }
 
+    pub fn sender(&self) -> &Address {
+        &self.sender
+    }
+
     pub fn put(&mut self, tx: Arc<Order>) {
         assert_eq!(self.sender, *tx.sender());
         self.txs.insert(tx.nonce(), tx);
@@ -84,6 +84,10 @@ impl TxList {
         // TODO: fix this since it's sorted
         self.txs.retain(|nonce, _| *nonce > mined_nonce);
         self.txs.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.txs.len()
     }
 
     pub fn first_ready(&mut self) -> Option<Arc<Order>> {
