@@ -2,8 +2,10 @@
 
 use std::sync::{atomic::AtomicU64, Arc};
 
+use alloy_primitives::Address;
 use crossbeam_channel::Receiver;
 use fetcher::BlockFetcher;
+use jwt::parse_secret_from_file;
 use pc_common::{
     config::{SequencerConfig, StaticConfig, TaikoConfig},
     proposer::ProposalRequest,
@@ -15,12 +17,12 @@ use sequencer::{Sequencer, SequencerSpine};
 use tokio::sync::mpsc::UnboundedSender;
 mod context;
 mod fetcher;
+mod jwt;
 mod sequencer;
 mod simulator;
 mod soft_block;
 mod tx_pool;
-
-use alloy_signer_local::PrivateKeySigner;
+use tracing::error;
 
 #[allow(clippy::too_many_arguments)]
 pub fn start_sequencer(
@@ -30,10 +32,22 @@ pub fn start_sequencer(
     rpc_rx: Receiver<Arc<Order>>,
     mempool_rx: Receiver<Arc<Order>>,
     new_blocks_tx: UnboundedSender<ProposalRequest>,
-    coinbase_signer: PrivateKeySigner,
     l1_number: Arc<AtomicU64>,
+    operator_address: Address,
 ) {
-    let sequencer_config: SequencerConfig = (config, coinbase_signer.address()).into();
+    let mut jwt_secret = Vec::new();
+
+    // If jwt_path is not empty, read and add Authorization header
+    if !config.gateway.jwt_secret_path.as_os_str().is_empty() {
+        match parse_secret_from_file(config.gateway.jwt_secret_path.clone()) {
+            Ok(secret) => {
+                jwt_secret = secret;
+            }
+            Err(e) => error!("Error loading secret: {}", e),
+        }
+    }
+
+    let sequencer_config: SequencerConfig = (config, jwt_secret, operator_address).into();
 
     let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l1.rpc_url.clone();
@@ -65,15 +79,8 @@ pub fn start_sequencer(
         origin_blocks_rx,
     };
 
-    let sequencer = Sequencer::new(
-        sequencer_config,
-        taiko_config,
-        spine,
-        lookahead,
-        coinbase_signer,
-        l2_origin,
-        l1_number,
-    );
+    let sequencer =
+        Sequencer::new(sequencer_config, taiko_config, spine, lookahead, l2_origin, l1_number);
 
     std::thread::Builder::new()
         .name("sequencer".to_string())

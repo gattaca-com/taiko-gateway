@@ -1,4 +1,4 @@
-use std::{fs, ops::Deref, time::Duration};
+use std::{fs, ops::Deref, path::PathBuf, time::Duration};
 
 use alloy_primitives::Address;
 use alloy_signer_local::PrivateKeySigner;
@@ -58,6 +58,9 @@ pub struct GatewayConfig {
     /// Url to post soft blocks to
     pub soft_block_url: Url,
     pub lookahead: LookaheadConfig,
+
+    pub jwt_secret_path: PathBuf,
+    pub coinbase: Address,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -78,8 +81,6 @@ pub fn load_static_config() -> StaticConfig {
 pub struct EnvConfig {
     /// Private key to send L1 transactions
     pub proposer_signer_key: PrivateKeySigner,
-    /// Private key to sequence and sign executable data for soft block API
-    pub sequencer_signer_key: PrivateKeySigner,
 }
 
 pub fn load_env_vars() -> EnvConfig {
@@ -88,12 +89,7 @@ pub fn load_env_vars() -> EnvConfig {
         .parse()
         .expect("invalid proposer private key");
 
-    let sequencer_signer_key = std::env::var("SEQUENCER_SIGNER_KEY")
-        .expect("SEQUENCER_SIGNER_KEY must be set")
-        .parse()
-        .expect("invalid sequencer private key");
-
-    EnvConfig { proposer_signer_key, sequencer_signer_key }
+    EnvConfig { proposer_signer_key }
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
@@ -128,23 +124,27 @@ pub struct SequencerConfig {
     pub simulator_url: Url,
     pub target_block_time: Duration,
     pub coinbase_address: Address,
+    pub operator_address: Address,
     pub l1_delay: Duration,
     /// blocks
     pub l1_safe_lag: u64,
     pub anchor_batch_lag: u64,
     pub soft_block_url: Url,
+    pub jwt_secret: Vec<u8>,
 }
 
-impl From<(&StaticConfig, Address)> for SequencerConfig {
-    fn from((config, coinbase_address): (&StaticConfig, Address)) -> Self {
+impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
+    fn from((config, jwt_secret, operator_address): (&StaticConfig, Vec<u8>, Address)) -> Self {
         Self {
             simulator_url: config.gateway.simulator_url.clone(),
             target_block_time: Duration::from_millis(config.gateway.l2_target_block_time_ms),
-            coinbase_address,
             l1_delay: Duration::from_secs(config.gateway.l1_delay_secs),
             l1_safe_lag: config.gateway.l1_safe_lag,
             anchor_batch_lag: config.gateway.anchor_batch_lag,
             soft_block_url: config.gateway.soft_block_url.clone(),
+            jwt_secret,
+            coinbase_address: config.gateway.coinbase,
+            operator_address,
         }
     }
 }

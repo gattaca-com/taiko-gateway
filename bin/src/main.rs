@@ -87,6 +87,8 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
 
+    let operator_address = envs.proposer_signer_key.address();
+
     start_sequencer(
         &config,
         taiko_config,
@@ -94,9 +96,10 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         rpc_rx,
         mempool_rx,
         new_blocks_tx,
-        envs.sequencer_signer_key,
         l1_number,
+        operator_address,
     );
+
     start_rpc(&config, rpc_tx, mempool_tx);
 
     // Wait for SIGTERM or SIGINT
