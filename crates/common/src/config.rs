@@ -58,9 +58,15 @@ pub struct GatewayConfig {
     /// Url to post soft blocks to
     pub soft_block_url: Url,
     pub lookahead: LookaheadConfig,
+    #[serde(default = "default_usize::<5>")]
+    pub max_sims_per_loop: usize,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
+    U
+}
+
+pub const fn default_usize<const U: usize>() -> usize {
     U
 }
 
@@ -133,6 +139,7 @@ pub struct SequencerConfig {
     pub l1_safe_lag: u64,
     pub anchor_batch_lag: u64,
     pub soft_block_url: Url,
+    pub max_sims_per_loop: usize,
 }
 
 impl From<(&StaticConfig, Address)> for SequencerConfig {
@@ -145,6 +152,7 @@ impl From<(&StaticConfig, Address)> for SequencerConfig {
             l1_safe_lag: config.gateway.l1_safe_lag,
             anchor_batch_lag: config.gateway.anchor_batch_lag,
             soft_block_url: config.gateway.soft_block_url.clone(),
+            max_sims_per_loop: config.gateway.max_sims_per_loop,
         }
     }
 }
@@ -202,7 +210,7 @@ pub struct TaikoChainParams {
     /// Max difference between timestamp of the propose block and anchor timestamp
     pub max_anchor_timestamp_offset: u64,
     /// Max gas limit for a block, this + anchor gas limit is the gas limit of the block
-    pub block_max_gas_limit: u64,
+    pub block_max_gas_limit: u128,
 }
 
 impl TaikoChainParams {
@@ -217,7 +225,7 @@ impl TaikoChainParams {
             base_fee_config,
             max_anchor_height_offset,
             max_anchor_timestamp_offset: max_anchor_height_offset * 12,
-            block_max_gas_limit,
+            block_max_gas_limit: block_max_gas_limit as u128,
         }
     }
 }

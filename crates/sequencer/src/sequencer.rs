@@ -10,7 +10,7 @@ use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
 use alloy_rpc_types::{Block, Header};
 use alloy_signer_local::PrivateKeySigner;
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
@@ -28,12 +28,13 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn, Instrument};
 
 use crate::{
-    context::{SequencerContext, SequencerState},
+    context::SequencerContext,
     simulator::SimulatorClient,
     soft_block::BuildPreconfBlockRequestBody,
+    sorting::SortData,
     tx_pool::TxPool,
+    types::{BlockInfo, SequencerState, SimulatedOrder},
 };
-
 pub struct SequencerSpine {
     /// Receive txs and bundles from RPC
     pub rpc_rx: Receiver<Arc<Order>>,
@@ -47,6 +48,8 @@ pub struct SequencerSpine {
     pub l2_blocks_rx: Receiver<Header>,
     // Receiver of L2 non preconf blocks
     pub origin_blocks_rx: Receiver<Header>,
+    /// Receive sim results
+    pub sim_rx: Receiver<eyre::Result<SimulatedOrder>>,
 }
 
 #[derive(Debug, Default)]
@@ -85,9 +88,10 @@ impl Sequencer {
         signer: PrivateKeySigner,
         l2_origin: Arc<AtomicU64>,
         l1_number: Arc<AtomicU64>,
+        sim_tx: Sender<eyre::Result<SimulatedOrder>>,
     ) -> Self {
         let chain_config = taiko_config.params;
-        let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config);
+        let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config, sim_tx);
 
         // this doesn't handle well the restarts if we have pending orders in the rpc
         let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin, l1_number);
@@ -115,27 +119,13 @@ impl Sequencer {
 
         while !self.is_ready() {
             self.recv_blocks();
-            sleep(Duration::from_millis(250));
+            sleep(Duration::from_millis(50));
         }
 
         info!("starting loop");
 
         loop {
-            // fetch new data
-            self.recv_blocks();
-            self.fetch_mempool();
-
-            self.check_can_sequence();
-            self.check_can_propose();
-
-            if self.flags.can_sequence {
-                self.maybe_refresh_anchor();
-            }
-
-            // clear proposal if it's late
-            if self.lookahead.should_clear_proposal(&self.signer.address()).0 {
-                self.send_batch_to_proposer("approaching next operator");
-            }
+            self.tick();
 
             // state transition
             match self.ctx.state {
@@ -146,37 +136,28 @@ impl Sequencer {
 
                     match self.anchor_block() {
                         Ok(state_id) => {
-                            let block_number = self.ctx.parent.block_number + 1;
-                            let anchor_params = self.ctx.anchor;
-                            debug!(block_number, %state_id, anchor = ?anchor_params, "anchored");
-
-                            self.ctx.state =
-                                SequencerState::Anchor { anchor_params, block_number, state_id };
+                            let block_info = self.get_block_info();
+                            debug!(?block_info, %state_id, "anchored");
+                            self.ctx.state = SequencerState::Anchor { block_info, state_id };
                         }
 
                         Err(err) => error!(%err, "failed anchoring"),
                     };
                 }
 
-                SequencerState::Anchor { anchor_params, block_number, state_id } => {
+                SequencerState::Anchor { block_info, state_id } => {
                     if !self.flags.can_sequence {
                         self.ctx.state = SequencerState::Sync;
                         continue;
                     }
 
-                    if anchor_params.block_id != self.ctx.anchor.block_id {
+                    if self.needs_anchor_refresh(&block_info.anchor_params) {
                         // refresh with new anchor
                         match self.anchor_block() {
                             Ok(state_id) => {
-                                let block_number = self.ctx.parent.block_number + 1;
-                                let anchor_params = self.ctx.anchor;
-                                debug!(block_number, %state_id, anchor = ?anchor_params, "re-anchored");
-
-                                self.ctx.state = SequencerState::Anchor {
-                                    anchor_params,
-                                    block_number,
-                                    state_id,
-                                };
+                                let block_info = self.get_block_info();
+                                debug!(?block_info, %state_id, "re-anchored");
+                                self.ctx.state = SequencerState::Anchor { block_info, state_id };
                             }
 
                             Err(err) => {
@@ -184,59 +165,76 @@ impl Sequencer {
                                 self.ctx.state = SequencerState::Sync;
                             }
                         };
-                    } else if let Some(order) = self.next_order() {
-                        if let Some((new_state_id, gas_used)) = self.simulate_tx(state_id, order) {
-                            self.ctx.state = SequencerState::Sequence {
-                                anchor_params,
-                                block_number,
-                                tip_state_id: new_state_id,
-                                start: Instant::now(),
-                                running_gas_used: gas_used,
-                                num_txs: 1,
-                            };
-                        }
+                    } else if let Some(active) = self.tx_pool.active_orders() {
+                        // we have orders, start building a block
+                        let sort_data = SortData::new(
+                            block_info,
+                            state_id,
+                            active,
+                            self.chain_config.block_max_gas_limit,
+                            self.config.target_block_time,
+                        );
+
+                        self.ctx.state = SequencerState::Sorting(sort_data);
                     }
                 }
 
-                SequencerState::Sequence {
-                    anchor_params,
-                    block_number,
-                    start,
-                    running_gas_used,
-                    tip_state_id,
-                    num_txs,
-                } => {
-                    let seal_by_time = start.elapsed() > self.config.target_block_time;
-                    let seal_by_gas = false;
+                SequencerState::Sorting(ref mut sort_data) => {
+                    if sort_data.should_seal() {
+                        let sort_data = sort_data.clone(); // should avoid cloning this
 
-                    let should_seal = seal_by_time || seal_by_gas;
-
-                    if should_seal || !self.flags.can_sequence {
-                        if let Err(err) = self.commit_seal(tip_state_id, start, anchor_params) {
+                        if let Err(err) = self.commit_seal(sort_data) {
                             // todo: add a failsafe so we're not stuck forever here
                             error!(%err, "failed commit seal");
                             panic!("failed commit seal");
                         } else {
                             // reset state for next block
+
                             self.ctx.state = SequencerState::Sync;
                         }
-                    } else if let Some(order) = self.next_order() {
-                        if let Some((new_state_id, gas_used)) =
-                            self.simulate_tx(tip_state_id, order)
-                        {
-                            self.ctx.state = SequencerState::Sequence {
-                                anchor_params,
-                                block_number,
-                                tip_state_id: new_state_id,
-                                start,
-                                running_gas_used: running_gas_used + gas_used,
-                                num_txs: num_txs + 1,
-                            };
+                    } else {
+                        sort_data
+                            .maybe_sim_next_batch(&self.simulator, self.config.max_sims_per_loop);
+
+                        if sort_data.should_restart() {
+                            // lets get another tx snapshot
+                            debug!("exhausted active orders, restarting");
+                            self.ctx.state = SequencerState::Sync;
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Periodic updates done at every loop
+    fn tick(&mut self) {
+        // fetch new data
+        self.recv_blocks();
+        self.fetch_txs();
+
+        // handle sim results
+        self.handle_sims();
+
+        // check capabilities
+        self.check_can_sequence();
+        self.check_can_propose();
+
+        // refresh anchor if needed
+        if self.flags.can_sequence {
+            self.maybe_refresh_anchor();
+        }
+
+        // clear proposal if it's late
+        if self.lookahead.should_clear_proposal(&self.signer.address()).0 {
+            self.send_batch_to_proposer("approaching next operator");
+        }
+    }
+
+    fn get_block_info(&self) -> BlockInfo {
+        let block_number = self.ctx.parent.block_number + 1;
+        let anchor_params = self.ctx.anchor;
+        BlockInfo { anchor_params, block_number }
     }
 
     /// We can sequence if:
@@ -308,11 +306,6 @@ impl Sequencer {
         }
     }
 
-    // TODO: if sim fails, rpc orders are lost
-    fn next_order(&mut self) -> Option<Arc<Order>> {
-        self.spine.rpc_rx.try_recv().ok().or(self.tx_pool.next_sequence())
-    }
-
     fn recv_blocks(&mut self) {
         if let Ok(new_header) = self.spine.l1_blocks_rx.try_recv() {
             self.ctx.new_l1_block(new_header);
@@ -327,9 +320,29 @@ impl Sequencer {
         }
     }
 
-    fn fetch_mempool(&mut self) {
-        for tx in self.spine.mempool_rx.try_iter().take(50) {
-            self.tx_pool.put(tx);
+    fn fetch_txs(&mut self) {
+        for tx in self.spine.rpc_rx.try_iter().take(10) {
+            self.tx_pool.put(tx, "rpc");
+        }
+
+        for tx in self.spine.mempool_rx.try_iter().take(10) {
+            self.tx_pool.put(tx, "mempool");
+        }
+    }
+
+    fn handle_sims(&mut self) {
+        if let Ok(sim_res) = self.spine.sim_rx.try_recv() {
+            let Ok(sim_res) = sim_res.inspect_err(|err| error!(%err, "failed sim")) else {
+                // this is when simulator is down, maybe just stop sequencing
+                std::process::exit(1);
+            };
+
+            let SequencerState::Sorting(sort_data) = &mut self.ctx.state else {
+                warn!(sim_tx = %sim_res.order.tx_hash(), origin_state_id =% sim_res.origin_state_id, current_state =? self.ctx.state, "stale sim result");
+                return;
+            };
+
+            sort_data.handle_sim(sim_res, &mut self.tx_pool);
         }
     }
 
@@ -390,7 +403,7 @@ impl Sequencer {
                     bail!("failed simulate anchor, res={res:?}");
                 };
 
-                debug!(time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
+                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
                 Ok(state_id)
             }
             Err(err) => {
@@ -399,56 +412,22 @@ impl Sequencer {
         }
     }
 
-    fn simulate_tx(&self, origin_state_id: StateId, order: Arc<Order>) -> Option<(StateId, u128)> {
-        let hash = *order.tx_hash();
-        let start = Instant::now();
-        match self.simulator.simulate_tx(order, origin_state_id) {
-            Ok(res) => match res {
-                ExecutionResult::Success { state_id: new_state_id, gas_used, builder_payment } => {
-                    debug!(
-                        time = ?start.elapsed(),
-                        %hash,
-                        %origin_state_id,
-                        %new_state_id,
-                        gas_used,
-                        payment = format_ether(builder_payment),
-                        "sim successful"
-                    );
+    fn commit_seal(&mut self, sort_data: SortData) -> eyre::Result<()> {
+        sort_data.telemetry.report();
 
-                    return Some((new_state_id, gas_used));
-                }
-                ExecutionResult::Revert { .. } => {
-                    debug!(%hash, %origin_state_id, "reverted user tx");
-                }
-                ExecutionResult::Invalid { reason } => {
-                    // TODO: dedup txpool nonces here
-                    debug!(%hash, %origin_state_id, reason, "invalid user tx");
-                }
-            },
+        let seal_state_id = sort_data.state_id;
+        let start_block = sort_data.start_build;
+        let anchor_params = sort_data.block_info.anchor_params;
 
-            Err(err) => {
-                error!(%err, "failed simulate tx")
-            }
-        }
-
-        None
-    }
-
-    fn commit_seal(
-        &mut self,
-        origin_state_id: StateId,
-        start_block: Instant,
-        anchor_params: AnchorParams,
-    ) -> eyre::Result<()> {
         // seal
         let start = Instant::now();
-        let res = self.simulator.seal_block(origin_state_id)?;
+        let res = self.simulator.seal_block(seal_state_id)?;
 
         let block = res.built_block;
         let block_number = block.header.number;
 
         info!(
-            time = ?start.elapsed(),
+            seal_time = ?start.elapsed(),
             bn = block_number,
             block_hash = %block.header.hash,
             block_time = ?start_block.elapsed(),
@@ -483,6 +462,7 @@ impl Sequencer {
             timeShift: 0,
             signalSlots: vec![],
         });
+
         let txs = Arc::unwrap_or_clone(block)
             .transactions
             .into_transactions()
@@ -490,11 +470,15 @@ impl Sequencer {
             .map(|tx| tx.inner);
         request.all_tx_list.extend(txs);
 
-        if self.ctx.anchor.block_id != anchor_params.block_id {
+        if self.needs_anchor_refresh(&anchor_params) {
             self.send_batch_to_proposer("sealed last for this anchor");
         }
 
         Ok(())
+    }
+
+    fn needs_anchor_refresh(&self, anchor_params: &AnchorParams) -> bool {
+        self.ctx.anchor.block_id != anchor_params.block_id
     }
 
     /// Triggered:
@@ -508,7 +492,6 @@ impl Sequencer {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "soft_blocks", fields(block = block.header.number))]
     fn gossip_soft_block(&self, block: Arc<Block>) {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
         let signer = self.signer.clone();
@@ -517,6 +500,7 @@ impl Sequencer {
 
         spawn(
             async move {
+                let block_number = block.header.number;
                 let request = BuildPreconfBlockRequestBody::new(block, signer);
 
                 let raw = serde_json::to_string(&request).unwrap();
@@ -526,7 +510,7 @@ impl Sequencer {
                         let body = res.text().await.unwrap();
 
                         if status.is_success() {
-                            debug!(res = %body, %raw, "soft block posted");
+                            debug!(block_number, "soft block posted");
                         } else {
                             error!(code = status.as_u16(), err = body, %raw, "soft block failed");
                         }
@@ -544,12 +528,12 @@ impl Sequencer {
 // https://github.com/taikoxyz/taiko-mono/blob/68cb4367e07ee3fc60c2e09a9eee718c6e45af97/packages/protocol/contracts/L1/libs/LibProposing.sol#L127
 fn get_block_env_from_anchor(
     block_number: u64,
-    max_gas_limit: u64,
+    max_gas_limit: u128,
     coinbase: Address,
     timestamp: u64,
     base_fee: u128,
 ) -> BlockEnv {
-    let gas_limit = max_gas_limit + ANCHOR_GAS_LIMIT;
+    let gas_limit = max_gas_limit + ANCHOR_GAS_LIMIT as u128;
     let difficulty = get_difficulty(block_number);
 
     BlockEnv {

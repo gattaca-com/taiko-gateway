@@ -2681,6 +2681,7 @@ dependencies = [
  "crossbeam-channel",
  "eyre",
  "jsonrpsee",
+ "lru",
  "pc-common",
  "reqwest",
  "serde",

@@ -18,7 +18,9 @@ mod fetcher;
 mod sequencer;
 mod simulator;
 mod soft_block;
+mod sorting;
 mod tx_pool;
+mod types;
 
 use alloy_signer_local::PrivateKeySigner;
 
@@ -56,6 +58,7 @@ pub fn start_sequencer(
         BlockFetcher::new(rpc_url, origin_blocks_tx).run_origin_fetch("origin", l2_origin.clone()),
     );
 
+    let (sim_tx, sim_rx) = crossbeam_channel::unbounded();
     let spine = SequencerSpine {
         rpc_rx,
         mempool_rx,
@@ -63,6 +66,7 @@ pub fn start_sequencer(
         l1_blocks_rx,
         l2_blocks_rx,
         origin_blocks_rx,
+        sim_rx,
     };
 
     let sequencer = Sequencer::new(
@@ -73,6 +77,7 @@ pub fn start_sequencer(
         coinbase_signer,
         l2_origin,
         l1_number,
+        sim_tx,
     );
 
     std::thread::Builder::new()
