@@ -225,8 +225,7 @@ impl SortData {
     }
 
     pub fn should_seal(&self) -> bool {
-        self.num_txs > 0 &&
-            (Instant::now() > self.target_seal || self.active_orders.active_senders() == 0)
+        self.num_txs > 0 && Instant::now() > self.target_seal
     }
 
     pub fn should_reset(&self) -> bool {

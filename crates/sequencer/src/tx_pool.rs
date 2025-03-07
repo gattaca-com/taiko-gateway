@@ -7,7 +7,6 @@ use alloy_consensus::Transaction;
 use alloy_primitives::Address;
 use lru::LruCache;
 use pc_common::sequencer::Order;
-use tracing::info;
 
 use crate::sorting::ActiveOrders;
 
