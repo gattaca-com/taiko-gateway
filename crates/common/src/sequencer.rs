@@ -97,7 +97,7 @@ impl From<u64> for StateId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SimulateTxResponse {
     pub execution_result: ExecutionResult,
 }
@@ -108,7 +108,7 @@ impl SimulateTxResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionResult {
     /// Transaction was successful
@@ -128,10 +128,46 @@ pub enum ExecutionResult {
         builder_payment: u128,
     },
     /// Transaction is invalid and can't be included in a block (e.g. wrong nonce)
-    Invalid {
-        // TODO: enum this
-        reason: String,
-    },
+    Invalid { reason: InvalidReason },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InvalidReason {
+    NonceTooLow { tx: u64, state: u64 },
+    NonceTooHigh { tx: u64, state: u64 },
+    Other(String),
+}
+
+impl<'de> Deserialize<'de> for InvalidReason {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        if let Some(captures) = s.strip_prefix("nonce too low: address ") {
+            if let Some(rest) = captures.split_once(", tx: ") {
+                if let Some((tx_str, state_str)) = rest.1.split_once(" state: ") {
+                    if let (Ok(tx), Ok(state)) = (tx_str.parse::<u64>(), state_str.parse::<u64>()) {
+                        return Ok(InvalidReason::NonceTooLow { tx, state });
+                    }
+                }
+            }
+        }
+
+        if let Some(captures) = s.strip_prefix("nonce too high: address ") {
+            if let Some(rest) = captures.split_once(", tx: ") {
+                if let Some((tx_str, state_str)) = rest.1.split_once(" state: ") {
+                    if let (Ok(tx), Ok(state)) = (tx_str.parse::<u64>(), state_str.parse::<u64>()) {
+                        return Ok(InvalidReason::NonceTooHigh { tx, state });
+                    }
+                }
+            }
+        }
+
+        // If we can't parse it as a specific variant, use Other
+        Ok(InvalidReason::Other(s))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,10 +196,39 @@ mod tests {
         }"#;
         let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
 
-        assert_eq!(decoded.execution_result, ExecutionResult::Success {
-            state_id: StateId(128181565),
-            gas_used: 21000,
-            builder_payment: 20480
-        });
+        match decoded.execution_result {
+            ExecutionResult::Success { state_id, gas_used, builder_payment } => {
+                assert_eq!(state_id, StateId(128181565));
+                assert_eq!(gas_used, 21000);
+                assert_eq!(builder_payment, 20480);
+            }
+            _ => panic!("expected success"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_too_low_reason_serde() {
+        let data = r#"{"execution_result": {"invalid": {"reason": "nonce too low: address 0x1234567890abcdef, tx: 1 state: 100"}}}"#;
+        let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
+
+        match decoded.execution_result {
+            ExecutionResult::Invalid { reason } => {
+                assert_eq!(reason, InvalidReason::NonceTooLow { tx: 1, state: 100 });
+            }
+            _ => panic!("expected invalid"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_too_high_reason_serde() {
+        let data = r#"{"execution_result": {"invalid": {"reason": "nonce too high: address 0x1234567890abcdef, tx: 100 state: 1"}}}"#;
+        let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
+
+        match decoded.execution_result {
+            ExecutionResult::Invalid { reason } => {
+                assert_eq!(reason, InvalidReason::NonceTooHigh { tx: 100, state: 1 });
+            }
+            _ => panic!("expected invalid"),
+        }
     }
 }

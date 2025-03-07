@@ -6,7 +6,7 @@ use std::{
 
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address};
-use pc_common::sequencer::{ExecutionResult, Order, StateId};
+use pc_common::sequencer::{ExecutionResult, InvalidReason, Order, StateId};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -57,9 +57,16 @@ impl ActiveOrders {
         if let Some(tx_list) = self.0.iter_mut().find(|tx_list| tx_list.sender() == sender) {
             tx_list.put(order);
         } else {
-            let mut tx_list = TxList::new(*sender);
+            let mut tx_list = TxList::new(*sender, None);
             tx_list.put(order);
             self.0.push_back(tx_list);
+        }
+    }
+
+    pub fn update_next_nonce(&mut self, order: &Order) {
+        if let Some(tx_list) = self.0.iter_mut().find(|tx_list| tx_list.sender() == order.sender())
+        {
+            tx_list.next_nonce = Some(order.nonce() + 1);
         }
     }
 
@@ -112,6 +119,8 @@ impl SortData {
             assert!(self.gas_remaining >= next_best.gas_used);
             debug!(origin = ?next_best.origin_state_id, new = ?next_best.new_state_id, tx_hash = ?next_best.order.tx_hash(), "applying next best");
 
+            self.active_orders.update_next_nonce(&next_best.order);
+
             self.state_id = next_best.new_state_id;
             self.builder_payment += next_best.builder_payment;
             self.gas_remaining -= next_best.gas_used;
@@ -141,22 +150,20 @@ impl SortData {
             ExecutionResult::Invalid { reason } => {
                 self.telemetry.n_sims_invalid += 1;
 
-                // match on other reasons for eg nonce too low
-                if reason.contains("nonce too low") {
-                    warn!(reason, "nonce too low, removing from sender");
-                    let sender = *sim.order.sender();
-                    let mined_nonce = sim.order.nonce();
-
-                    tx_pool.clear_mined(std::iter::once((sender, mined_nonce)));
-                } else if reason.contains("nonce too high") {
-                    warn!(reason, "nonce too high, removing from sender");
-
-                    let sender = *sim.order.sender();
-                    let mined_nonce = sim.order.nonce() - 1;
-
-                    tx_pool.clear_mined(std::iter::once((sender, mined_nonce)));
-                } else {
-                    warn!(reason, "unknown reason");
+                match reason {
+                    InvalidReason::NonceTooLow { tx, state } => {
+                        warn!(tx, state, "nonce too low, removing from sender");
+                        let sender = *sim.order.sender();
+                        tx_pool.clear_mined(std::iter::once((sender, state.saturating_sub(1))));
+                    }
+                    InvalidReason::NonceTooHigh { tx, state } => {
+                        warn!(tx, state, "nonce too high, removing from sender");
+                        let sender = *sim.order.sender();
+                        tx_pool.clear_mined(std::iter::once((sender, state.saturating_sub(1))));
+                    }
+                    InvalidReason::Other(reason) => {
+                        warn!(reason, "unknown reason");
+                    }
                 }
 
                 return;
@@ -224,7 +231,7 @@ impl SortData {
 
     pub fn should_reset(&self) -> bool {
         // went through all txs but none were actually valid
-        self.num_txs == 0 && self.in_flight_sims == 0
+        self.num_txs == 0 && (self.in_flight_sims == 0 || Instant::now() > self.target_seal)
     }
 }
 
