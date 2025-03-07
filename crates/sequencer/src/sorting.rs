@@ -209,7 +209,7 @@ impl SortData {
 
         self.active_orders.clear_senders();
         if self.active_orders.active_senders() == 0 {
-            debug!("exhausted active senders");
+            //debug!("exhausted active senders");
             return;
         }
 

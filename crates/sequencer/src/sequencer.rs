@@ -309,27 +309,47 @@ impl Sequencer {
     }
 
     fn recv_blocks(&mut self) {
-        if let Ok(new_header) = self.spine.l1_blocks_rx.try_recv() {
-            self.ctx.new_l1_block(new_header);
-        }
+        receive_for(
+            Duration::from_millis(10),
+            |new_header| {
+                self.ctx.new_l1_block(new_header);
+            },
+            &self.spine.l1_blocks_rx,
+        );
 
-        if let Ok(new_header) = self.spine.l2_blocks_rx.try_recv() {
-            self.ctx.new_preconf_l2_block(&new_header, false);
-        }
+        receive_for(
+            Duration::from_millis(10),
+            |new_header| {
+                self.ctx.new_preconf_l2_block(&new_header, false);
+            },
+            &self.spine.l2_blocks_rx,
+        );
 
-        if let Ok(new_header) = self.spine.origin_blocks_rx.try_recv() {
-            self.ctx.new_origin_l2_block(&new_header);
-        }
+        receive_for(
+            Duration::from_millis(10),
+            |new_header| {
+                self.ctx.new_origin_l2_block(&new_header);
+            },
+            &self.spine.origin_blocks_rx,
+        );
     }
 
     fn fetch_txs(&mut self) {
-        for tx in self.spine.rpc_rx.try_iter().take(10) {
-            self.tx_pool.put(tx);
-        }
+        receive_for(
+            Duration::from_millis(10),
+            |tx| {
+                self.tx_pool.put(tx);
+            },
+            &self.spine.rpc_rx,
+        );
 
-        for tx in self.spine.mempool_rx.try_iter().take(10) {
-            self.tx_pool.put(tx);
-        }
+        receive_for(
+            Duration::from_millis(10),
+            |tx| {
+                self.tx_pool.put(tx);
+            },
+            &self.spine.mempool_rx,
+        );
     }
 
     fn handle_sims(&mut self) {
@@ -561,5 +581,19 @@ fn get_block_env_from_anchor(
         difficulty: difficulty.into(),
         prevrandao: Some(difficulty),
         blob_excess_gas_and_price: None,
+    }
+}
+
+/// Receives messages from a channel for a limited duration
+fn receive_for<T, F>(duration: Duration, mut handler: F, rx: &Receiver<T>)
+where
+    F: FnMut(T),
+{
+    let start = Instant::now();
+    while let Ok(item) = rx.try_recv() {
+        handler(item);
+        if start.elapsed() > duration {
+            break;
+        }
     }
 }
