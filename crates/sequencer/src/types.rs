@@ -1,5 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+    time::Duration,
+};
 
+use alloy_primitives::Address;
 use pc_common::{
     sequencer::{ExecutionResult, Order, StateId},
     taiko::AnchorParams,
@@ -73,4 +79,23 @@ pub struct ValidOrder {
     pub builder_payment: u128,
     /// Original order
     pub order: Arc<Order>,
+}
+
+/// A map from a sender address to a state nonce. Note that the nonce could be either the one from
+/// the parent block or a greater one while sorting
+#[derive(Debug, Clone, Default)]
+pub struct StateNonces(pub HashMap<Address, u64>);
+
+impl Deref for StateNonces {
+    type Target = HashMap<Address, u64>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for StateNonces {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }

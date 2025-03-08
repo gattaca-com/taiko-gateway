@@ -76,8 +76,8 @@ mod tests {
         let send_tx_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(config);
 
         let chain_id = full_provider.get_chain_id().await.unwrap();
-        let transfer_amount = parse_ether("0.00005").unwrap();
 
+        let _transfer_amount = parse_ether("0.05").unwrap();
         // let nonce = full_provider.get_transaction_count(private_key.address()).await.unwrap();
 
         // for (i, signer) in signers.iter().enumerate() {
@@ -107,24 +107,27 @@ mod tests {
         for (i, signer) in signers.iter().enumerate() {
             let nonce = full_provider.get_transaction_count(signer.address()).await.unwrap();
             let to_address = signer.address();
-            let priority_fee = 100 + 60 * (i + 1) as u128;
-            let tx = TxEip1559 {
-                chain_id,
-                nonce,
-                gas_limit: 21_000,
-                max_fee_per_gas: 100_000_000,
-                max_priority_fee_per_gas: priority_fee,
-                to: to_address.into(),
-                value: transfer_amount * U256::from(95) / U256::from(100),
-                access_list: AccessList::default(),
-                input: Bytes::new(),
-            };
+            // let priority_fee = 100 + 60 * (i + 1) as u128;
+            let priority_fee = 1 + i as u128;
+            for j in 0..30 {
+                let tx = TxEip1559 {
+                    chain_id,
+                    nonce: nonce + j as u64,
+                    gas_limit: 21_000,
+                    max_fee_per_gas: 100_000_000,
+                    max_priority_fee_per_gas: priority_fee,
+                    to: to_address.into(),
+                    value: U256::from(1),
+                    access_list: AccessList::default(),
+                    input: Bytes::new(),
+                };
 
-            let sig = signer.sign_hash_sync(&tx.signature_hash()).unwrap();
-            let tx: TxEnvelope = tx.into_signed(sig).into();
-            println!("Sending tx: {} with priority fee: {priority_fee}", tx.tx_hash());
-            let encoded = tx.encoded_2718();
-            let _pending = send_tx_provider.send_raw_transaction(&encoded).await.unwrap();
+                let sig = signer.sign_hash_sync(&tx.signature_hash()).unwrap();
+                let tx: TxEnvelope = tx.into_signed(sig).into();
+                println!("Sending tx: {} with priority fee: {priority_fee}", tx.tx_hash());
+                let encoded = tx.encoded_2718();
+                let _pending = send_tx_provider.send_raw_transaction(&encoded).await.unwrap();
+            }
         }
     }
 }

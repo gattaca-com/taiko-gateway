@@ -16,7 +16,6 @@ crossbeam-channel.workspace = true
 eyre.workspace = true
 jsonrpsee.workspace = true
 jsonwebtoken.workspace = true
-lru.workspace = true
 pc-common.workspace = true
 reqwest.workspace = true
 serde.workspace = true

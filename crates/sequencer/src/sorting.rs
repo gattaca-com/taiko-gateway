@@ -11,8 +11,8 @@ use tracing::{debug, info, warn};
 
 use crate::{
     simulator::SimulatorClient,
-    tx_pool::{TxList, TxPool},
-    types::{BlockInfo, SimulatedOrder, ValidOrder},
+    tx_pool::TxList,
+    types::{BlockInfo, SimulatedOrder, StateNonces, ValidOrder},
 };
 
 #[derive(Debug, Clone)]
@@ -25,11 +25,11 @@ pub struct SortData {
     pub start_build: Instant,
     /// Time when we should stop sequencing this block
     pub target_seal: Instant,
-    /// Builder payment
+    /// Cumulative builder payment
     pub builder_payment: u128,
-    /// Running total of gas used in the block
+    /// Cumulative gas used in the block
     pub gas_remaining: u128,
-    /// number of user txs in the block
+    /// Number of txs in the block (excluding the anchor)
     pub num_txs: usize,
     /// Next best order (simulated on the current block_info state_id), when all sims come back
     /// (in_flight_sims == 0) we update the block info with this state id
@@ -40,52 +40,57 @@ pub struct SortData {
     pub active_orders: ActiveOrders,
     /// Telemetry for the current block being built
     pub telemetry: SortingTelemetry,
+    /// Simulated nonces, sender -> state nonce
+    pub state_nonces: StateNonces,
 }
 
 #[derive(Debug, Clone)]
-pub struct ActiveOrders(VecDeque<TxList>);
+pub struct ActiveOrders {
+    tx_lists: VecDeque<TxList>,
+    /// Number of all pending txs in tx lists
+    num_txs: usize,
+}
 
 impl ActiveOrders {
-    pub fn new(txs: &HashMap<Address, TxList>) -> Self {
-        let mut active = txs.clone().into_values().collect::<Vec<_>>();
-        active.sort_unstable_by_key(|tx| std::cmp::Reverse(tx.weight()));
-        Self(active.into())
+    pub fn new(txs: HashMap<Address, TxList>) -> Self {
+        let mut tx_lists = txs.into_values().collect::<Vec<_>>();
+        tx_lists.sort_unstable_by_key(|tx| std::cmp::Reverse(tx.weight()));
+        let num_txs = tx_lists.iter().map(|tx| tx.len()).sum();
+        Self { tx_lists: tx_lists.into(), num_txs }
     }
 
     pub fn put(&mut self, order: Arc<Order>) {
         let sender = order.sender();
-        if let Some(tx_list) = self.0.iter_mut().find(|tx_list| tx_list.sender() == sender) {
+        if let Some(tx_list) = self.tx_lists.iter_mut().find(|tx_list| tx_list.sender() == sender) {
             tx_list.put(order);
         } else {
-            let mut tx_list = TxList::new(*sender, None);
+            let mut tx_list = TxList::new(*sender);
             tx_list.put(order);
-            self.0.push_back(tx_list);
-        }
-    }
-
-    pub fn update_next_nonce(&mut self, order: &Order) {
-        if let Some(tx_list) = self.0.iter_mut().find(|tx_list| tx_list.sender() == order.sender())
-        {
-            tx_list.next_nonce = Some(order.nonce() + 1);
+            self.tx_lists.push_back(tx_list);
         }
     }
 
     /// Returns the total number of txs in the active orders
     pub fn active_txs(&self) -> usize {
-        self.0.iter().map(|tx_list| tx_list.len()).sum()
+        self.num_txs
     }
 
     pub fn active_senders(&self) -> usize {
-        self.0.len()
+        self.tx_lists.len()
     }
 
-    /// Clear senders with no orders left
-    pub fn clear_senders(&mut self) {
-        self.0.retain(|tx_list| tx_list.len() > 0);
-    }
-
-    pub fn get_next_best(&mut self, max: usize) -> impl Iterator<Item = Arc<Order>> + '_ {
-        self.0.iter_mut().filter_map(|tx| tx.first_ready()).take(max)
+    pub fn get_next_best<'a>(
+        &'a mut self,
+        max: usize,
+        state_nonces: &'a HashMap<Address, u64>,
+    ) -> impl Iterator<Item = Arc<Order>> + 'a {
+        self.tx_lists
+            .iter_mut()
+            .filter_map(|tx| {
+                let state_nonce = state_nonces.get(tx.sender());
+                tx.first_ready(state_nonce)
+            })
+            .take(max)
     }
 }
 
@@ -109,6 +114,7 @@ impl SortData {
             in_flight_sims: 0,
             active_orders,
             telemetry: SortingTelemetry::default(),
+            state_nonces: StateNonces::default(),
         }
     }
 
@@ -119,8 +125,7 @@ impl SortData {
             assert!(self.gas_remaining >= next_best.gas_used);
             debug!(origin = ?next_best.origin_state_id, new = ?next_best.new_state_id, tx_hash = ?next_best.order.tx_hash(), "applying next best");
 
-            self.active_orders.update_next_nonce(&next_best.order);
-
+            self.state_nonces.insert(*next_best.order.sender(), next_best.order.nonce() + 1);
             self.state_id = next_best.new_state_id;
             self.builder_payment += next_best.builder_payment;
             self.gas_remaining -= next_best.gas_used;
@@ -129,7 +134,7 @@ impl SortData {
     }
 
     /// Handle a new simulation result
-    pub fn handle_sim(&mut self, sim: SimulatedOrder, tx_pool: &mut TxPool) {
+    pub fn handle_sim(&mut self, sim: SimulatedOrder) {
         if !self.is_valid(sim.origin_state_id) {
             warn!("sim is not valid!");
             return;
@@ -152,14 +157,14 @@ impl SortData {
 
                 match reason {
                     InvalidReason::NonceTooLow { tx, state } => {
-                        warn!(tx, state, "nonce too low, removing from sender");
+                        warn!(tx, state, sender = ?sim.order.sender(), "nonce too low, updating nonce cache");
                         let sender = *sim.order.sender();
-                        tx_pool.clear_mined(std::iter::once((sender, state.saturating_sub(1))));
+                        self.state_nonces.insert(sender, state);
                     }
                     InvalidReason::NonceTooHigh { tx, state } => {
-                        warn!(tx, state, "nonce too high, removing from sender");
+                        warn!(tx, state, sender = ?sim.order.sender(), "nonce too high, updating nonce cache");
                         let sender = *sim.order.sender();
-                        tx_pool.clear_mined(std::iter::once((sender, state.saturating_sub(1))));
+                        self.state_nonces.insert(sender, state);
                     }
                     InvalidReason::Other(reason) => {
                         warn!(reason, "unknown reason");
@@ -207,17 +212,15 @@ impl SortData {
         // Apply the next best order if there is one
         self.maybe_apply_next();
 
-        self.active_orders.clear_senders();
-        if self.active_orders.active_senders() == 0 {
-            //debug!("exhausted active senders");
-            return;
-        }
-
-        for order in self.active_orders.get_next_best(max_sims_per_loop) {
+        for order in self.active_orders.get_next_best(max_sims_per_loop, &self.state_nonces) {
             self.in_flight_sims += 1;
             self.telemetry.n_sims_sent += 1;
             simulator.spawn_sim_tx(order, self.state_id);
         }
+    }
+
+    pub fn is_simulating(&self) -> bool {
+        self.in_flight_sims > 0
     }
 
     pub fn is_valid(&self, state_id: StateId) -> bool {
@@ -225,12 +228,15 @@ impl SortData {
     }
 
     pub fn should_seal(&self) -> bool {
-        self.num_txs > 0 && Instant::now() > self.target_seal
+        self.num_txs > 0 && self.is_past_target_seal()
+    }
+
+    pub fn is_past_target_seal(&self) -> bool {
+        Instant::now() > self.target_seal
     }
 
     pub fn should_reset(&self) -> bool {
-        // went through all txs but none were actually valid
-        self.num_txs == 0 && (self.in_flight_sims == 0 || Instant::now() > self.target_seal)
+        self.num_txs == 0 && self.is_past_target_seal()
     }
 }
 

@@ -124,88 +124,8 @@ impl Sequencer {
         loop {
             self.tick();
 
-            // state transition
-            match self.ctx.state {
-                SequencerState::Sync => {
-                    if !self.flags.can_sequence {
-                        continue;
-                    }
-
-                    match self.anchor_block() {
-                        Ok(state_id) => {
-                            let block_info = self.get_block_info();
-                            debug!(?block_info, %state_id, "anchored");
-                            self.ctx.state = SequencerState::Anchor { block_info, state_id };
-                        }
-
-                        Err(err) => error!(%err, "failed anchoring"),
-                    };
-                }
-
-                SequencerState::Anchor { block_info, state_id } => {
-                    if !self.flags.can_sequence {
-                        self.ctx.state = SequencerState::Sync;
-                        continue;
-                    }
-
-                    if self.needs_anchor_refresh(&block_info.anchor_params) {
-                        // refresh with new anchor
-                        match self.anchor_block() {
-                            Ok(state_id) => {
-                                let block_info = self.get_block_info();
-                                debug!(?block_info, %state_id, "re-anchored");
-                                self.ctx.state = SequencerState::Anchor { block_info, state_id };
-                            }
-
-                            Err(err) => {
-                                error!(%err, "failed re-anchoring");
-                                self.ctx.state = SequencerState::Sync;
-                            }
-                        };
-                    } else if let Some(active) = self.tx_pool.active_orders() {
-                        debug!(
-                            txs = active.active_txs(),
-                            senders = active.active_senders(),
-                            "start block building"
-                        );
-
-                        // we have orders, start building a block
-                        let sort_data = SortData::new(
-                            block_info,
-                            state_id,
-                            active,
-                            self.chain_config.block_max_gas_limit,
-                            self.config.target_block_time,
-                        );
-
-                        self.ctx.state = SequencerState::Sorting(sort_data);
-                    }
-                }
-
-                SequencerState::Sorting(ref mut sort_data) => {
-                    if sort_data.should_seal() {
-                        let sort_data = sort_data.clone(); // should avoid cloning this
-
-                        if let Err(err) = self.commit_seal(sort_data) {
-                            // todo: add a failsafe so we're not stuck forever here
-                            error!(%err, "failed commit seal");
-                            panic!("failed commit seal");
-                        } else {
-                            // reset state for next block
-                            self.ctx.state = SequencerState::Sync;
-                        }
-                    } else {
-                        sort_data
-                            .maybe_sim_next_batch(&self.simulator, self.config.max_sims_per_loop);
-
-                        if sort_data.should_reset() {
-                            // lets get another tx snapshot
-                            debug!("exhausted active orders, restarting");
-                            self.ctx.state = SequencerState::Sync;
-                        }
-                    }
-                }
-            }
+            let state = std::mem::take(&mut self.ctx.state);
+            self.ctx.state = self.state_transition(state);
         }
     }
 
@@ -230,6 +150,116 @@ impl Sequencer {
         // clear proposal if it's late
         if self.lookahead.should_clear_proposal(&self.config.operator_address).0 {
             self.send_batch_to_proposer("approaching next operator");
+        }
+    }
+
+    fn state_transition(&mut self, state: SequencerState) -> SequencerState {
+        match state {
+            SequencerState::Sync => {
+                if !self.flags.can_sequence {
+                    return SequencerState::Sync;
+                }
+
+                match self.anchor_block() {
+                    Ok(state_id) => {
+                        let block_info = self.get_block_info();
+                        debug!(?block_info, %state_id, "anchored");
+                        SequencerState::Anchor { block_info, state_id }
+                    }
+
+                    Err(err) => {
+                        error!(%err, "failed anchoring");
+                        SequencerState::Sync
+                    }
+                }
+            }
+
+            SequencerState::Anchor { block_info, state_id } => {
+                if !self.flags.can_sequence {
+                    return SequencerState::Sync;
+                }
+
+                if self.needs_anchor_refresh(&block_info.anchor_params) {
+                    // refresh with new anchor
+                    match self.anchor_block() {
+                        Ok(state_id) => {
+                            let block_info = self.get_block_info();
+                            debug!(?block_info, %state_id, "re-anchored");
+                            SequencerState::Anchor { block_info, state_id }
+                        }
+
+                        Err(err) => {
+                            error!(%err, "failed re-anchoring");
+                            SequencerState::Sync
+                        }
+                    }
+                } else if let Some(active) =
+                    self.tx_pool.active_orders(self.ctx.parent.block_number)
+                {
+                    debug!(
+                        txs = active.active_txs(),
+                        senders = active.active_senders(),
+                        "start block building"
+                    );
+
+                    // we have orders, start building a block
+                    let sort_data = SortData::new(
+                        block_info,
+                        state_id,
+                        active,
+                        self.chain_config.block_max_gas_limit,
+                        self.config.target_block_time,
+                    );
+
+                    SequencerState::Sorting(sort_data)
+                } else {
+                    state
+                }
+            }
+
+            SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
+                if let Err(err) = self.commit_seal(sort_data) {
+                    // todo: add a failsafe so we're not stuck forever here
+                    error!(%err, "failed commit seal");
+                    panic!("failed commit seal");
+                } else {
+                    // reset state for next block
+                    SequencerState::Sync
+                }
+            }
+
+            SequencerState::Sorting(mut sort_data) => {
+                sort_data.maybe_sim_next_batch(&self.simulator, self.config.max_sims_per_loop);
+
+                if sort_data.is_simulating() {
+                    return SequencerState::Sorting(sort_data);
+                }
+
+                // if we're not simulating here we have run out of active orders, try to get
+                // new orders from the mempool
+                if let Some(new_active) = self.tx_pool.get_new_active(&sort_data.state_nonces) {
+                    debug!(
+                        txs = new_active.active_txs(),
+                        senders = new_active.active_senders(),
+                        "continuing with new active orders"
+                    );
+
+                    sort_data.active_orders = new_active;
+                    SequencerState::Sorting(sort_data)
+                } else if sort_data.should_reset() {
+                    // if we're here, all the orders were invalid, so the state nonces are
+                    // all for actual state db (as opposed to ones we applied in the block),
+                    // use those to clear the txpool and restart the loop
+                    self.tx_pool.update_nonces(
+                        sort_data.state_nonces,
+                        sort_data.block_info.block_number - 1,
+                    );
+                    debug!("exhausted active orders past target seal, resetting");
+                    SequencerState::Sync
+                } else {
+                    SequencerState::Sorting(sort_data)
+                }
+            }
         }
     }
 
@@ -338,7 +368,7 @@ impl Sequencer {
         receive_for(
             Duration::from_millis(10),
             |tx| {
-                self.tx_pool.put(tx);
+                self.tx_pool.put(tx, self.ctx.parent.block_number);
             },
             &self.spine.rpc_rx,
         );
@@ -346,7 +376,7 @@ impl Sequencer {
         receive_for(
             Duration::from_millis(10),
             |tx| {
-                self.tx_pool.put(tx);
+                self.tx_pool.put(tx, self.ctx.parent.block_number);
             },
             &self.spine.mempool_rx,
         );
@@ -364,7 +394,7 @@ impl Sequencer {
                 return;
             };
 
-            sort_data.handle_sim(sim_res, &mut self.tx_pool);
+            sort_data.handle_sim(sim_res);
         }
     }
 
@@ -460,7 +490,7 @@ impl Sequencer {
         );
 
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
-        self.tx_pool.clear_mined(txs);
+        self.tx_pool.clear_mined(txs, block_number);
 
         // mark for being verified later
         self.ctx.new_preconf_l2_block(&block.header, true);

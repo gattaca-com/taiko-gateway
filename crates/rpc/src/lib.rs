@@ -49,7 +49,7 @@ async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sende
                     error!(%err, backoff, "txpool fetch failed. Retrying..");
                 }
 
-                sleep(Duration::from_secs(60)).await;
+                sleep(Duration::from_secs(30)).await;
             }
         }
         .in_current_span(),

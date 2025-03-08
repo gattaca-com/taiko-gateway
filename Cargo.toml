@@ -34,7 +34,6 @@ jsonrpsee = { version = "0.24", features = ["full"] }
 jsonwebtoken = "9"
 lazy_static = "1.5.0"
 libflate = "2.1.0"
-lru = "0.13"
 parking_lot = "0.12.3"
 pc-common = { path = "crates/common" }
 pc-proposer = { path = "crates/proposer" }
