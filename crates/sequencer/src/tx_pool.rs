@@ -13,34 +13,24 @@ use crate::{sorting::ActiveOrders, types::StateNonces};
 pub struct TxPool {
     // sender -> tx list
     tx_lists: HashMap<Address, TxList>,
-    // address -> state_nonce valid at block `parent_block` + 1 (alternative would be calling
-    // transaction count on the simulator)
-    nonces: HashMap<Address, u64>,
-    /// The nonces are valid for this block number + 1
-    parent_block: u64,
+    // address -> state_nonce valid at block `parent_block` + 1
+    nonces: StateNonces,
 }
 
-// TODO: improve this
-// currently not doing much since we need to make async calls to simulator for most checks
 impl TxPool {
     pub fn new() -> Self {
         // this should be big enough for all the users in a single block
-        let nonces = HashMap::with_capacity(10_000);
-        Self { tx_lists: HashMap::new(), nonces, parent_block: 0 }
+        Self { tx_lists: HashMap::new(), nonces: StateNonces::default() }
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
     pub fn put(&mut self, tx: Arc<Order>, parent_block: u64) {
         let sender = *tx.sender();
 
-        if parent_block != self.parent_block {
+        if !self.nonces.is_valid_parent(parent_block) {
             if !self.nonces.is_empty() {
                 // if we last updated the nonces for a different block, clear the cache and re-sim
-                debug!(
-                    old_parent = self.parent_block,
-                    new_parent = parent_block,
-                    "clearing nonce cache"
-                );
+                debug!(cache_block = self.nonces.valid_block, parent_block, "clearing nonce cache");
                 self.nonces.clear();
             }
         } else if let Some(state_nonce) = self.nonces.get(&sender) {
@@ -53,51 +43,35 @@ impl TxPool {
         self.tx_lists.entry(sender).or_insert(TxList::new(sender)).put(tx);
     }
 
-    pub fn active_orders(&mut self, parent_block: u64) -> Option<ActiveOrders> {
-        if parent_block != self.parent_block {
+    /// Return the active orders, checking the nonces cache for the block number being built
+    pub fn active_orders(&mut self, block_number: u64) -> Option<ActiveOrders> {
+        if !self.nonces.is_valid_block(block_number) {
+            // nonces are stale, clear the cache and re-sim
             self.nonces.clear();
             (!self.tx_lists.is_empty()).then_some(ActiveOrders::new(self.tx_lists.clone()))
         } else {
-            let mut active = HashMap::new();
-
-            for (sender, tx_list) in self.tx_lists.iter() {
-                if let Some(state_nonce) = self.nonces.get(sender) {
-                    if tx_list.has_nonce(state_nonce) {
-                        // we have this nonce
-                        let mut tx_list = tx_list.clone();
-                        tx_list.forward(*state_nonce);
-
-                        assert!(!tx_list.is_empty());
-
-                        active.insert(*sender, tx_list);
-                    }
-                } else {
-                    // we have a new sender
-                    active.insert(*sender, tx_list.clone());
-                }
-            }
-
-            (!active.is_empty()).then_some(ActiveOrders::new(active))
+            // nonces are valid, get the active orders from those
+            self.get_active_for_nonces(&self.nonces)
         }
     }
 
-    /// Either we have these nonces or we have new senders
-    pub fn get_new_active(&self, state_nonces: &StateNonces) -> Option<ActiveOrders> {
-        let mut active = HashMap::new();
+    /// Return active orders: either we have these nonces or we have new senders
+    pub fn get_active_for_nonces(&self, state_nonces: &StateNonces) -> Option<ActiveOrders> {
+        let mut active = HashMap::with_capacity(self.tx_lists.len());
 
         for (sender, tx_list) in self.tx_lists.iter() {
             if let Some(state_nonce) = state_nonces.get(sender) {
                 if tx_list.has_nonce(state_nonce) {
                     // we have this nonce
                     let mut tx_list = tx_list.clone();
-                    tx_list.forward(*state_nonce);
+                    tx_list.forward(state_nonce);
 
                     assert!(!tx_list.is_empty());
 
                     active.insert(*sender, tx_list);
                 }
             } else {
-                // we have a new sender
+                // new sender
                 active.insert(*sender, tx_list.clone());
             }
         }
@@ -105,34 +79,26 @@ impl TxPool {
         (!active.is_empty()).then_some(ActiveOrders::new(active))
     }
 
-    pub fn update_nonces(&mut self, state_nonces: StateNonces, parent_block: u64) {
-        self.nonces.clear();
-        self.parent_block = parent_block;
+    pub fn update_nonces(&mut self, state_nonces: StateNonces) {
+        self.nonces = state_nonces;
 
-        for (sender, state_nonce) in state_nonces.0 {
-            self.nonces.insert(sender, state_nonce);
-            if let Some(tx_list) = self.tx_lists.get_mut(&sender) {
+        for (sender, state_nonce) in self.nonces.iter() {
+            if let Some(tx_list) = self.tx_lists.get_mut(sender) {
                 if tx_list.forward(state_nonce) {
-                    self.tx_lists.remove(&sender);
+                    self.tx_lists.remove(sender);
                 }
             }
         }
     }
 
     /// Clear all mined nonces for each address (built block is now the parent)
-    pub fn clear_mined(&mut self, txs: impl Iterator<Item = (Address, u64)>, block_number: u64) {
-        self.nonces.clear();
-        self.parent_block = block_number;
-
-        for (sender, mined_nonce) in txs {
-            let state_nonce = mined_nonce + 1;
-            self.nonces.insert(sender, state_nonce);
-            if let Some(tx_list) = self.tx_lists.get_mut(&sender) {
-                if tx_list.forward(state_nonce) {
-                    self.tx_lists.remove(&sender);
-                }
-            }
-        }
+    pub fn clear_mined(
+        &mut self,
+        mined_block: u64,
+        mined_txs: impl Iterator<Item = (Address, u64)>,
+    ) {
+        let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
+        self.update_nonces(nonces);
     }
 }
 
@@ -160,11 +126,11 @@ impl TxList {
         self.txs.contains_key(nonce)
     }
 
-    /// Removes all transactions with nonce lower than the next_nonce.
+    /// Removes all transactions with nonce lower than the state_nonce.
     /// Returns true if list becomes empty after removal.
-    pub fn forward(&mut self, state_nonce: u64) -> bool {
+    pub fn forward(&mut self, state_nonce: &u64) -> bool {
         // TODO: fix this since it's sorted
-        self.txs.retain(|nonce, _| *nonce >= state_nonce);
+        self.txs.retain(|nonce, _| nonce >= state_nonce);
         self.txs.is_empty()
     }
 

@@ -74,8 +74,9 @@ pub async fn start_looahead_loop(
                 Ok(res) => res._0,
                 Err(err) => {
                     // current operator should always be available
-                    error!(%err, "failed to fetch current operator");
-                    std::process::exit(1);
+                    let msg = format!("failed to fetch current operator: {}", err);
+                    error!("{msg}");
+                    panic!("{msg}");
                 }
             };
 
@@ -88,8 +89,9 @@ pub async fn start_looahead_loop(
 
                 Err(err) => {
                     // exit for other errors
-                    error!(%err, "failed to fetch current operator");
-                    std::process::exit(1);
+                    let msg = format!("failed to fetch next operator: {}", err);
+                    error!("{msg}");
+                    panic!("{msg}");
                 }
             }
             .unwrap_or_default();

@@ -8,14 +8,14 @@ use std::{
 
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
-use alloy_rpc_types::{Block, Header};
+use alloy_rpc_types::Block;
 use crossbeam_channel::{Receiver, Sender};
 use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
     proposer::{is_propose_delayed, ProposalRequest, ProposeBatchParams},
     runtime::spawn,
-    sequencer::{ExecutionResult, Order, StateId},
+    sequencer::{ExecutionResult, StateId},
     taiko::{
         get_difficulty, get_extra_data, lookahead::LookaheadHandle, pacaya::BlockParams,
         AnchorParams, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
@@ -23,7 +23,6 @@ use pc_common::{
     types::BlockEnv,
 };
 use reqwest::{header::AUTHORIZATION, Client};
-use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn, Instrument};
 
 use crate::{
@@ -33,24 +32,8 @@ use crate::{
     soft_block::BuildPreconfBlockRequestBody,
     sorting::SortData,
     tx_pool::TxPool,
-    types::{BlockInfo, SequencerState, SimulatedOrder},
+    types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
 };
-pub struct SequencerSpine {
-    /// Receive txs and bundles from RPC
-    pub rpc_rx: Receiver<Arc<Order>>,
-    /// Receive txs from mempool
-    pub mempool_rx: Receiver<Arc<Order>>,
-    /// Send blocks to proposer for inclusion
-    pub proposer_tx: UnboundedSender<ProposalRequest>,
-    // Receiver of L1 blocks
-    pub l1_blocks_rx: Receiver<Header>,
-    // Receiver of L2 preconf blocks
-    pub l2_blocks_rx: Receiver<Header>,
-    // Receiver of L2 non preconf blocks
-    pub origin_blocks_rx: Receiver<Header>,
-    /// Receive sim results
-    pub sim_rx: Receiver<eyre::Result<SimulatedOrder>>,
-}
 
 #[derive(Debug, Default)]
 struct SequencerFlags {
@@ -90,8 +73,6 @@ impl Sequencer {
     ) -> Self {
         let chain_config = taiko_config.params;
         let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config, sim_tx);
-
-        // this doesn't handle well the restarts if we have pending orders in the rpc
         let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin, l1_number);
 
         Self {
@@ -193,10 +174,9 @@ impl Sequencer {
                             SequencerState::Sync
                         }
                     }
-                } else if let Some(active) =
-                    self.tx_pool.active_orders(self.ctx.parent.block_number)
-                {
+                } else if let Some(active) = self.tx_pool.active_orders(block_info.block_number) {
                     debug!(
+                        block = block_info.block_number,
                         txs = active.active_txs(),
                         senders = active.active_senders(),
                         "start block building"
@@ -235,9 +215,11 @@ impl Sequencer {
                     return SequencerState::Sorting(sort_data);
                 }
 
-                // if we're not simulating here we have run out of active orders, try to get
-                // new orders from the mempool
-                if let Some(new_active) = self.tx_pool.get_new_active(&sort_data.state_nonces) {
+                // if we're not simulating here then we have run out of active orders
+                // try to get new orders from the txpool considering the state nonces we have
+                if let Some(new_active) =
+                    self.tx_pool.get_active_for_nonces(&sort_data.state_nonces)
+                {
                     debug!(
                         txs = new_active.active_txs(),
                         senders = new_active.active_senders(),
@@ -250,10 +232,7 @@ impl Sequencer {
                     // if we're here, all the orders were invalid, so the state nonces are
                     // all for actual state db (as opposed to ones we applied in the block),
                     // use those to clear the txpool and restart the loop
-                    self.tx_pool.update_nonces(
-                        sort_data.state_nonces,
-                        sort_data.block_info.block_number - 1,
-                    );
+                    self.tx_pool.update_nonces(sort_data.state_nonces);
                     debug!("exhausted active orders past target seal, resetting");
                     SequencerState::Sync
                 } else {
@@ -287,7 +266,7 @@ impl Sequencer {
         let is_l1_delayed = self.ctx.last_l1_receive.elapsed() > self.config.l1_delay;
         if is_l1_delayed != self.flags.l1_delayed {
             if is_l1_delayed {
-                warn!(last_received = ?self.ctx.last_l1_receive.elapsed(), "l1 block fetch is delayed, stop sequencing");
+                warn!(last_received = ?self.ctx.last_l1_receive.elapsed(), "l1 block fetch is delayed");
             } else {
                 warn!("l1 block fetch has resumed");
             }
@@ -384,9 +363,14 @@ impl Sequencer {
 
     fn handle_sims(&mut self) {
         if let Ok(sim_res) = self.spine.sim_rx.try_recv() {
-            let Ok(sim_res) = sim_res.inspect_err(|err| error!(%err, "failed sim")) else {
-                // this is when simulator is down, maybe just stop sequencing
-                std::process::exit(1);
+            let sim_res = match sim_res {
+                Ok(sim_res) => sim_res,
+                Err(err) => {
+                    // this is when simulator is down, maybe just stop sequencing
+                    let msg = format!("failed sim: {}", err);
+                    error!("{msg}");
+                    panic!("{msg}");
+                }
             };
 
             let SequencerState::Sorting(sort_data) = &mut self.ctx.state else {
@@ -490,7 +474,7 @@ impl Sequencer {
         );
 
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
-        self.tx_pool.clear_mined(txs, block_number);
+        self.tx_pool.clear_mined(block_number, txs);
 
         // mark for being verified later
         self.ctx.new_preconf_l2_block(&block.header, true);

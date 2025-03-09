@@ -114,7 +114,7 @@ impl SortData {
             in_flight_sims: 0,
             active_orders,
             telemetry: SortingTelemetry::default(),
-            state_nonces: StateNonces::default(),
+            state_nonces: StateNonces::new(block_info.block_number),
         }
     }
 

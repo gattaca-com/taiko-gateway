@@ -6,12 +6,33 @@ use std::{
 };
 
 use alloy_primitives::Address;
+use alloy_rpc_types::Header;
+use crossbeam_channel::Receiver;
 use pc_common::{
+    proposer::ProposalRequest,
     sequencer::{ExecutionResult, Order, StateId},
     taiko::AnchorParams,
 };
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::sorting::SortData;
+
+pub struct SequencerSpine {
+    /// Receive txs and bundles from RPC
+    pub rpc_rx: Receiver<Arc<Order>>,
+    /// Receive txs from mempool
+    pub mempool_rx: Receiver<Arc<Order>>,
+    /// Send blocks to proposer for inclusion
+    pub proposer_tx: UnboundedSender<ProposalRequest>,
+    // Receiver of L1 blocks
+    pub l1_blocks_rx: Receiver<Header>,
+    // Receiver of L2 preconf blocks
+    pub l2_blocks_rx: Receiver<Header>,
+    // Receiver of L2 non preconf blocks
+    pub origin_blocks_rx: Receiver<Header>,
+    /// Receive sim results
+    pub sim_rx: Receiver<eyre::Result<SimulatedOrder>>,
+}
 
 #[derive(Clone, Default)]
 pub enum SequencerState {
@@ -82,20 +103,46 @@ pub struct ValidOrder {
 }
 
 /// A map from a sender address to a state nonce. Note that the nonce could be either the one from
-/// the parent block or a greater one while sorting
-#[derive(Debug, Clone, Default)]
-pub struct StateNonces(pub HashMap<Address, u64>);
+/// the parent block or a different one while sorting
+#[derive(Debug, Default, Clone)]
+pub struct StateNonces {
+    pub nonces: HashMap<Address, u64>,
+    /// The nonces are valid to be used for this block number
+    pub valid_block: u64,
+}
+
+impl StateNonces {
+    pub fn new(valid_block: u64) -> Self {
+        Self { nonces: HashMap::new(), valid_block }
+    }
+
+    pub fn new_from_mined(
+        mined_block: u64,
+        mined_txs: impl Iterator<Item = (Address, u64)>,
+    ) -> Self {
+        let nonces = mined_txs.map(|(sender, mined_nonce)| (sender, mined_nonce + 1)).collect();
+        Self { nonces, valid_block: mined_block + 1 }
+    }
+
+    pub fn is_valid_parent(&self, parent_block: u64) -> bool {
+        self.valid_block == parent_block + 1
+    }
+
+    pub fn is_valid_block(&self, block_number: u64) -> bool {
+        self.valid_block == block_number
+    }
+}
 
 impl Deref for StateNonces {
     type Target = HashMap<Address, u64>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.nonces
     }
 }
 
 impl DerefMut for StateNonces {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.nonces
     }
 }

@@ -13,7 +13,7 @@ use pc_common::{
     sequencer::Order,
     taiko::lookahead::LookaheadHandle,
 };
-use sequencer::{Sequencer, SequencerSpine};
+use sequencer::Sequencer;
 use tokio::sync::mpsc::UnboundedSender;
 mod context;
 mod fetcher;
@@ -26,6 +26,7 @@ mod tx_pool;
 mod types;
 
 use tracing::error;
+use types::SequencerSpine;
 
 #[allow(clippy::too_many_arguments)]
 pub fn start_sequencer(
