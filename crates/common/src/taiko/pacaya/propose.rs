@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
@@ -125,7 +125,7 @@ fn compress_bytes(data: &[u8]) -> Vec<u8> {
     encoder.finish().into_result().unwrap()
 }
 
-pub fn encode_and_compress_tx_list(tx_list: Vec<TxEnvelope>) -> Vec<u8> {
+pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Vec<u8> {
     let encoded = alloy_rlp::encode(tx_list);
     compress_bytes(&encoded)
 }

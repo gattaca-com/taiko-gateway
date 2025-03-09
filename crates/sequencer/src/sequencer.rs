@@ -13,6 +13,7 @@ use crossbeam_channel::{Receiver, Sender};
 use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
+    metrics::{BlocksMetrics, SequencerMetrics},
     proposer::{is_propose_delayed, ProposalRequest, ProposeBatchParams},
     runtime::spawn,
     sequencer::{ExecutionResult, StateId},
@@ -107,6 +108,8 @@ impl Sequencer {
 
             let state = std::mem::take(&mut self.ctx.state);
             self.ctx.state = self.state_transition(state);
+
+            self.record_metrics();
         }
     }
 
@@ -198,7 +201,7 @@ impl Sequencer {
             }
 
             SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
-                if let Err(err) = self.commit_seal(sort_data) {
+                if let Err(err) = self.seal_block(sort_data) {
                     // todo: add a failsafe so we're not stuck forever here
                     error!(%err, "failed commit seal");
                     panic!("failed commit seal");
@@ -448,7 +451,7 @@ impl Sequencer {
         }
     }
 
-    fn commit_seal(&mut self, sort_data: SortData) -> eyre::Result<()> {
+    fn seal_block(&mut self, sort_data: SortData) -> eyre::Result<()> {
         sort_data.telemetry.report();
 
         let seal_state_id = sort_data.state_id;
@@ -461,17 +464,20 @@ impl Sequencer {
 
         let block = res.built_block;
         let block_number = block.header.number;
+        let block_time = start_block.elapsed();
 
         info!(
             bn = block_number,
             seal_time = ?start.elapsed(),
-            block_time = ?start_block.elapsed(),
+            ?block_time,
             block_hash = %block.header.hash,
             payment = format_ether(res.cumulative_builder_payment),
             gas_used = res.cumulative_gas_used,
             gas_limit = block.header.gas_limit,
             "sealed block"
         );
+
+        BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
         self.tx_pool.clear_mined(block_number, txs);
@@ -503,7 +509,7 @@ impl Sequencer {
             .transactions
             .into_transactions()
             .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| tx.inner);
+            .map(|tx| tx.inner.into());
         request.all_tx_list.extend(txs);
 
         if self.needs_anchor_refresh(&anchor_params) {
@@ -572,6 +578,13 @@ impl Sequencer {
             }
             .in_current_span(),
         );
+    }
+
+    fn record_metrics(&self) {
+        self.ctx.state.record_metrics();
+
+        SequencerMetrics::set_is_sequencer(self.flags.can_sequence);
+        SequencerMetrics::set_is_proposer(self.flags.can_propose);
     }
 }
 

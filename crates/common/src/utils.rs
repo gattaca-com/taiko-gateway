@@ -88,7 +88,7 @@ const fn is_test_env() -> bool {
     cfg!(test) || cfg!(debug_assertions)
 }
 
-pub fn initialize_panic_hook() {
+pub fn init_panic_hook() {
     if let Ok(webhook_url) = std::env::var("DISCORD_WEBHOOK_URL") {
         DISCORD_WEBHOOK_URL
             .set(Url::parse(&webhook_url).expect("invalid DISCORD_WEBHOOK_URL"))
@@ -113,7 +113,7 @@ pub fn initialize_test_tracing() {
     tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 }
 
-pub fn initialize_tracing_log() -> (WorkerGuard, Option<WorkerGuard>) {
+pub fn init_tracing_log() -> (WorkerGuard, Option<WorkerGuard>) {
     let format = tracing_subscriber::fmt::format()
         .with_level(true)
         .with_thread_ids(false)

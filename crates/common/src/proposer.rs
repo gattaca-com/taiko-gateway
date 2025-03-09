@@ -31,7 +31,7 @@ pub struct ProposeBatchParams {
     pub last_timestamp: u64,
     pub block_params: Vec<BlockParams>,
     /// all txs in the blocks, without anchor tx
-    pub all_tx_list: Vec<TxEnvelope>,
+    pub all_tx_list: Vec<Arc<TxEnvelope>>,
     pub coinbase: Address,
 }
 

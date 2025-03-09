@@ -5,6 +5,7 @@ use alloy_rpc_types_txpool::TxpoolContent;
 use crossbeam_channel::Sender;
 use pc_common::{
     config::{RpcConfig, StaticConfig},
+    metrics::MempoolMetrics,
     runtime::spawn,
     sequencer::Order,
 };
@@ -60,6 +61,7 @@ async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sende
             error!(%err, backoff, "mempool sub failed. Retrying..");
         }
 
+        MempoolMetrics::ws_reconnect();
         sleep(Duration::from_secs(backoff)).await;
     }
 }
@@ -72,6 +74,7 @@ async fn subscribe_mempool(rpc_url: Url, mempool_tx: Sender<Arc<Order>>) -> eyre
     let mut sub = provider.subscribe_full_pending_transactions().await?;
 
     while let Ok(tx) = sub.recv().await {
+        MempoolMetrics::tx_received();
         // debug!(hash = %tx.inner.tx_hash(), "received from mempool");
         let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from).into());
     }

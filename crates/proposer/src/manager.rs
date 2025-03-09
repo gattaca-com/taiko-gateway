@@ -1,6 +1,10 @@
 #![allow(clippy::comparison_chain)]
 
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
 use alloy_eips::BlockId;
@@ -11,6 +15,7 @@ use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
     config::{ProposerConfig, TaikoConfig},
+    metrics::ProposerMetrics,
     proposer::{set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams},
     taiko::{
         pacaya::{
@@ -144,17 +149,20 @@ impl ProposerManager {
                 // this can happen if we waited too long before restarting the proposer, a
                 // re-org is inevitable
                 let request = request_from_blocks(l1_head - 1, blocks, Some(l1_timestamp - 1));
+                let is_our_coinbase = request.coinbase == self.config.coinbase;
                 self.propose_batch_with_retry(request).await;
+                ProposerMetrics::resync(is_our_coinbase);
             } else {
                 // propose same batch
                 let request = request_from_blocks(anchor_block_id, blocks, None);
+                let is_our_coinbase = request.coinbase == self.config.coinbase;
                 self.propose_batch_with_retry(request).await;
+                ProposerMetrics::resync(is_our_coinbase);
             }
         }
 
         if !has_reorged {
             // TODO: this could fetch from preconfs, fix
-
             for (bn, block) in to_verify {
                 let new_block = l2_provider
                     .get_block_by_number(bn.into(), BlockTransactionsKind::Hashes)
@@ -181,7 +189,9 @@ impl ProposerManager {
 
         let parent_meta_hash = self.client.last_meta_hash().await;
 
-        let compressed = encode_and_compress_tx_list(request.all_tx_list.clone()).into(); // FIXME
+        let compressed: Bytes = encode_and_compress_tx_list(request.all_tx_list.clone()).into();
+        ProposerMetrics::batch_size(compressed.len() as u64);
+
         let should_use_blobs = self.should_use_blobs(&compressed);
         let (input, maybe_sidecar) = if should_use_blobs {
             let (input, sidecar) =
@@ -196,6 +206,8 @@ impl ProposerManager {
         let mut retries = 0;
 
         while let Err(err) = self.propose_one_batch(input.clone(), maybe_sidecar.clone()).await {
+            ProposerMetrics::proposed_batches(false);
+
             set_propose_delayed();
             retries += 1;
 
@@ -217,6 +229,8 @@ impl ProposerManager {
             tokio::time::sleep(Duration::from_secs(12)).await;
         }
 
+        ProposerMetrics::proposed_batches(true);
+
         set_propose_ok();
 
         if retries > 0 {
@@ -237,7 +251,10 @@ impl ProposerManager {
         };
 
         info!(tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
+
+        let start = Instant::now();
         let tx_receipt = self.client.send_tx(tx).await?;
+        ProposerMetrics::proposal_latency(start.elapsed());
 
         let tx_hash = tx_receipt.transaction_hash;
         let block_number = tx_receipt.block_number.unwrap_or_default();
@@ -249,7 +266,9 @@ impl ProposerManager {
                 "proposed batch"
             );
 
-            self.client.reorg_check(tx_hash).await?;
+            self.client.reorg_check(tx_hash).await.inspect_err(|_| {
+                ProposerMetrics::proposal_reorg();
+            })?;
 
             Ok(())
         } else {
@@ -312,7 +331,7 @@ fn request_from_blocks(
             .transactions
             .into_transactions()
             .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| tx.inner);
+            .map(|tx| tx.inner.into());
 
         tx_list.extend(txs);
         last_timestamp = block.header.timestamp;

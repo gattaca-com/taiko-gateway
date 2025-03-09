@@ -11,6 +11,7 @@ use jsonrpsee::{
 use pc_common::{
     api::SimulateApiClient,
     config::TaikoConfig,
+    metrics::SimulatorMetric,
     runtime::spawn,
     sequencer::{ExecutionResult, Order, SealBlockResponse, StateId},
     taiko::{
@@ -66,12 +67,14 @@ impl SimulatorClient {
     ) -> eyre::Result<ExecutionResult> {
         debug!(hash = %tx.tx_hash(), ?block_env, ?extra_data, "simulate anchor");
 
+        let mut metric = SimulatorMetric::new("anchor");
         let response = self.runtime.block_on(async move {
             self.client
                 .simulate_anchor_tx(tx.raw().clone(), block_env, extra_data)
                 .await
                 .map(|res| res.execution_result)
         })?;
+        metric.record();
 
         Ok(response)
     }
@@ -82,6 +85,7 @@ impl SimulatorClient {
         let sim_url = self.sim_url.clone();
         let sim_tx = self.sim_tx.clone();
         spawn(async move {
+            let mut metric = SimulatorMetric::new("simulate");
             let start = Instant::now();
 
             // this is spawned on the global runtime and we need to re-initialize the client because
@@ -102,16 +106,24 @@ impl SimulatorClient {
                 })
                 .map_err(|err| eyre!("failed simulate tx: {err}"));
 
+            if res.is_ok() {
+                metric.record();
+            }
+
             let _ = sim_tx.send(res);
         });
     }
 
     pub fn seal_block(&self, state_id: StateId) -> eyre::Result<SealBlockResponse> {
         debug!(%state_id, "seal block");
+        let mut metric = SimulatorMetric::new("seal");
 
-        self.runtime.block_on(async move {
+        let res = self.runtime.block_on(async move {
             self.client.seal_block(state_id).await.map_err(|err| eyre!("seal block err: {err}"))
-        })
+        })?;
+
+        metric.record();
+        Ok(res)
     }
 
     pub fn assemble_anchor(
