@@ -6,67 +6,154 @@ use std::{
 use alloy_consensus::Transaction;
 use alloy_primitives::Address;
 use pc_common::sequencer::Order;
+use tracing::debug;
+
+use crate::{sorting::ActiveOrders, types::StateNonces};
 
 pub struct TxPool {
     // sender -> tx list
-    txs: HashMap<Address, TxList>,
+    tx_lists: HashMap<Address, TxList>,
+    // address -> state_nonce valid at block `parent_block` + 1
+    nonces: StateNonces,
 }
 
-// TODO: improve this
-// currently not doing much since we need to make async calls to simulator for most checks
 impl TxPool {
     pub fn new() -> Self {
-        Self { txs: HashMap::new() }
+        // this should be big enough for all the users in a single block
+        Self { tx_lists: HashMap::new(), nonces: StateNonces::default() }
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
-    pub fn put(&mut self, tx: Arc<Order>) {
-        self.txs.entry(*tx.sender()).or_default().put(tx);
+    pub fn put(&mut self, tx: Arc<Order>, parent_block: u64) {
+        let sender = *tx.sender();
+
+        if !self.nonces.is_valid_parent(parent_block) {
+            if !self.nonces.is_empty() {
+                // if we last updated the nonces for a different block, clear the cache and re-sim
+                debug!(cache_block = self.nonces.valid_block, parent_block, "clearing nonce cache");
+                self.nonces.clear();
+            }
+        } else if let Some(state_nonce) = self.nonces.get(&sender) {
+            if tx.nonce() < *state_nonce {
+                debug!(state_nonce, tx_nonce = tx.nonce(), %sender, "discarding for nonce");
+                return;
+            }
+        }
+
+        self.tx_lists.entry(sender).or_insert(TxList::new(sender)).put(tx);
     }
 
-    /// Clear all invalid nonces for each address
-    pub fn clear_mined(&mut self, txs: impl Iterator<Item = (Address, u64)>) {
-        for (sender, nonce) in txs {
-            if let Some(txs) = self.txs.get_mut(&sender) {
-                if txs.forward(nonce) {
-                    self.txs.remove(&sender);
+    /// Return the active orders, checking the nonces cache for the block number being built
+    pub fn active_orders(&mut self, block_number: u64) -> Option<ActiveOrders> {
+        if !self.nonces.is_valid_block(block_number) {
+            // nonces are stale, clear the cache and re-sim
+            self.nonces.clear();
+            (!self.tx_lists.is_empty()).then_some(ActiveOrders::new(self.tx_lists.clone()))
+        } else {
+            // nonces are valid, get the active orders from those
+            self.get_active_for_nonces(&self.nonces)
+        }
+    }
+
+    /// Return active orders: either we have these nonces or we have new senders
+    pub fn get_active_for_nonces(&self, state_nonces: &StateNonces) -> Option<ActiveOrders> {
+        let mut active = HashMap::with_capacity(self.tx_lists.len());
+
+        for (sender, tx_list) in self.tx_lists.iter() {
+            if let Some(state_nonce) = state_nonces.get(sender) {
+                if tx_list.has_nonce(state_nonce) {
+                    // we have this nonce
+                    let mut tx_list = tx_list.clone();
+                    tx_list.forward(state_nonce);
+
+                    assert!(!tx_list.is_empty());
+
+                    active.insert(*sender, tx_list);
+                }
+            } else {
+                // new sender
+                active.insert(*sender, tx_list.clone());
+            }
+        }
+
+        (!active.is_empty()).then_some(ActiveOrders::new(active))
+    }
+
+    pub fn update_nonces(&mut self, state_nonces: StateNonces) {
+        self.nonces = state_nonces;
+
+        for (sender, state_nonce) in self.nonces.iter() {
+            if let Some(tx_list) = self.tx_lists.get_mut(sender) {
+                if tx_list.forward(state_nonce) {
+                    self.tx_lists.remove(sender);
                 }
             }
         }
     }
 
-    // TODO: this is not efficient, we should get some top of block payments at least
-    pub fn next_sequence(&mut self) -> Option<Arc<Order>> {
-        self.txs.values_mut().next().and_then(|txs| txs.first_ready())
+    /// Clear all mined nonces for each address (built block is now the parent)
+    pub fn clear_mined(
+        &mut self,
+        mined_block: u64,
+        mined_txs: impl Iterator<Item = (Address, u64)>,
+    ) {
+        let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
+        self.update_nonces(nonces);
     }
 }
 
-// nonce -> txs
-#[derive(Default)]
-struct TxList(BTreeMap<u64, Arc<Order>>);
+#[derive(Debug, Clone)]
+pub struct TxList {
+    sender: Address,
+    txs: BTreeMap<u64, Arc<Order>>,
+}
 
 impl TxList {
+    pub fn new(sender: Address) -> Self {
+        Self { sender, txs: BTreeMap::new() }
+    }
+
+    pub fn sender(&self) -> &Address {
+        &self.sender
+    }
+
     pub fn put(&mut self, tx: Arc<Order>) {
-        self.0.insert(tx.nonce(), tx);
+        assert_eq!(self.sender, *tx.sender());
+        self.txs.insert(tx.nonce(), tx);
     }
 
-    /// Removes all transactions with nonce lower or equal than the provided threshold.
+    pub fn has_nonce(&self, nonce: &u64) -> bool {
+        self.txs.contains_key(nonce)
+    }
+
+    /// Removes all transactions with nonce lower than the state_nonce.
     /// Returns true if list becomes empty after removal.
-    pub fn forward(&mut self, mined_nonce: u64) -> bool {
-        if self.0.first_key_value().is_some_and(|(nonce, _)| *nonce > mined_nonce) {
-            return false;
-        }
-
-        while let Some((nonce, _)) = self.0.pop_first() {
-            if nonce == mined_nonce {
-                break;
-            }
-        }
-
-        self.0.is_empty()
+    pub fn forward(&mut self, state_nonce: &u64) -> bool {
+        // TODO: fix this since it's sorted
+        self.txs.retain(|nonce, _| nonce >= state_nonce);
+        self.txs.is_empty()
     }
 
-    pub fn first_ready(&mut self) -> Option<Arc<Order>> {
-        self.0.pop_first().map(|(_, tx)| tx)
+    pub fn len(&self) -> usize {
+        self.txs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.txs.is_empty()
+    }
+
+    pub fn first_ready(&mut self, state_nonce: Option<&u64>) -> Option<Arc<Order>> {
+        if let Some(state_nonce) = state_nonce {
+            self.txs.remove(state_nonce)
+        } else {
+            self.txs.pop_first().map(|(_, tx)| tx)
+        }
+    }
+
+    pub fn weight(&self) -> u128 {
+        self.txs
+            .first_key_value()
+            .map(|(_, tx)| tx.priority_fee_or_price())
+            .expect("txlist shouldn't be called when empty")
     }
 }

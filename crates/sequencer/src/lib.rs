@@ -13,7 +13,7 @@ use pc_common::{
     sequencer::Order,
     taiko::lookahead::LookaheadHandle,
 };
-use sequencer::{Sequencer, SequencerSpine};
+use sequencer::Sequencer;
 use tokio::sync::mpsc::UnboundedSender;
 mod context;
 mod fetcher;
@@ -21,8 +21,12 @@ mod jwt;
 mod sequencer;
 mod simulator;
 mod soft_block;
+mod sorting;
 mod tx_pool;
+mod types;
+
 use tracing::error;
+use types::SequencerSpine;
 
 #[allow(clippy::too_many_arguments)]
 pub fn start_sequencer(
@@ -70,6 +74,7 @@ pub fn start_sequencer(
         BlockFetcher::new(rpc_url, origin_blocks_tx).run_origin_fetch("origin", l2_origin.clone()),
     );
 
+    let (sim_tx, sim_rx) = crossbeam_channel::unbounded();
     let spine = SequencerSpine {
         rpc_rx,
         mempool_rx,
@@ -77,10 +82,18 @@ pub fn start_sequencer(
         l1_blocks_rx,
         l2_blocks_rx,
         origin_blocks_rx,
+        sim_rx,
     };
 
-    let sequencer =
-        Sequencer::new(sequencer_config, taiko_config, spine, lookahead, l2_origin, l1_number);
+    let sequencer = Sequencer::new(
+        sequencer_config,
+        taiko_config,
+        spine,
+        lookahead,
+        l2_origin,
+        l1_number,
+        sim_tx,
+    );
 
     std::thread::Builder::new()
         .name("sequencer".to_string())

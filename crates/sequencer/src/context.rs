@@ -9,11 +9,12 @@ use std::{
 
 use alloy_rpc_types::Header;
 use pc_common::{
-    sequencer::StateId,
     taiko::{AnchorParams, ParentParams},
     utils::verify_and_log_block,
 };
 use tracing::{debug, warn};
+
+use crate::types::SequencerState;
 
 /// Sequencing state
 pub struct SequencerContext {
@@ -123,36 +124,4 @@ impl SequencerContext {
     pub fn l2_origin(&self) -> u64 {
         self.l2_origin.load(Ordering::Relaxed)
     }
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum SequencerState {
-    /// Syncing L1/L2 blocks
-    #[default]
-    Sync,
-    /// After simulating anchor tx, ready to sequence
-    Anchor {
-        /// Data used in anchor sim
-        anchor_params: AnchorParams,
-        /// Current block number (parent + 1)
-        block_number: u64,
-        /// Anchor state id
-        state_id: StateId,
-    },
-    /// Sequencing user txs
-    Sequence {
-        /// Data used in anchor sim
-        anchor_params: AnchorParams,
-        /// Current block number (parent + 1)
-        block_number: u64,
-        /// State to sequence txs on
-        tip_state_id: StateId,
-
-        /// Time when the first user tx was sequenced in the block
-        start: Instant,
-        /// Running total of gas used in the block
-        running_gas_used: u128,
-        /// number of user txs in the block
-        num_txs: usize,
-    },
 }
