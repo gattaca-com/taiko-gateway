@@ -30,7 +30,12 @@ use crate::{config::L2ChainConfig, runtime::spawn};
 pub fn start_metrics_server() {
     let port =
         std::env::var("METRICS_PORT").map(|s| s.parse().expect("invalid port")).unwrap_or(9500);
-    spawn(MetricsProvider::new(port).run());
+
+    spawn(async move {
+        if let Err(err) = run_metrics(port).await {
+            error!("metrics server error {}", err);
+        }
+    });
 }
 
 pub fn record_info(
@@ -59,28 +64,18 @@ pub fn record_info(
     REGISTRY.register(Box::new(info)).unwrap();
 }
 
-pub struct MetricsProvider {
-    port: u16,
-}
+pub async fn run_metrics(port: u16) -> eyre::Result<()> {
+    info!("starting metrics server on port {}", port);
 
-impl MetricsProvider {
-    pub fn new(port: u16) -> Self {
-        MetricsProvider { port }
-    }
+    let router = axum::Router::new()
+        .route("/status", get(|| async { StatusCode::OK }))
+        .route("/metrics", get(handle_metrics));
+    let address = SocketAddr::from(([0, 0, 0, 0], port));
+    let listener = TcpListener::bind(&address).await?;
 
-    pub async fn run(self) -> eyre::Result<()> {
-        info!("starting metrics server on port {}", self.port);
+    axum::serve(listener, router).await?;
 
-        let router = axum::Router::new()
-            .route("/status", get(|| async { StatusCode::OK }))
-            .route("/metrics", get(handle_metrics));
-        let address = SocketAddr::from(([0, 0, 0, 0], self.port));
-        let listener = TcpListener::bind(&address).await?;
-
-        axum::serve(listener, router).await?;
-
-        bail!("metrics server stopped")
-    }
+    bail!("metrics server stopped")
 }
 
 async fn handle_metrics() -> Response {
@@ -94,7 +89,7 @@ async fn handle_metrics() -> Response {
 }
 
 fn prepare_metrics() -> Result<Response, MetricsError> {
-    let metrics = prometheus::gather();
+    let metrics = REGISTRY.gather();
     let encoder = TextEncoder::new();
     let s = encoder.encode_to_string(&metrics)?;
 
