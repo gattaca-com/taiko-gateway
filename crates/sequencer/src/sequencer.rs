@@ -18,7 +18,9 @@ use pc_common::{
     runtime::spawn,
     sequencer::{ExecutionResult, StateId},
     taiko::{
-        get_difficulty, get_extra_data, lookahead::LookaheadHandle, pacaya::BlockParams,
+        get_difficulty, get_extra_data,
+        lookahead::LookaheadHandle,
+        pacaya::{encode_and_compress_tx_list, BlockParams},
         AnchorParams, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
     },
     types::BlockEnv,
@@ -391,6 +393,9 @@ impl Sequencer {
     }
 
     fn maybe_refresh_anchor(&mut self) {
+        const BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
+        const MAX_BLOBS_SIZE: usize = 3 * BLOBS_SAFE_SIZE; // use at most 3 blobs
+
         let Some(safe_l1_header) = self.ctx.safe_l1_header() else {
             error!("missing l1 headers");
             return;
@@ -401,7 +406,12 @@ impl Sequencer {
             self.ctx.current_anchor_id() + self.config.anchor_batch_lag < safe_l1_header.number;
 
         // if the batch with this anchor has too many txs, refresh it
-        let is_batch_big = false; // TODO
+
+        let current_batch_size =
+            self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0);
+        // note we could exceed the size here if the last block is large, but we have a buffer so
+        // shouldnt be a problem
+        let is_batch_big = current_batch_size > MAX_BLOBS_SIZE;
 
         if is_anchor_old || is_batch_big {
             let new = AnchorParams {
@@ -511,6 +521,7 @@ impl Sequencer {
             .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
             .map(|tx| tx.inner.into());
         request.all_tx_list.extend(txs);
+        request.compressed = encode_and_compress_tx_list(request.all_tx_list.clone());
 
         if self.needs_anchor_refresh(&anchor_params) {
             self.send_batch_to_proposer("sealed last for this anchor");

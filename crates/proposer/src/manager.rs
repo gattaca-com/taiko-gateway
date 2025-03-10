@@ -189,7 +189,7 @@ impl ProposerManager {
 
         let parent_meta_hash = self.client.last_meta_hash().await;
 
-        let compressed: Bytes = encode_and_compress_tx_list(request.all_tx_list.clone()).into();
+        let compressed: Bytes = request.compressed.clone();
         ProposerMetrics::batch_size(compressed.len() as u64);
 
         let should_use_blobs = self.should_use_blobs(&compressed);
@@ -279,8 +279,6 @@ impl ProposerManager {
 
     fn should_use_blobs(&self, compressed: &Bytes) -> bool {
         const CALLDATA_SIZE: usize = 100_000; // max calldata with some buffer
-        const _BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
-        const _MAX_BLOBS_SIZE: usize = 3 * _BLOBS_SAFE_SIZE; // use at most 3 blobs
 
         compressed.len() > CALLDATA_SIZE
     }
@@ -344,7 +342,8 @@ fn request_from_blocks(
         start_block_num,
         end_block_num,
         block_params: blocks,
-        all_tx_list: tx_list,
+        all_tx_list: tx_list.clone(),
+        compressed: encode_and_compress_tx_list(tx_list),
         last_timestamp,
         coinbase,
     }

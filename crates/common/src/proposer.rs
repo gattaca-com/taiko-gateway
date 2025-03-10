@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use alloy_consensus::TxEnvelope;
-use alloy_primitives::Address;
+use alloy_primitives::{Address, Bytes};
 use lazy_static::lazy_static;
 
 use crate::taiko::pacaya::BlockParams;
@@ -32,6 +32,8 @@ pub struct ProposeBatchParams {
     pub block_params: Vec<BlockParams>,
     /// all txs in the blocks, without anchor tx
     pub all_tx_list: Vec<Arc<TxEnvelope>>,
+    /// Encoded / compressed tx lists
+    pub compressed: Bytes,
     pub coinbase: Address,
 }
 
