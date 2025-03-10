@@ -1,13 +1,9 @@
-use std::{
-    fs,
-    io::Read,
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, io::Read, path::PathBuf};
 
 use alloy_primitives::hex;
 use eyre::{bail, ensure, eyre, Result};
 use jsonwebtoken::{encode, EncodingKey, Header};
+use pc_common::utils::utcnow_sec;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,7 +15,7 @@ struct Claims {
 }
 
 pub fn generate_jwt(secret: Vec<u8>) -> Result<String, jsonwebtoken::errors::Error> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let now = utcnow_sec();
     let claims = Claims {
         sub: "soft-block".to_string(),
         exp: (now + 36000) as usize,

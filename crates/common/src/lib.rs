@@ -1,7 +1,7 @@
 pub mod api;
+pub mod balance;
 pub mod beacon;
 pub mod config;
-pub mod erc20;
 pub mod metrics;
 pub mod proposer;
 pub mod runtime;

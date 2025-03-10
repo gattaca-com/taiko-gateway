@@ -9,6 +9,7 @@ use std::{
 
 use alloy_rpc_types::Header;
 use pc_common::{
+    metrics::{BlocksMetrics, SequencerMetrics},
     taiko::{AnchorParams, ParentParams},
     utils::verify_and_log_block,
 };
@@ -52,6 +53,9 @@ impl SequencerContext {
     }
 
     pub fn new_l1_block(&mut self, new_header: Header) {
+        BlocksMetrics::l1_block_number(new_header.number);
+        SequencerMetrics::set_l1_sync_time(self.last_l1_receive.elapsed());
+
         debug!(sync_time = ?self.last_l1_receive.elapsed(), number = new_header.number, hash = %new_header.hash, "new l1 block");
 
         self.l1_number.store(new_header.number, Ordering::Relaxed);
@@ -65,6 +69,8 @@ impl SequencerContext {
     /// verify our blocks
     pub fn new_preconf_l2_block(&mut self, new_header: &Header, ours: bool) {
         if new_header.number > self.parent.block_number {
+            BlocksMetrics::l2_block(new_header);
+
             debug!(sequenced_locally = ours, number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
 
             self.parent = ParentParams {

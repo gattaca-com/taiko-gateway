@@ -9,6 +9,7 @@ use alloy_primitives::Address;
 use alloy_rpc_types::Header;
 use crossbeam_channel::Receiver;
 use pc_common::{
+    metrics::SequencerMetrics,
     proposer::ProposalRequest,
     sequencer::{ExecutionResult, Order, StateId},
     taiko::AnchorParams,
@@ -43,6 +44,18 @@ pub enum SequencerState {
     Anchor { block_info: BlockInfo, state_id: StateId },
     /// Sequencing user txs
     Sorting(SortData),
+}
+
+impl SequencerState {
+    pub fn record_metrics(&self) {
+        let state_id = match self {
+            SequencerState::Sync => 0,
+            SequencerState::Anchor { .. } => 1,
+            SequencerState::Sorting(..) => 2,
+        };
+
+        SequencerMetrics::set_state(state_id);
+    }
 }
 
 impl std::fmt::Debug for SequencerState {

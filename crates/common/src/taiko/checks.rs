@@ -6,6 +6,7 @@ use tracing::{info, warn};
 
 use crate::{
     config::{L1ChainConfig, L2ChainConfig, TaikoChainParams},
+    metrics::record_info,
     taiko::{
         pacaya::{l1::TaikoL1, l2::TaikoL2, preconf::PreconfWhitelist},
         GOLDEN_TOUCH_ADDRESS,
@@ -17,7 +18,8 @@ use crate::{
 pub async fn get_and_validate_config(
     l1_config: L1ChainConfig,
     l2_config: L2ChainConfig,
-    signer_address: Address,
+    operator: Address,
+    coinbase: Address,
 ) -> eyre::Result<TaikoChainParams> {
     let l1_provider = ProviderBuilder::new().on_http(l1_config.rpc_url);
     let taiko_l1 = TaikoL1::new(l2_config.l1_contract, l1_provider.clone());
@@ -28,6 +30,8 @@ pub async fn get_and_validate_config(
 
     let l1_chain_id = taiko_l1.provider().get_chain_id().await?;
     let l2_chain_id = taiko_l2.provider().get_chain_id().await?;
+
+    record_info(l1_chain_id, l2_chain_id, operator, coinbase, l2_config);
 
     // L1 data
     let taiko_config = taiko_l1.pacayaConfig().call().await?._0;
@@ -50,11 +54,11 @@ pub async fn get_and_validate_config(
             operators.push(operator);
         }
 
-        if let Some(this_index) = operators.iter().position(|&op| op == signer_address) {
+        if let Some(this_index) = operators.iter().position(|&op| op == operator) {
             info!(this_index, ?operators, "fetched operators");
             break;
         } else {
-            warn!(operator= %signer_address, whitelist=? operators, "provided address is not in whitelist! sleeping for 60s");
+            warn!(operator= %operator, whitelist=? operators, "provided address is not in whitelist! sleeping for 60s");
         };
 
         tokio::time::sleep(Duration::from_secs(60)).await;

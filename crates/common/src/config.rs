@@ -161,6 +161,7 @@ pub struct ProposerConfig {
     pub dry_run: bool,
     /// time
     pub l1_safe_lag: Duration,
+    pub coinbase: Address,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
@@ -169,6 +170,7 @@ impl From<&StaticConfig> for ProposerConfig {
             propose_frequency: Duration::from_secs(config.gateway.propose_frequency_secs),
             dry_run: config.gateway.dry_run,
             l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
+            coinbase: config.gateway.coinbase,
         }
     }
 }

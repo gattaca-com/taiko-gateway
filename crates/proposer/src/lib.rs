@@ -8,7 +8,6 @@ use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
     proposer::ProposalRequest,
     runtime::spawn,
-    taiko::lookahead::LookaheadHandle,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -20,7 +19,6 @@ pub async fn start_proposer(
     taiko_config: TaikoConfig,
     proposer_signer: PrivateKeySigner,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
-    _lookahead: LookaheadHandle,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 

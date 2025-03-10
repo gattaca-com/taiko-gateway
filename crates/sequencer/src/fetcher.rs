@@ -12,6 +12,7 @@ use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy_rpc_types::{BlockTransactionsKind, Header};
 use crossbeam_channel::Sender;
 use eyre::OptionExt;
+use pc_common::metrics::BlocksMetrics;
 use reqwest::Url;
 use serde::Deserialize;
 use tokio::time::sleep;
@@ -135,6 +136,7 @@ async fn fetch_origin_blocks(
         let last = l2_origin.swap(l2_new_origin, Ordering::Relaxed);
 
         if l2_new_origin > last {
+            BlocksMetrics::l2_origin_block_number(l2_new_origin);
             // fetch all the proposed blocks
             fetch_last_blocks(&provider, tx.clone(), last + 1, l2_new_origin).await?;
         }

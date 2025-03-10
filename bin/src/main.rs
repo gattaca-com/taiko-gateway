@@ -2,13 +2,13 @@ use std::sync::{atomic::AtomicU64, Arc};
 
 use eyre::eyre;
 use pc_common::{
+    balance::check_and_approve_balance,
     beacon::init_beacon,
     config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
-    erc20::check_and_approve_balance,
     metrics::start_metrics_server,
     runtime::init_runtime,
     taiko::{get_and_validate_config, lookahead::start_looahead_loop},
-    utils::{initialize_panic_hook, initialize_tracing_log},
+    utils::{init_panic_hook, init_tracing_log},
 };
 use pc_proposer::start_proposer;
 use pc_rpc::start_rpc;
@@ -18,12 +18,12 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
-    initialize_panic_hook();
+    init_panic_hook();
 
     let config = load_static_config();
     let envs = load_env_vars();
 
-    let _guard = initialize_tracing_log();
+    let _guards = init_tracing_log();
     init_runtime();
     start_metrics_server();
 
@@ -54,6 +54,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         config.l1.clone(),
         config.l2.clone(),
         envs.proposer_signer_key.address(),
+        config.gateway.coinbase,
     )
     .await
     .map_err(|e| eyre!("get config: {e}"))?;
@@ -74,15 +75,9 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     let taiko_config = TaikoConfig::new(&config, chain_config);
 
     let (new_blocks_tx, new_blocks_rx) = mpsc::unbounded_channel();
-    start_proposer(
-        &config,
-        taiko_config.clone(),
-        envs.proposer_signer_key.clone(),
-        new_blocks_rx,
-        lookahead.clone(),
-    )
-    .await
-    .map_err(|e| eyre!("proposer init: {e}"))?;
+    start_proposer(&config, taiko_config.clone(), envs.proposer_signer_key.clone(), new_blocks_rx)
+        .await
+        .map_err(|e| eyre!("proposer init: {e}"))?;
 
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
@@ -102,7 +97,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
 
     start_rpc(&config, rpc_tx, mempool_tx);
 
-    // Wait for SIGTERM or SIGINT
+    // wait for SIGTERM or SIGINT
     let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
     let mut sigterm = tokio::signal::unix::signal(SignalKind::terminate())?;
 

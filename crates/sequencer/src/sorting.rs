@@ -6,7 +6,10 @@ use std::{
 
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address};
-use pc_common::sequencer::{ExecutionResult, InvalidReason, Order, StateId};
+use pc_common::{
+    metrics::SequencerMetrics,
+    sequencer::{ExecutionResult, InvalidReason, Order, StateId},
+};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -145,10 +148,12 @@ impl SortData {
 
         let (state_id, gas_used, builder_payment) = match sim.execution_result {
             ExecutionResult::Success { state_id, gas_used, builder_payment } => {
+                SequencerMetrics::record_sim_success();
                 self.telemetry.n_sims_success += 1;
                 (state_id, gas_used, builder_payment)
             }
             ExecutionResult::Revert { state_id, gas_used, builder_payment } => {
+                SequencerMetrics::record_sim_revert();
                 self.telemetry.n_sims_revert += 1;
                 (state_id, gas_used, builder_payment)
             }
@@ -157,16 +162,19 @@ impl SortData {
 
                 match reason {
                     InvalidReason::NonceTooLow { tx, state } => {
+                        SequencerMetrics::record_sim_invalid();
                         warn!(tx, state, sender = ?sim.order.sender(), "nonce too low, updating nonce cache");
                         let sender = *sim.order.sender();
                         self.state_nonces.insert(sender, state);
                     }
                     InvalidReason::NonceTooHigh { tx, state } => {
+                        SequencerMetrics::record_sim_invalid();
                         warn!(tx, state, sender = ?sim.order.sender(), "nonce too high, updating nonce cache");
                         let sender = *sim.order.sender();
                         self.state_nonces.insert(sender, state);
                     }
                     InvalidReason::Other(reason) => {
+                        SequencerMetrics::record_sim_unknown();
                         warn!(reason, "unknown reason");
                     }
                 }
