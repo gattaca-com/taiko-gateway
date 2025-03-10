@@ -242,8 +242,8 @@ impl ProposerMetrics {
         PROPOSAL_REORGS.inc();
     }
 
-    pub fn resync(is_other: bool) {
-        RESYNC_COUNTS.with_label_values(&[if is_other { "other" } else { "own" }]).inc();
+    pub fn resync(is_our_coinbase: bool) {
+        RESYNC_COUNTS.with_label_values(&[if is_our_coinbase { "own" } else { "other" }]).inc();
     }
 
     pub fn eth_balance(balance: U256) {
