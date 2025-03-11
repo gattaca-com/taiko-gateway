@@ -24,7 +24,7 @@ pub fn propose_batch_calldata(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> Bytes {
-    let compressed = encode_and_compress_tx_list(request.all_tx_list);
+    let compressed = request.compressed;
 
     // TODO: check the offsets here
     let batch_params = BatchParams {
@@ -48,7 +48,7 @@ pub fn propose_batch_calldata(
     let encoded_params =
         (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed.into() }
+    PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed }
         .abi_encode()
         .into()
 }
@@ -63,7 +63,7 @@ pub fn propose_batch_blobs(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> (Bytes, BlobTransactionSidecar) {
-    let compressed = encode_and_compress_tx_list(request.all_tx_list);
+    let compressed = request.compressed;
 
     assert!(
         compressed.len() % MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
