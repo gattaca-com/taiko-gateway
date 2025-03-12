@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap};
 
 use alloy_consensus::Transaction;
 use alloy_primitives::Address;
@@ -24,7 +21,7 @@ impl TxPool {
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
-    pub fn put(&mut self, tx: Arc<Order>, parent_block: u64) {
+    pub fn put(&mut self, tx: Order, parent_block: u64) {
         let sender = *tx.sender();
 
         if !self.nonces.is_valid_parent(parent_block) {
@@ -35,7 +32,6 @@ impl TxPool {
             }
         } else if let Some(state_nonce) = self.nonces.get(&sender) {
             if tx.nonce() < *state_nonce {
-                debug!(state_nonce, tx_nonce = tx.nonce(), %sender, "discarding for nonce");
                 return;
             }
         }
@@ -44,25 +40,38 @@ impl TxPool {
     }
 
     /// Return the active orders, checking the nonces cache for the block number being built
-    pub fn active_orders(&mut self, block_number: u64) -> Option<ActiveOrders> {
+    pub fn active_orders(&mut self, block_number: u64, base_fee: u128) -> Option<ActiveOrders> {
         if !self.nonces.is_valid_block(block_number) {
             // nonces are stale, clear the cache and re-sim
             self.nonces.clear();
-            (!self.tx_lists.is_empty()).then_some(ActiveOrders::new(self.tx_lists.clone()))
+            (!self.tx_lists.is_empty()).then(|| {
+                let tx_lists = self
+                    .tx_lists
+                    .iter()
+                    .filter(|(_, tx_list)| tx_list.has_tx_by_fee(base_fee))
+                    .map(|(sender, tx_list)| (*sender, tx_list.clone()))
+                    .collect();
+
+                ActiveOrders::new(tx_lists)
+            })
         } else {
             // nonces are valid, get the active orders from those
-            self.get_active_for_nonces(&self.nonces)
+            self.get_active_for_nonces(&self.nonces, base_fee)
         }
     }
 
     /// Return active orders: either we have these nonces or we have new senders
-    pub fn get_active_for_nonces(&self, state_nonces: &StateNonces) -> Option<ActiveOrders> {
+    pub fn get_active_for_nonces(
+        &self,
+        state_nonces: &StateNonces,
+        base_fee: u128,
+    ) -> Option<ActiveOrders> {
         let mut active = HashMap::with_capacity(self.tx_lists.len());
 
         for (sender, tx_list) in self.tx_lists.iter() {
             if let Some(state_nonce) = state_nonces.get(sender) {
-                if tx_list.has_nonce(state_nonce) {
-                    // we have this nonce
+                if tx_list.has_tx_by_nonce(state_nonce, base_fee) {
+                    // we have this nonce and fee is high enough
                     let mut tx_list = tx_list.clone();
                     tx_list.forward(state_nonce);
 
@@ -70,13 +79,13 @@ impl TxPool {
 
                     active.insert(*sender, tx_list);
                 }
-            } else {
+            } else if tx_list.has_tx_by_fee(base_fee) {
                 // new sender
                 active.insert(*sender, tx_list.clone());
             }
         }
 
-        (!active.is_empty()).then_some(ActiveOrders::new(active))
+        (!active.is_empty()).then(|| ActiveOrders::new(active))
     }
 
     pub fn update_nonces(&mut self, state_nonces: StateNonces) {
@@ -105,7 +114,7 @@ impl TxPool {
 #[derive(Debug, Clone)]
 pub struct TxList {
     sender: Address,
-    txs: BTreeMap<u64, Arc<Order>>,
+    txs: BTreeMap<u64, Order>,
 }
 
 impl TxList {
@@ -117,13 +126,17 @@ impl TxList {
         &self.sender
     }
 
-    pub fn put(&mut self, tx: Arc<Order>) {
+    pub fn put(&mut self, tx: Order) {
         assert_eq!(self.sender, *tx.sender());
         self.txs.insert(tx.nonce(), tx);
     }
 
-    pub fn has_nonce(&self, nonce: &u64) -> bool {
-        self.txs.contains_key(nonce)
+    pub fn has_tx_by_nonce(&self, nonce: &u64, base_fee: u128) -> bool {
+        self.txs.get(nonce).map(|tx| tx.max_fee_per_gas() >= base_fee).unwrap_or(false)
+    }
+
+    pub fn has_tx_by_fee(&self, base_fee: u128) -> bool {
+        self.txs.first_key_value().map(|(_, tx)| tx.max_fee_per_gas() >= base_fee).unwrap_or(false)
     }
 
     /// Removes all transactions with nonce lower than the state_nonce.
@@ -142,12 +155,18 @@ impl TxList {
         self.txs.is_empty()
     }
 
-    pub fn first_ready(&mut self, state_nonce: Option<&u64>) -> Option<Arc<Order>> {
+    pub fn first_ready(&mut self, state_nonce: Option<&u64>, base_fee: u128) -> Option<Order> {
         if let Some(state_nonce) = state_nonce {
-            self.txs.remove(state_nonce)
-        } else {
-            self.txs.pop_first().map(|(_, tx)| tx)
+            if let Some(tx) = self.txs.get(state_nonce) {
+                if tx.max_fee_per_gas() >= base_fee {
+                    return self.txs.remove(state_nonce);
+                }
+            }
+        } else if self.has_tx_by_fee(base_fee) {
+            return self.txs.pop_first().map(|(_, tx)| tx);
         }
+
+        None
     }
 
     pub fn weight(&self) -> u128 {

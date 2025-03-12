@@ -38,6 +38,10 @@ use crate::{
     types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
 };
 
+const BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
+/// Use max 3 blobs, potentially we could exceed this but the buffer should be enough
+const TARGET_BATCH_SIZE: usize = 3 * BLOBS_SAFE_SIZE;
+
 #[derive(Debug, Default)]
 struct SequencerFlags {
     /// Can we sequence new blocks
@@ -147,8 +151,8 @@ impl Sequencer {
                 }
 
                 match self.anchor_block() {
-                    Ok(state_id) => {
-                        let block_info = self.get_block_info();
+                    Ok((state_id, base_fee)) => {
+                        let block_info = self.get_block_info(base_fee);
                         debug!(?block_info, %state_id, "anchored");
                         SequencerState::Anchor { block_info, state_id }
                     }
@@ -168,8 +172,8 @@ impl Sequencer {
                 if self.needs_anchor_refresh(&block_info.anchor_params) {
                     // refresh with new anchor
                     match self.anchor_block() {
-                        Ok(state_id) => {
-                            let block_info = self.get_block_info();
+                        Ok((state_id, base_fee)) => {
+                            let block_info = self.get_block_info(base_fee);
                             debug!(?block_info, %state_id, "re-anchored");
                             SequencerState::Anchor { block_info, state_id }
                         }
@@ -179,26 +183,42 @@ impl Sequencer {
                             SequencerState::Sync
                         }
                     }
-                } else if let Some(active) = self.tx_pool.active_orders(block_info.block_number) {
-                    debug!(
+                } else {
+                    let max_block_size = TARGET_BATCH_SIZE.saturating_sub(
+                        self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0),
+                    );
+
+                    if max_block_size == 0 {
+                        return state;
+                    }
+
+                    let Some(active) =
+                        self.tx_pool.active_orders(block_info.block_number, block_info.base_fee)
+                    else {
+                        return state;
+                    };
+
+                    // we have orders, start building a block
+                    info!(
                         block = block_info.block_number,
                         txs = active.active_txs(),
                         senders = active.active_senders(),
+                        target_time = ?self.config.target_block_time,
+                        max_block_size,
+                        gas_limit = self.chain_config.block_max_gas_limit,
                         "start block building"
                     );
 
-                    // we have orders, start building a block
                     let sort_data = SortData::new(
                         block_info,
                         state_id,
                         active,
                         self.chain_config.block_max_gas_limit,
                         self.config.target_block_time,
+                        max_block_size,
                     );
 
                     SequencerState::Sorting(sort_data)
-                } else {
-                    state
                 }
             }
 
@@ -222,20 +242,15 @@ impl Sequencer {
 
                 // if we're not simulating here then we have run out of active orders
                 // try to get new orders from the txpool considering the state nonces we have
-                if let Some(new_active) =
-                    self.tx_pool.get_active_for_nonces(&sort_data.state_nonces)
+                if let Some(new_active) = self
+                    .tx_pool
+                    .get_active_for_nonces(&sort_data.state_nonces, sort_data.block_info.base_fee)
                 {
-                    debug!(
-                        txs = new_active.active_txs(),
-                        senders = new_active.active_senders(),
-                        "continuing with new active orders"
-                    );
-
                     sort_data.active_orders = new_active;
                     SequencerState::Sorting(sort_data)
                 } else if sort_data.should_reset() {
                     // if we're here, all the orders were invalid, so the state nonces are
-                    // all for actual state db (as opposed to ones we applied in the block),
+                    // all for the actual state db (as opposed to ones we applied in the block),
                     // use those to clear the txpool and restart the loop
                     self.tx_pool.update_nonces(sort_data.state_nonces);
                     debug!("exhausted active orders past target seal, resetting");
@@ -247,10 +262,10 @@ impl Sequencer {
         }
     }
 
-    fn get_block_info(&self) -> BlockInfo {
+    fn get_block_info(&self, base_fee: u128) -> BlockInfo {
         let block_number = self.ctx.parent.block_number + 1;
         let anchor_params = self.ctx.anchor;
-        BlockInfo { anchor_params, block_number }
+        BlockInfo { anchor_params, block_number, base_fee }
     }
 
     /// We can sequence if:
@@ -393,9 +408,6 @@ impl Sequencer {
     }
 
     fn maybe_refresh_anchor(&mut self) {
-        const BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
-        const MAX_BLOBS_SIZE: usize = 3 * BLOBS_SAFE_SIZE; // use at most 3 blobs
-
         let Some(safe_l1_header) = self.ctx.safe_l1_header() else {
             error!("missing l1 headers");
             return;
@@ -406,12 +418,11 @@ impl Sequencer {
             self.ctx.current_anchor_id() + self.config.anchor_batch_lag < safe_l1_header.number;
 
         // if the batch with this anchor has too many txs, refresh it
-
         let current_batch_size =
             self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0);
         // note we could exceed the size here if the last block is large, but we have a buffer so
         // shouldnt be a problem
-        let is_batch_big = current_batch_size > MAX_BLOBS_SIZE;
+        let is_batch_big = current_batch_size > TARGET_BATCH_SIZE;
 
         if is_anchor_old || is_batch_big {
             let new = AnchorParams {
@@ -422,14 +433,19 @@ impl Sequencer {
 
             self.ctx.anchor = new;
 
-            debug!(anchor =? self.ctx.anchor, "refreshed anchor params");
+            let reason = if is_anchor_old {
+                "refreshed anchor: too old"
+            } else {
+                "refreshed anchor: batch too big"
+            };
+            debug!(anchor =? self.ctx.anchor, "{reason}");
 
-            self.send_batch_to_proposer("refreshed anchor");
+            self.send_batch_to_proposer(reason);
         }
     }
 
     /// Anchors the current block
-    fn anchor_block(&self) -> eyre::Result<StateId> {
+    fn anchor_block(&self) -> eyre::Result<(StateId, u128)> {
         debug!(anchor =? self.ctx.anchor, parent =? self.ctx.parent, "assembling anchor");
 
         let (tx, l2_base_fee) = self.simulator.assemble_anchor(self.ctx.parent, self.ctx.anchor)?;
@@ -453,7 +469,7 @@ impl Sequencer {
                 };
 
                 debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
-                Ok(state_id)
+                Ok((state_id, l2_base_fee))
             }
             Err(err) => {
                 bail!("failed simulate anchor, err={err}")
@@ -462,7 +478,7 @@ impl Sequencer {
     }
 
     fn seal_block(&mut self, sort_data: SortData) -> eyre::Result<()> {
-        sort_data.telemetry.report();
+        sort_data.report();
 
         let seal_state_id = sort_data.state_id;
         let start_block = sort_data.start_build;
@@ -471,6 +487,7 @@ impl Sequencer {
         // seal
         let start = Instant::now();
         let res = self.simulator.seal_block(seal_state_id)?;
+        let seal_time = start.elapsed();
 
         let block = res.built_block;
         let block_number = block.header.number;
@@ -478,12 +495,11 @@ impl Sequencer {
 
         info!(
             bn = block_number,
-            seal_time = ?start.elapsed(),
+            ?seal_time,
             ?block_time,
             block_hash = %block.header.hash,
             payment = format_ether(res.cumulative_builder_payment),
             gas_used = res.cumulative_gas_used,
-            gas_limit = block.header.gas_limit,
             "sealed block"
         );
 
@@ -522,6 +538,14 @@ impl Sequencer {
             .map(|tx| tx.inner.into());
         request.all_tx_list.extend(txs);
         request.compressed = encode_and_compress_tx_list(request.all_tx_list.clone());
+
+        info!(
+            start = request.start_block_num,
+            end = request.end_block_num,
+            batch_size = request.compressed.len(),
+            txs = request.all_tx_list.len(),
+            "batch info"
+        );
 
         if self.needs_anchor_refresh(&anchor_params) {
             self.send_batch_to_proposer("sealed last for this anchor");

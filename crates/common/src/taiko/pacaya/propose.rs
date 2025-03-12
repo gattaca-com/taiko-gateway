@@ -66,8 +66,9 @@ pub fn propose_batch_blobs(
     let compressed = request.compressed;
 
     assert!(
-        compressed.len() % MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
-        "too many bytes to encode in blobs"
+        compressed.len() / MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
+        "too many bytes to encode in blobs {}",
+        compressed.len()
     );
 
     let blobs = compressed.chunks(MAX_BLOB_DATA_SIZE).map(encode_blob).collect();

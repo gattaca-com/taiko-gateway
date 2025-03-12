@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
-    sync::Arc,
     time::Duration,
 };
 
@@ -20,9 +19,9 @@ use crate::sorting::SortData;
 
 pub struct SequencerSpine {
     /// Receive txs and bundles from RPC
-    pub rpc_rx: Receiver<Arc<Order>>,
+    pub rpc_rx: Receiver<Order>,
     /// Receive txs from mempool
-    pub mempool_rx: Receiver<Arc<Order>>,
+    pub mempool_rx: Receiver<Order>,
     /// Send blocks to proposer for inclusion
     pub proposer_tx: UnboundedSender<ProposalRequest>,
     // Receiver of L1 blocks
@@ -86,6 +85,8 @@ pub struct BlockInfo {
     pub anchor_params: AnchorParams,
     /// Current block number (parent + 1)
     pub block_number: u64,
+    /// Base fee
+    pub base_fee: u128,
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +98,7 @@ pub struct SimulatedOrder {
     /// Simulation time
     pub sim_time: Duration,
     /// Original order
-    pub order: Arc<Order>,
+    pub order: Order,
 }
 
 /// Order that is valid and can be applied to the block
@@ -112,7 +113,7 @@ pub struct ValidOrder {
     /// Builder payment for the order
     pub builder_payment: u128,
     /// Original order
-    pub order: Arc<Order>,
+    pub order: Order,
 }
 
 /// A map from a sender address to a state nonce. Note that the nonce could be either the one from

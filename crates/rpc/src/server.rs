@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alloy_primitives::{Bytes, B256};
 use crossbeam_channel::Sender;
 use jsonrpsee::{core::RpcResult, server::ServerBuilder};
@@ -12,11 +10,11 @@ pub struct RpcServer {
     /// Port to open the RPC server on
     port: u16,
     /// Channel to send transactions to sequencer
-    sequence_tx: Sender<Arc<Order>>,
+    sequence_tx: Sender<Order>,
 }
 
 impl RpcServer {
-    pub fn new(config: RpcConfig, sequence_tx: Sender<Arc<Order>>) -> Self {
+    pub fn new(config: RpcConfig, sequence_tx: Sender<Order>) -> Self {
         Self { port: config.port, sequence_tx }
     }
 
@@ -43,7 +41,7 @@ impl EthApiServer for RpcServer {
         let order = Order::decode(raw_tx).map_err(|_| RpcError::FailedParsing)?;
         let tx_hash = *order.tx_hash();
 
-        let _ = self.sequence_tx.send(order.into());
+        let _ = self.sequence_tx.send(order);
 
         Ok(tx_hash)
     }
