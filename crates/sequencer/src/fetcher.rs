@@ -33,7 +33,7 @@ impl BlockFetcher {
 
     #[tracing::instrument(skip_all, name = "block_fetch" fields(id = %id))]
     pub async fn run_fetch(self, id: &str, ws_url: Url, fetch_last: u64) {
-        info!(fetch_last, source = %self.url, %ws_url, "starting block fetch");
+        info!(fetch_last, rpc_url = %self.url, %ws_url, "starting block fetch");
 
         let backoff = 4;
 
@@ -65,7 +65,7 @@ impl BlockFetcher {
 
     #[tracing::instrument(skip_all, name = "preconf_fetch" fields(id = %id))]
     pub async fn run_origin_fetch(self, id: &str, l2_origin: Arc<AtomicU64>) {
-        info!(source = %self.url, "starting preconf check fetch");
+        info!(rpc_url = %self.url, "starting preconf check fetch");
 
         let backoff = 4;
 

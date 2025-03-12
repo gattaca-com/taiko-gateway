@@ -27,7 +27,7 @@ use pc_common::{
     utils::{alert_discord, verify_and_log_block},
 };
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::L1Client;
 
@@ -58,6 +58,7 @@ impl ProposerManager {
                     info!(
                         n_blocks = request.block_params.len(),
                         all_txs = request.all_tx_list.len(),
+                        batch_size = request.compressed.len(),
                         "proposing batch for blocks {}-{}",
                         request.start_block_num,
                         request.end_block_num
@@ -189,7 +190,7 @@ impl ProposerManager {
 
         let parent_meta_hash = self.client.last_meta_hash().await;
 
-        let compressed: Bytes = encode_and_compress_tx_list(request.all_tx_list.clone()).into();
+        let compressed: Bytes = request.compressed.clone();
         ProposerMetrics::batch_size(compressed.len() as u64);
 
         let should_use_blobs = self.should_use_blobs(&compressed);
@@ -245,12 +246,13 @@ impl ProposerManager {
         sidecar: Option<BlobTransactionSidecar>,
     ) -> eyre::Result<()> {
         let tx = if let Some(sidecar) = sidecar {
+            debug!(blobs = sidecar.blobs.len(), "building blob tx");
             self.client.build_eip4844(input, sidecar).await?
         } else {
             self.client.build_eip1559(input).await?
         };
 
-        info!(tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
+        info!("type" = %tx.tx_type(), tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
 
         let start = Instant::now();
         let tx_receipt = self.client.send_tx(tx).await?;
@@ -279,9 +281,6 @@ impl ProposerManager {
 
     fn should_use_blobs(&self, compressed: &Bytes) -> bool {
         const CALLDATA_SIZE: usize = 100_000; // max calldata with some buffer
-        const _BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
-        const _MAX_BLOBS_SIZE: usize = 3 * _BLOBS_SAFE_SIZE; // use at most 3 blobs
-
         compressed.len() > CALLDATA_SIZE
     }
 }
@@ -344,7 +343,8 @@ fn request_from_blocks(
         start_block_num,
         end_block_num,
         block_params: blocks,
-        all_tx_list: tx_list,
+        all_tx_list: tx_list.clone(),
+        compressed: encode_and_compress_tx_list(tx_list),
         last_timestamp,
         coinbase,
     }

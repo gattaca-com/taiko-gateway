@@ -48,7 +48,7 @@ impl BuildPreconfBlockRequestBody {
             block_number: block.header.number,
             gas_limit: block.header.gas_limit,
             timestamp: block.header.timestamp,
-            transactions: compressed.into(),
+            transactions: compressed,
             extra_data: block.header.extra_data.clone(),
             base_fee_per_gas: block.header.base_fee_per_gas.unwrap(),
         };

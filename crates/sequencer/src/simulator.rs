@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use alloy_primitives::Bytes;
 use alloy_provider::ProviderBuilder;
@@ -79,7 +79,7 @@ impl SimulatorClient {
         Ok(response)
     }
 
-    pub fn spawn_sim_tx(&self, order: Arc<Order>, state_id: StateId) {
+    pub fn spawn_sim_tx(&self, order: Order, state_id: StateId) {
         // debug!(hash = %order.tx_hash(), ?state_id, "simulate tx task");
 
         let sim_url = self.sim_url.clone();

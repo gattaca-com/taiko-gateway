@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub struct Order {
     /// Recoverred signer
     sender: Address,
-    tx: TxEnvelope,
+    tx: Arc<TxEnvelope>,
     /// Raw RLP encoded transaction
     raw: Bytes,
 }
@@ -29,21 +29,21 @@ impl Order {
 
     pub fn new_with_sender(tx: TxEnvelope, sender: Address) -> Self {
         let raw = tx.encoded_2718().into();
-        Self { sender, tx, raw }
+        Self { sender, tx: Arc::new(tx), raw }
     }
 
     pub fn new(tx: TxEnvelope) -> eyre::Result<Self> {
         let raw = tx.encoded_2718().into();
         let sender = tx.recover_signer()?;
-        Ok(Self { sender, tx, raw })
+        Ok(Self { sender, tx: Arc::new(tx), raw })
     }
 
     pub fn raw(&self) -> &Bytes {
         &self.raw
     }
 
-    pub fn tx(&self) -> &TxEnvelope {
-        &self.tx
+    pub fn tx(&self) -> Arc<TxEnvelope> {
+        self.tx.clone()
     }
 
     pub fn sender(&self) -> &Address {
@@ -135,7 +135,9 @@ pub enum ExecutionResult {
 pub enum InvalidReason {
     NonceTooLow { tx: u64, state: u64 },
     NonceTooHigh { tx: u64, state: u64 },
-    Other(String),
+    NotEnoughGas,
+    CapLessThanBaseFee,
+    Uknown(String),
 }
 
 impl<'de> Deserialize<'de> for InvalidReason {
@@ -165,8 +167,15 @@ impl<'de> Deserialize<'de> for InvalidReason {
             }
         }
 
-        // If we can't parse it as a specific variant, use Other
-        Ok(InvalidReason::Other(s))
+        if s.contains("not enough gas for further transactions") {
+            return Ok(InvalidReason::NotEnoughGas);
+        }
+
+        if s.contains("max fee per gas less than block base fee") {
+            return Ok(InvalidReason::CapLessThanBaseFee);
+        }
+
+        Ok(InvalidReason::Uknown(s))
     }
 }
 

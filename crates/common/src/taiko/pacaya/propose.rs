@@ -24,7 +24,7 @@ pub fn propose_batch_calldata(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> Bytes {
-    let compressed = encode_and_compress_tx_list(request.all_tx_list);
+    let compressed = request.compressed;
 
     // TODO: check the offsets here
     let batch_params = BatchParams {
@@ -48,7 +48,7 @@ pub fn propose_batch_calldata(
     let encoded_params =
         (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed.into() }
+    PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed }
         .abi_encode()
         .into()
 }
@@ -63,11 +63,12 @@ pub fn propose_batch_blobs(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> (Bytes, BlobTransactionSidecar) {
-    let compressed = encode_and_compress_tx_list(request.all_tx_list);
+    let compressed = request.compressed;
 
     assert!(
-        compressed.len() % MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
-        "too many bytes to encode in blobs"
+        compressed.len() / MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
+        "too many bytes to encode in blobs {}",
+        compressed.len()
     );
 
     let blobs = compressed.chunks(MAX_BLOB_DATA_SIZE).map(encode_blob).collect();
@@ -125,7 +126,7 @@ fn compress_bytes(data: &[u8]) -> Vec<u8> {
     encoder.finish().into_result().unwrap()
 }
 
-pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Vec<u8> {
+pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Bytes {
     let encoded = alloy_rlp::encode(tx_list);
-    compress_bytes(&encoded)
+    compress_bytes(&encoded).into()
 }

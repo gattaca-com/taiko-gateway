@@ -90,7 +90,7 @@ impl L1Client {
             .with_input(input.clone())
             .with_from(self.signer.address());
 
-        let gas_limit = self.provider().estimate_gas(&tx).await?;
+        let gas_limit = self.provider().estimate_gas(&tx).await.unwrap_or(DEFAULT_GAS_LIMIT);
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
@@ -216,6 +216,7 @@ impl L1Client {
 mod tests {
     use std::str::FromStr;
 
+    use alloy_primitives::b256;
     use alloy_signer_local::LocalSigner;
 
     use super::*;
@@ -248,9 +249,7 @@ mod tests {
         println!("balance: {}", balance);
 
         // get receipt for tx hash
-        let tx_hash =
-            B256::from_str("0xd60dc1a0731e995b13aaf0c67a13b0578bce96a9fc125cee2affb83b0e6adce7")
-                .unwrap();
+        let tx_hash = b256!("0xd60dc1a0731e995b13aaf0c67a13b0578bce96a9fc125cee2affb83b0e6adce7");
         let receipt = l1_client.provider().get_transaction_receipt(tx_hash).await.unwrap();
         println!("receipt: {:?}", receipt);
     }
