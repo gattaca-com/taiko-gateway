@@ -16,7 +16,7 @@ pub trait EthApi {
 
 /// API used by the sequencer to simulate transactions and commit state changes
 /// NOTE: this should be moved away from JSON-RPC
-#[rpc(client, namespace = "eth")]
+#[rpc(client, namespace = "simulator")]
 pub trait SimulateApi {
     /// Simulate a transaction against a given state
     #[method(name = "simulateTxAtState")]
