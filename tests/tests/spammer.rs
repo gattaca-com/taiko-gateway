@@ -12,18 +12,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_locally() {
-        let full_rpc = std::env::var("FULL_RPC").expect("FULL_RPC").parse::<Url>().unwrap();
-        let config = std::env::var("GATEWAY_RPC").expect("GATEWAY_RPC").parse::<Url>().unwrap();
+        let full_rpc = std::env::var("RPC_URL").expect("RPC_URL").parse::<Url>().unwrap();
+
         let private_key =
             std::env::var("SENDER_KEY").expect("SENDER_KEY").parse::<PrivateKeySigner>().unwrap();
 
         println!("Sending test tx from: {}", private_key.address());
 
-        let full_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(full_rpc);
-        let send_tx_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(config);
+        let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(full_rpc);
 
-        let chain_id = full_provider.get_chain_id().await.unwrap();
-        let nonce = full_provider.get_transaction_count(private_key.address()).await.unwrap();
+        let chain_id = provider.get_chain_id().await.unwrap();
+        let nonce = provider.get_transaction_count(private_key.address()).await.unwrap();
 
         let tx = TxEip1559 {
             chain_id,
@@ -43,13 +42,13 @@ mod tests {
 
         println!("Sending tx: {}", tx.tx_hash());
 
-        let _pending_tx = send_tx_provider.send_raw_transaction(&encoded).await.unwrap();
+        let _pending_tx = provider.send_raw_transaction(&encoded).await.unwrap();
     }
 
     #[tokio::test]
     async fn test_spam_many() {
-        let full_rpc = std::env::var("FULL_RPC").expect("FULL_RPC").parse::<Url>().unwrap();
-        let config = std::env::var("GATEWAY_RPC").expect("GATEWAY_RPC").parse::<Url>().unwrap();
+        let full_rpc = std::env::var("RPC_URL").expect("RPC_URL").parse::<Url>().unwrap();
+
         let private_key =
             std::env::var("SENDER_KEY").expect("SENDER_KEY").parse::<PrivateKeySigner>().unwrap();
 
@@ -72,10 +71,9 @@ mod tests {
 
         println!("Sending funding test tx from: {}", private_key.address());
 
-        let full_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(full_rpc);
-        let send_tx_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(config);
+        let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(full_rpc);
 
-        let chain_id = full_provider.get_chain_id().await.unwrap();
+        let chain_id = provider.get_chain_id().await.unwrap();
 
         let _transfer_amount = parse_ether("0.05").unwrap();
         // let nonce = full_provider.get_transaction_count(private_key.address()).await.unwrap();
@@ -105,7 +103,7 @@ mod tests {
         println!("Sending spam txs");
 
         for (i, signer) in signers.iter().enumerate() {
-            let nonce = full_provider.get_transaction_count(signer.address()).await.unwrap();
+            let nonce = provider.get_transaction_count(signer.address()).await.unwrap();
             let to_address = signer.address();
             // let priority_fee = 100 + 60 * (i + 1) as u128;
             let priority_fee = 1 + i as u128;
@@ -126,7 +124,7 @@ mod tests {
                 let tx: TxEnvelope = tx.into_signed(sig).into();
                 println!("Sending tx: {} with priority fee: {priority_fee}", tx.tx_hash());
                 let encoded = tx.encoded_2718();
-                let _pending = send_tx_provider.send_raw_transaction(&encoded).await.unwrap();
+                let _pending = provider.send_raw_transaction(&encoded).await.unwrap();
             }
         }
     }
