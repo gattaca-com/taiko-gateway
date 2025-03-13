@@ -57,6 +57,7 @@ pub struct GatewayConfig {
     pub anchor_batch_lag: u64,
     /// Url to post soft blocks to
     pub soft_block_url: Url,
+    #[serde(flatten)]
     pub lookahead: LookaheadConfig,
     pub jwt_secret_path: PathBuf,
     pub coinbase: Address,
@@ -101,9 +102,9 @@ pub fn load_env_vars() -> EnvConfig {
 pub struct LookaheadConfig {
     // If current_operator = A, next_operator = B, delay_slots = 3, A stops creating new blocks
     // 32 - 3 = 29 slots in the epoch (this leaves 3 slots for posting the final batches)
-    pub delay_sequence_slots: u64,
-    // In example above, B will start creating blocks buffer_secs after A stops
-    pub buffer_secs: u64,
+    pub handover_window_slots: u64,
+    // In example above, B will start creating blocks handover_start_buffer_ms after A stops
+    pub handover_start_buffer_ms: u64,
 }
 
 pub struct RpcConfig {

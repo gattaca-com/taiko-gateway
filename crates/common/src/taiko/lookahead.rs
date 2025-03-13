@@ -164,10 +164,11 @@ impl LookaheadHandle {
         // current operator only sequences until here
         let cutoff_slot = self.beacon.slot_epoch_start(lookahead.updated_epoch) +
             self.beacon.slots_per_epoch -
-            self.config.delay_sequence_slots;
+            self.config.handover_window_slots;
 
         // next operator sequences after this time
-        let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) + self.config.buffer_secs;
+        let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) +
+            self.config.handover_start_buffer_ms / 1_000;
 
         match (operator == &lookahead.curr, operator == &lookahead.next) {
             (true, true) => (true, "operator is both current and next"),
@@ -232,7 +233,7 @@ impl LookaheadHandle {
         // current operator only sequences until here
         let cutoff_slot = self.beacon.slot_epoch_start(lookahead.updated_epoch) +
             self.beacon.slots_per_epoch -
-            self.config.delay_sequence_slots;
+            self.config.handover_window_slots;
 
         if self.beacon.current_slot() < cutoff_slot {
             (false, "current operator early in epoch")
