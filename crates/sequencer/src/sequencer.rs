@@ -151,8 +151,7 @@ impl Sequencer {
                 }
 
                 match self.anchor_block() {
-                    Ok((state_id, base_fee)) => {
-                        let block_info = self.get_block_info(base_fee);
+                    Ok((state_id, block_info)) => {
                         debug!(?block_info, %state_id, "anchored");
                         SequencerState::Anchor { block_info, state_id }
                     }
@@ -172,8 +171,7 @@ impl Sequencer {
                 if self.needs_anchor_refresh(&block_info.anchor_params) {
                     // refresh with new anchor
                     match self.anchor_block() {
-                        Ok((state_id, base_fee)) => {
-                            let block_info = self.get_block_info(base_fee);
+                        Ok((state_id, block_info)) => {
                             debug!(?block_info, %state_id, "re-anchored");
                             SequencerState::Anchor { block_info, state_id }
                         }
@@ -260,12 +258,6 @@ impl Sequencer {
                 }
             }
         }
-    }
-
-    fn get_block_info(&self, base_fee: u128) -> BlockInfo {
-        let block_number = self.ctx.parent.block_number + 1;
-        let anchor_params = self.ctx.anchor;
-        BlockInfo { anchor_params, block_number, base_fee }
     }
 
     /// We can sequence if:
@@ -445,7 +437,7 @@ impl Sequencer {
     }
 
     /// Anchors the current block
-    fn anchor_block(&self) -> eyre::Result<(StateId, u128)> {
+    fn anchor_block(&self) -> eyre::Result<(StateId, BlockInfo)> {
         debug!(anchor =? self.ctx.anchor, parent =? self.ctx.parent, "assembling anchor");
 
         let (tx, l2_base_fee) = self.simulator.assemble_anchor(self.ctx.parent, self.ctx.anchor)?;
@@ -458,6 +450,8 @@ impl Sequencer {
             self.ctx.anchor.timestamp,
             l2_base_fee,
         );
+        let block_info =
+            BlockInfo { anchor_params: self.ctx.anchor, block_number, base_fee: l2_base_fee };
 
         let extra_data = get_extra_data(self.chain_config.base_fee_config.sharing_pctg);
 
@@ -469,7 +463,7 @@ impl Sequencer {
                 };
 
                 debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
-                Ok((state_id, l2_base_fee))
+                Ok((state_id, block_info))
             }
             Err(err) => {
                 bail!("failed simulate anchor, err={err}")
