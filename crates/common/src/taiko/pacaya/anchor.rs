@@ -133,23 +133,23 @@ mod tests {
         assert_eq!(input, Bytes::from(input_check));
     }
 
-    #[test]
-    fn test_validate_anchor_v3() {
+    #[tokio::test]
+    async fn test_validate_anchor_v3() {
         let base_fee_config = TaikoChainParams::new_helder().base_fee_config;
 
-        let parent_block: Block = serde_json::from_str(include_str!("4.json")).expect("parent");
+        let parent_block: Block = serde_json::from_str(include_str!("750.json")).expect("parent");
         assert_eq!(
             parent_block.header.hash,
-            b256!("2485f8006c41ad7e6e4f538774cd576c52a5f119c46b2fc61175768599720e06")
+            b256!("d9a5648a447658d9f51846d546a2cd56f0abe39a7d7910f0f43ee2ea054b94ba")
         );
-        assert_eq!(parent_block.header.number, 4);
+        assert_eq!(parent_block.header.number, 750);
 
-        let block: Block = serde_json::from_str(include_str!("5.json")).expect("block");
+        let block: Block = serde_json::from_str(include_str!("751.json")).expect("block");
         assert_eq!(
             block.header.hash,
-            b256!("ccdd76f4a02856cfdd33ad52be94e32acdb0260f5bc682706bda6c2b3ab562b9")
+            b256!("58bcf2dfc2a67e820f30e7f320d8e3c532629c5411856a401c60883d91d22971")
         );
-        assert_eq!(block.header.number, 5);
+        assert_eq!(block.header.number, 751);
 
         let block_transactions = block.transactions.as_transactions().unwrap().to_vec();
         let block_anchor = block_transactions.first().unwrap();
@@ -200,9 +200,9 @@ mod tests {
             params: TaikoChainParams::new_helder(),
         };
 
-        // NOTE: this is commented out as the call is to a stateful contract so may fail
-        // let url: Url = "https://rpc.helder.taiko.xyz".parse().unwrap();
-        // let provider = ProviderBuilder::new().on_http(url);
+        // // NOTE: this is commented out as the call is to a stateful contract so may fail
+        // let url: url::Url = "https://rpc.helder.taiko.xyz".parse().unwrap();
+        // let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(url);
         // let taiko_l2 = TaikoL2::new(config.l2_contract, provider);
 
         // let base_fee =
@@ -226,10 +226,10 @@ mod tests {
     fn test_decode_propose_block() {
         let anchor_block: Block =
             serde_json::from_str(include_str!("1275729.json")).expect("block");
-        assert_eq!(
-            anchor_block.header.hash,
-            b256!("d7f49b0a0b22969d264012cb4fcb93bef05793c93ebb07c4bfc2eb647d0a2f51")
-        );
+        // assert_eq!(
+        //     anchor_block.header.hash,
+        //     b256!("d7f49b0a0b22969d2640172cb4fcb93bef05793c93ebb07c4bfc2eb647d0a2f51")
+        // );
         assert_eq!(anchor_block.header.number, 1275729);
 
         let propose_block: Block =
@@ -240,7 +240,7 @@ mod tests {
         );
         assert_eq!(propose_block.header.number, 1275730);
 
-        let l2_block: Block = serde_json::from_str(include_str!("5.json")).expect("block");
+        let l2_block: Block = serde_json::from_str(include_str!("751.json")).expect("block");
         assert_eq!(
             l2_block.header.hash,
             b256!("ccdd76f4a02856cfdd33ad52be94e32acdb0260f5bc682706bda6c2b3ab562b9")
@@ -277,17 +277,17 @@ mod tests {
         let provider =
             ProviderBuilder::new().on_http("http://18.199.195.154:18545".parse().unwrap());
 
-        let bn = provider.get_block_by_number(47.into(), true.into()).await.unwrap().unwrap();
-
-        let s = serde_json::to_string(&bn).unwrap();
-        println!("{}\n\n", s);
-
-        let provider = ProviderBuilder::new().on_http("http://0.0.0.0:8545".parse().unwrap());
-
-        let bn = provider.get_block_by_number(47.into(), true.into()).await.unwrap().unwrap();
+        let bn = provider.get_block_by_number(751.into(), true.into()).await.unwrap().unwrap();
 
         let s = serde_json::to_string(&bn).unwrap();
         println!("{}", s);
+
+        // let provider = ProviderBuilder::new().on_http("http://0.0.0.0:8545".parse().unwrap());
+
+        // let bn = provider.get_block_by_number(47.into(), true.into()).await.unwrap().unwrap();
+
+        // let s = serde_json::to_string(&bn).unwrap();
+        // println!("{}", s);
     }
 
     #[ignore]

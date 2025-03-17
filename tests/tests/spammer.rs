@@ -76,7 +76,7 @@ mod tests {
         let chain_id = provider.get_chain_id().await.unwrap();
 
         let _transfer_amount = parse_ether("0.05").unwrap();
-        // let nonce = full_provider.get_transaction_count(private_key.address()).await.unwrap();
+        // let nonce = provider.get_transaction_count(private_key.address()).await.unwrap();
 
         // for (i, signer) in signers.iter().enumerate() {
         //     let to_address = signer.address();
@@ -97,7 +97,7 @@ mod tests {
         //     let tx: TxEnvelope = tx.into_signed(sig).into();
         //     println!("Sending tx: {} with priority fee: {priority_fee}", tx.tx_hash());
         //     let encoded = tx.encoded_2718();
-        //     let _pending = send_tx_provider.send_raw_transaction(&encoded).await.unwrap();
+        //     let _pending = provider.send_raw_transaction(&encoded).await.unwrap();
         // }
 
         println!("Sending spam txs");
