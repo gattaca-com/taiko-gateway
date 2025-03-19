@@ -560,7 +560,7 @@ impl Sequencer {
     }
 
     fn needs_anchor_refresh(&self, anchor_params: &AnchorParams) -> bool {
-        self.ctx.anchor.map(|a| a.block_id != anchor_params.block_id).unwrap_or(false)
+        self.ctx.anchor.map(|a| a.block_id != anchor_params.block_id).unwrap_or(true)
     }
 
     /// Triggered:
