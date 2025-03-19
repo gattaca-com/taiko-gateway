@@ -68,7 +68,7 @@ pub async fn init_beacon(beacon_url: Url) -> eyre::Result<BeaconHandle> {
 
     // head slot is within 2 of beacon handle slot
     ensure!(
-        (head_slot as i64 - beacon_handle.current_slot() as i64).abs() <= 2,
+        (head_slot as i64 - beacon_handle.current_slot() as i64).abs() <= 4,
         "head slot is too far from current slot, head_slot={head_slot}, current_slot={}",
         beacon_handle.current_slot()
     );

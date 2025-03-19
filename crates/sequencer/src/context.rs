@@ -24,7 +24,7 @@ pub struct SequencerContext {
     /// Current state
     pub state: SequencerState,
     /// Anchor data to use for next batches
-    pub anchor: AnchorParams,
+    pub anchor: Option<AnchorParams>,
     /// L2 parent block info
     pub parent: ParentParams,
     /// Last confirmed L1 header, keep a buffer to account for L1 reorgs
@@ -43,7 +43,7 @@ impl SequencerContext {
             l1_safe_lag,
             last_l1_receive: Instant::now(),
             state: SequencerState::default(),
-            anchor: AnchorParams::default(),
+            anchor: None,
             l1_headers: BTreeMap::new(),
             parent: Default::default(),
             to_verify: BTreeMap::new(),
@@ -121,10 +121,6 @@ impl SequencerContext {
 
     pub fn safe_l1_header(&self) -> Option<&Header> {
         self.l1_headers.first_key_value().map(|(_, h)| h)
-    }
-
-    pub fn current_anchor_id(&self) -> u64 {
-        self.anchor.block_id
     }
 
     pub fn l2_origin(&self) -> u64 {
