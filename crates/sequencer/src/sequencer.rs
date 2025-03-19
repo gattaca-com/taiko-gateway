@@ -428,7 +428,6 @@ impl Sequencer {
 
         if is_batch_big {
             self.update_anchor(&safe_l1_header, "batch too big");
-            return;
         }
     }
 
