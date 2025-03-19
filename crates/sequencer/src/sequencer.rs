@@ -450,7 +450,7 @@ impl Sequencer {
             bail!("no anchor");
         };
 
-        debug!(anchor =? anchor, parent =? self.ctx.parent, "assembling anchor");
+        debug!(?anchor, parent =? self.ctx.parent, "assembling anchor");
 
         let (tx, l2_base_fee) = self.simulator.assemble_anchor(self.ctx.parent, anchor)?;
 
