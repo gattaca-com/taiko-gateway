@@ -218,7 +218,6 @@ impl LookaheadHandle {
         let lookahead = &self.last;
 
         if self.beacon.current_epoch() != lookahead.updated_epoch {
-            assert!(self.beacon.slot_in_epoch() < 5);
             return (false, "stale lookahead (early in epoch)");
         };
 
