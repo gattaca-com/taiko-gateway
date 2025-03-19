@@ -8,7 +8,7 @@ use std::{
 
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
-use alloy_rpc_types::Block;
+use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::{Receiver, Sender};
 use eyre::bail;
 use pc_common::{
@@ -139,7 +139,7 @@ impl Sequencer {
 
         // clear proposal if it's late
         if self.lookahead.should_clear_proposal(&self.config.operator_address).0 {
-            self.send_batch_to_proposer("approaching next operator");
+            self.send_batch_to_proposer("approaching next operator", true);
         }
     }
 
@@ -400,14 +400,24 @@ impl Sequencer {
     }
 
     fn maybe_refresh_anchor(&mut self) {
-        let Some(safe_l1_header) = self.ctx.safe_l1_header() else {
+        let Some(safe_l1_header) = self.ctx.safe_l1_header().cloned() else {
             error!("missing l1 headers");
+            return;
+        };
+
+        let Some(ctx_anchor) = self.ctx.anchor.as_ref() else {
+            self.update_anchor(&safe_l1_header, "no anchor");
             return;
         };
 
         // if current anchor has been used for enough blocks, refresh it
         let is_anchor_old =
-            self.ctx.current_anchor_id() + self.config.anchor_batch_lag < safe_l1_header.number;
+            ctx_anchor.block_id + self.config.anchor_batch_lag < safe_l1_header.number;
+
+        if is_anchor_old {
+            self.update_anchor(&safe_l1_header, "anchor too old");
+            return;
+        }
 
         // if the batch with this anchor has too many txs, refresh it
         let current_batch_size =
@@ -416,42 +426,42 @@ impl Sequencer {
         // shouldnt be a problem
         let is_batch_big = current_batch_size > TARGET_BATCH_SIZE;
 
-        if is_anchor_old || is_batch_big {
-            let new = AnchorParams {
-                block_id: safe_l1_header.number,
-                state_root: safe_l1_header.state_root,
-                timestamp: self.ctx.parent.timestamp.max(safe_l1_header.timestamp),
-            };
-
-            self.ctx.anchor = new;
-
-            let reason = if is_anchor_old {
-                "refreshed anchor: too old"
-            } else {
-                "refreshed anchor: batch too big"
-            };
-            debug!(anchor =? self.ctx.anchor, "{reason}");
-
-            self.send_batch_to_proposer(reason);
+        if is_batch_big {
+            self.update_anchor(&safe_l1_header, "batch too big");
         }
+    }
+
+    fn update_anchor(&mut self, safe_l1_header: &Header, reason: &str) {
+        let new = AnchorParams {
+            block_id: safe_l1_header.number,
+            state_root: safe_l1_header.state_root,
+            timestamp: self.ctx.parent.timestamp.max(safe_l1_header.timestamp),
+        };
+
+        self.ctx.anchor = Some(new);
+        debug!(reason, anchor =? self.ctx.anchor, "refresh anchor");
+        self.send_batch_to_proposer(reason, true);
     }
 
     /// Anchors the current block
     fn anchor_block(&self) -> eyre::Result<(StateId, BlockInfo)> {
-        debug!(anchor =? self.ctx.anchor, parent =? self.ctx.parent, "assembling anchor");
+        let Some(anchor) = self.ctx.anchor else {
+            bail!("no anchor");
+        };
 
-        let (tx, l2_base_fee) = self.simulator.assemble_anchor(self.ctx.parent, self.ctx.anchor)?;
+        debug!(?anchor, parent =? self.ctx.parent, "assembling anchor");
+
+        let (tx, l2_base_fee) = self.simulator.assemble_anchor(self.ctx.parent, anchor)?;
 
         let block_number = self.ctx.parent.block_number + 1;
         let block_env = get_block_env_from_anchor(
             block_number,
             self.chain_config.block_max_gas_limit,
             self.config.coinbase_address,
-            self.ctx.anchor.timestamp,
+            anchor.timestamp,
             l2_base_fee,
         );
-        let block_info =
-            BlockInfo { anchor_params: self.ctx.anchor, block_number, base_fee: l2_base_fee };
+        let block_info = BlockInfo { anchor_params: anchor, block_number, base_fee: l2_base_fee };
 
         let extra_data = get_extra_data(self.chain_config.base_fee_config.sharing_pctg);
 
@@ -542,21 +552,30 @@ impl Sequencer {
         );
 
         if self.needs_anchor_refresh(&anchor_params) {
-            self.send_batch_to_proposer("sealed last for this anchor");
+            self.send_batch_to_proposer("sealed last for this anchor", false);
         }
 
         Ok(())
     }
 
     fn needs_anchor_refresh(&self, anchor_params: &AnchorParams) -> bool {
-        self.ctx.anchor.block_id != anchor_params.block_id
+        self.ctx.anchor.map(|a| a.block_id != anchor_params.block_id).unwrap_or(true)
     }
 
     /// Triggered:
     /// - if we're approaching the end of this operator's turn
     /// - if we seal a block and next anchor will be different
     /// - if we refresh the anchor and have some pending from the previous anchor
-    fn send_batch_to_proposer(&mut self, reason: &str) {
+    fn send_batch_to_proposer(&mut self, reason: &str, state_check: bool) {
+        if state_check {
+            if let SequencerState::Sorting(sort_data) = &mut self.ctx.state {
+                // avoid breaking the batch while sorting
+                // this will be sent after sealing the current block and we'll seal at next loop
+                sort_data.set_should_seal();
+                return;
+            }
+        }
+
         if let Some(request) = std::mem::take(&mut self.proposer_request) {
             warn!(reason, "sending batch to be proposed");
             let _ = self.spine.proposer_tx.send(ProposalRequest::Batch(request));

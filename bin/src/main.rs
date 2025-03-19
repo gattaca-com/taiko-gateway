@@ -33,7 +33,7 @@ async fn main() {
         Ok(_) => info!("gateway exited"),
         Err(err) => {
             error!(%err, "gateway exited with error");
-            eprintln!("gateway exited with error: {err}");
+            panic!("gateway exited with error: {err}");
         }
     }
 }
