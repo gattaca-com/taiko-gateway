@@ -568,10 +568,13 @@ impl Sequencer {
     /// - if we seal a block and next anchor will be different
     /// - if we refresh the anchor and have some pending from the previous anchor
     fn send_batch_to_proposer(&mut self, reason: &str, state_check: bool) {
-        if state_check && matches!(self.ctx.state, SequencerState::Sorting(_)) {
-            // avoid breaking the batch while sorting
-            // this will be sent after sealing the current block
-            return;
+        if state_check {
+            if let SequencerState::Sorting(sort_data) = &mut self.ctx.state {
+                // avoid breaking the batch while sorting
+                // this will be sent after sealing the current block and we'll seal at next loop
+                sort_data.set_should_seal();
+                return;
+            }
         }
 
         if let Some(request) = std::mem::take(&mut self.proposer_request) {

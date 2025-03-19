@@ -266,6 +266,10 @@ impl SortData {
         self.state_id == state_id
     }
 
+    pub fn set_should_seal(&mut self) {
+        self.should_seal = true;
+    }
+
     pub fn should_seal(&self) -> bool {
         self.should_seal || (self.num_txs() > 0 && self.is_past_target_seal())
     }
