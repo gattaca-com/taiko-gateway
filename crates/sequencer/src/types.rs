@@ -39,9 +39,7 @@ pub enum SequencerState {
     /// Syncing L1/L2 blocks
     #[default]
     Sync,
-    /// After simulating anchor tx, ready to sequence
-    Anchor { block_info: BlockInfo, state_id: StateId },
-    /// Sequencing user txs
+    /// Simualted anchor and sequencing user txs
     Sorting(SortData),
 }
 
@@ -49,7 +47,6 @@ impl SequencerState {
     pub fn record_metrics(&self) {
         let state_id = match self {
             SequencerState::Sync => 0,
-            SequencerState::Anchor { .. } => 1,
             SequencerState::Sorting(..) => 2,
         };
 
@@ -61,13 +58,6 @@ impl std::fmt::Debug for SequencerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SequencerState::Sync => write!(f, "Sync"),
-            SequencerState::Anchor { block_info, state_id } => {
-                write!(
-                    f,
-                    "Anchor: block_number: {:?}, state_id: {}",
-                    block_info.block_number, state_id
-                )
-            }
             SequencerState::Sorting(sort_data) => {
                 write!(
                     f,

@@ -128,14 +128,15 @@ impl SimulatorClient {
 
     pub fn assemble_anchor(
         &self,
+        timestamp: u64,
         parent: ParentParams,
         anchor: AnchorParams,
     ) -> eyre::Result<(Order, u128)> {
         let l2_base_fee = self.runtime.block_on(pacaya::compute_next_base_fee(
+            timestamp,
             &self.taiko_l2,
             self.config.params.base_fee_config,
             parent,
-            anchor,
         ))?;
 
         let tx = pacaya::assemble_anchor_v3(&self.config, parent, anchor, l2_base_fee);

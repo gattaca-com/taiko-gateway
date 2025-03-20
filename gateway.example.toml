@@ -30,7 +30,7 @@ coinbase = "0x591317B806B96262C07105CC06CB4831008AfDf2"
 # Number of blocks to wait before refreshing the anchor, the larger this is the more blocks we can fit in a batch, but we risk it getting stale when proposing
 # This is on top of the l1_safe_lag above, so from the latest L1 blocks we keep blocks up to anchor_batch_lag + l1_safe_lag old
 # This should be higher than delay_sequence_slots, so we avoid reorging the previous gateway
-anchor_batch_lag = 6
+anchor_batch_lag = 16
 soft_block_url = ""
 handover_window_slots = 4
 handover_start_buffer_ms = 6_000

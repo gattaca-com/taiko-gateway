@@ -24,3 +24,18 @@ test-many:
   RPC_URL=https://rpc.helder.taiko.xyz \
   SENDER_KEY=${PROPOSER_SIGNER_KEY} \
   cargo test --package pc-tests --test spammer -- tests::test_spam_many --nocapture
+
+
+docker-build:
+  docker build -t taiko_gateway .
+
+run:
+  source .env && \
+  CONFIG_FILE="gateway.toml" && \
+  PROPOSER_SIGNER_KEY=${PROPOSER_SIGNER_KEY} \
+  RUST_BACKTRACE=${RUST_BACKTRACE} \
+  RUST_LOG=${RUST_LOG} \
+  LOG_PATH=${LOG_PATH} \
+  METRICS_PORT=${METRICS_PORT} \
+  cargo run --bin gateway -- "$CONFIG_FILE"
+

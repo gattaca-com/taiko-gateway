@@ -16,15 +16,15 @@ use crate::{
 /// program state
 // https://github.com/taikoxyz/taiko-mono/blob/pacaya_fork/packages/protocol/contracts/layer2/based/TaikoAnchor.sol#L206
 pub async fn compute_next_base_fee(
+    timestamp: u64,
     taiko_l2: &TaikoL2Client,
     base_fee_config: BaseFeeConfig,
     parent: ParentParams,
-    anchor: AnchorParams,
 ) -> eyre::Result<u128> {
-    assert!(anchor.timestamp >= parent.timestamp);
+    assert!(timestamp >= parent.timestamp);
 
     let base_fee = taiko_l2
-        .getBasefeeV2(parent.gas_used, anchor.timestamp, base_fee_config.into())
+        .getBasefeeV2(parent.gas_used, timestamp, base_fee_config.into())
         .call()
         .await?
         .basefee_;
