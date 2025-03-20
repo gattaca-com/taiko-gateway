@@ -12,12 +12,13 @@ pub struct TxPool {
     tx_lists: HashMap<Address, TxList>,
     // address -> state_nonce valid at block `parent_block` + 1
     nonces: StateNonces,
+    new_orders: bool,
 }
 
 impl TxPool {
     pub fn new() -> Self {
         // this should be big enough for all the users in a single block
-        Self { tx_lists: HashMap::new(), nonces: StateNonces::default() }
+        Self { tx_lists: HashMap::new(), nonces: StateNonces::default(), new_orders: false }
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
@@ -36,6 +37,7 @@ impl TxPool {
             }
         }
 
+        self.new_orders = true;
         self.tx_lists.entry(sender).or_insert(TxList::new(sender)).put(tx);
     }
 
@@ -108,6 +110,14 @@ impl TxPool {
     ) {
         let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
         self.update_nonces(nonces);
+    }
+
+    pub fn set_no_orders(&mut self) {
+        self.new_orders = false;
+    }
+
+    pub fn new_orders(&self) -> bool {
+        self.new_orders
     }
 }
 

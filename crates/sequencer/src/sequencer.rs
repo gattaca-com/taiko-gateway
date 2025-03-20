@@ -24,6 +24,7 @@ use pc_common::{
         AnchorParams, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
     },
     types::BlockEnv,
+    utils::utcnow_sec,
 };
 use reqwest::{header::AUTHORIZATION, Client};
 use tracing::{debug, error, info, warn, Instrument};
@@ -141,6 +142,11 @@ impl Sequencer {
         if self.lookahead.should_clear_proposal(&self.config.operator_address).0 {
             self.send_batch_to_proposer("approaching next operator", true);
         }
+
+        // clear proposal if time shift is too long
+        if self.check_time_shift() {
+            self.send_batch_to_proposer("time shift too long", true);
+        }
     }
 
     fn state_transition(&mut self, state: SequencerState) -> SequencerState {
@@ -150,73 +156,56 @@ impl Sequencer {
                     return SequencerState::Sync;
                 }
 
+                let max_block_size = TARGET_BATCH_SIZE.saturating_sub(
+                    self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0),
+                );
+
+                if max_block_size == 0 {
+                    return SequencerState::Sync;
+                }
+
+                if !self.tx_pool.new_orders() {
+                    return SequencerState::Sync;
+                }
+
                 match self.anchor_block() {
                     Ok((state_id, block_info)) => {
                         debug!(?block_info, %state_id, "anchored");
-                        SequencerState::Anchor { block_info, state_id }
+                        let Some(active) = self
+                            .tx_pool
+                            .active_orders(block_info.block_number, block_info.base_fee)
+                        else {
+                            self.tx_pool.set_no_orders();
+                            return SequencerState::Sync;
+                        };
+
+                        // we have orders, start building a block
+                        info!(
+                            block = block_info.block_number,
+                            txs = active.active_txs(),
+                            senders = active.active_senders(),
+                            target_time = ?self.config.target_block_time,
+                            max_block_size,
+                            gas_limit = self.chain_config.block_max_gas_limit,
+                            "start block building"
+                        );
+
+                        let sort_data = SortData::new(
+                            block_info,
+                            state_id,
+                            active,
+                            self.chain_config.block_max_gas_limit,
+                            self.config.target_block_time,
+                            max_block_size,
+                        );
+
+                        SequencerState::Sorting(sort_data)
                     }
 
                     Err(err) => {
                         error!(%err, "failed anchoring");
                         SequencerState::Sync
                     }
-                }
-            }
-
-            SequencerState::Anchor { block_info, state_id } => {
-                if !self.flags.can_sequence {
-                    return SequencerState::Sync;
-                }
-
-                if self.needs_anchor_refresh(&block_info.anchor_params) {
-                    // refresh with new anchor
-                    match self.anchor_block() {
-                        Ok((state_id, block_info)) => {
-                            debug!(?block_info, %state_id, "re-anchored");
-                            SequencerState::Anchor { block_info, state_id }
-                        }
-
-                        Err(err) => {
-                            error!(%err, "failed re-anchoring");
-                            SequencerState::Sync
-                        }
-                    }
-                } else {
-                    let max_block_size = TARGET_BATCH_SIZE.saturating_sub(
-                        self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0),
-                    );
-
-                    if max_block_size == 0 {
-                        return state;
-                    }
-
-                    let Some(active) =
-                        self.tx_pool.active_orders(block_info.block_number, block_info.base_fee)
-                    else {
-                        return state;
-                    };
-
-                    // we have orders, start building a block
-                    info!(
-                        block = block_info.block_number,
-                        txs = active.active_txs(),
-                        senders = active.active_senders(),
-                        target_time = ?self.config.target_block_time,
-                        max_block_size,
-                        gas_limit = self.chain_config.block_max_gas_limit,
-                        "start block building"
-                    );
-
-                    let sort_data = SortData::new(
-                        block_info,
-                        state_id,
-                        active,
-                        self.chain_config.block_max_gas_limit,
-                        self.config.target_block_time,
-                        max_block_size,
-                    );
-
-                    SequencerState::Sorting(sort_data)
                 }
             }
 
@@ -331,6 +320,14 @@ impl Sequencer {
         }
     }
 
+    fn check_time_shift(&self) -> bool {
+        // timeShift is at most 255 secs
+        self.proposer_request
+            .as_ref()
+            .map(|p| utcnow_sec().saturating_sub(p.last_timestamp) > 230)
+            .unwrap_or(false)
+    }
+
     fn recv_blocks(&mut self) {
         receive_for(
             Duration::from_millis(10),
@@ -440,8 +437,8 @@ impl Sequencer {
             timestamp: self.ctx.parent.timestamp.max(safe_l1_header.timestamp),
         };
 
+        debug!(reason, anchor =? new, "refresh anchor");
         self.ctx.anchor = Some(new);
-        debug!(reason, anchor =? self.ctx.anchor, "refresh anchor");
         self.send_batch_to_proposer(reason, true);
     }
 
@@ -453,14 +450,16 @@ impl Sequencer {
 
         debug!(?anchor, parent =? self.ctx.parent, "assembling anchor");
 
-        let (tx, l2_base_fee) = self.simulator.assemble_anchor(self.ctx.parent, anchor)?;
+        let timestamp = utcnow_sec() + self.config.target_block_time.as_secs();
+        let (tx, l2_base_fee) =
+            self.simulator.assemble_anchor(timestamp, self.ctx.parent, anchor)?;
 
         let block_number = self.ctx.parent.block_number + 1;
         let block_env = get_block_env_from_anchor(
             block_number,
             self.chain_config.block_max_gas_limit,
             self.config.coinbase_address,
-            anchor.timestamp,
+            timestamp,
             l2_base_fee,
         );
         let block_info = BlockInfo { anchor_params: anchor, block_number, base_fee: l2_base_fee };
@@ -521,19 +520,27 @@ impl Sequencer {
         let is_first_block = self.proposer_request.is_none();
         let request = &mut self.proposer_request.get_or_insert(ProposeBatchParams::default());
 
+        let time_shift;
         if is_first_block {
             request.anchor_block_id = anchor_params.block_id;
             request.start_block_num = block_number;
             request.coinbase = self.config.coinbase_address;
+            time_shift = 0;
         } else {
             assert_eq!(request.anchor_block_id, anchor_params.block_id);
+            time_shift = block
+                .header
+                .timestamp
+                .saturating_sub(request.last_timestamp)
+                .try_into()
+                .expect("exceeed u8 time shift");
         }
 
         request.end_block_num = block_number;
         request.last_timestamp = block.header.timestamp;
         request.block_params.push(BlockParams {
             numTransactions: (block.transactions.len() - 1) as u16, // exclude anchor tx
-            timeShift: 0,
+            timeShift: time_shift,
             signalSlots: vec![],
         });
 
