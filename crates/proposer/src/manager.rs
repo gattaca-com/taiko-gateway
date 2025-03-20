@@ -177,7 +177,7 @@ impl ProposerManager {
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end_bn=request.end_block_num))]
+    #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
     async fn propose_batch_with_retry(&self, request: ProposeBatchParams) {
         let start_bn = request.start_block_num;
         let end_bn = request.end_block_num;

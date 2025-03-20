@@ -137,6 +137,7 @@ pub enum InvalidReason {
     NonceTooHigh { tx: u64, state: u64 },
     NotEnoughGas,
     CapLessThanBaseFee,
+    InsufficientFunds { have: u128, want: u128 },
     Uknown(String),
 }
 
@@ -173,6 +174,18 @@ impl<'de> Deserialize<'de> for InvalidReason {
 
         if s.contains("max fee per gas less than block base fee") {
             return Ok(InvalidReason::CapLessThanBaseFee);
+        }
+
+        if let Some(captures) =
+            s.strip_prefix("insufficient funds for gas * price + value: address ")
+        {
+            if let Some(rest) = captures.split_once(" have ") {
+                if let Some((have, want)) = rest.1.split_once(" want ") {
+                    if let (Ok(have), Ok(want)) = (have.parse::<u128>(), want.parse::<u128>()) {
+                        return Ok(InvalidReason::InsufficientFunds { have, want });
+                    }
+                }
+            }
         }
 
         Ok(InvalidReason::Uknown(s))
@@ -236,6 +249,22 @@ mod tests {
         match decoded.execution_result {
             ExecutionResult::Invalid { reason } => {
                 assert_eq!(reason, InvalidReason::NonceTooHigh { tx: 100, state: 1 });
+            }
+            _ => panic!("expected invalid"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_insufficient_funds_reason_serde() {
+        let data = r#"{"execution_result": {"invalid": {"reason": "insufficient funds for gas * price + value: address 0xD6EE8EfBC7F9e0D6c5d182Da5841DbC4Db6CD5Ed have 56831218464375 want 114297842054944"}}}"#;
+        let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
+
+        match decoded.execution_result {
+            ExecutionResult::Invalid { reason } => {
+                assert_eq!(reason, InvalidReason::InsufficientFunds {
+                    have: 56831218464375,
+                    want: 114297842054944
+                });
             }
             _ => panic!("expected invalid"),
         }

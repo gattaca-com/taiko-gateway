@@ -89,6 +89,13 @@ impl ActiveOrders {
         self.tx_lists.len()
     }
 
+    /// Removes a sender tx_list from the active orders
+    pub fn remove_sender(&mut self, sender: &Address) {
+        if let Some(idx) = self.tx_lists.iter().position(|tx_list| tx_list.sender() == sender) {
+            self.tx_lists.remove(idx);
+        }
+    }
+
     fn get_next_best<'a>(
         &'a mut self,
         max: usize,
@@ -207,6 +214,12 @@ impl SortData {
                         self.state_nonces.insert(sender, sim.order.nonce());
                         debug_assert!(false)
                     }
+                    InvalidReason::InsufficientFunds { have, want } => {
+                        warn!(have, want, sender = ?sim.order.sender(), "insufficient funds, removing sender for this block");
+                        let sender = *sim.order.sender();
+                        self.state_nonces.insert(sender, sim.order.nonce());
+                        self.active_orders.remove_sender(&sender);
+                    }
                     InvalidReason::Uknown(reason) => {
                         warn!(reason, "unknown reason");
                     }
@@ -240,7 +253,7 @@ impl SortData {
     }
 
     pub fn maybe_sim_next_batch(&mut self, simulator: &SimulatorClient, max_sims_per_loop: usize) {
-        if self.in_flight_sims > 0 {
+        if self.in_flight_sims > 0 || self.should_seal() {
             return;
         }
 
@@ -271,18 +284,14 @@ impl SortData {
     }
 
     pub fn should_seal(&self) -> bool {
-        self.should_seal || (self.num_txs() > 0 && self.is_past_target_seal())
+        self.should_seal || self.is_past_target_seal()
     }
 
     pub fn is_past_target_seal(&self) -> bool {
         Instant::now() > self.target_seal
     }
 
-    pub fn should_reset(&self) -> bool {
-        self.num_txs() == 0 && self.is_past_target_seal()
-    }
-
-    fn num_txs(&self) -> usize {
+    pub fn num_txs(&self) -> usize {
         self.orders.len()
     }
 

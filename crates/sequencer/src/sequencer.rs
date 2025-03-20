@@ -221,12 +221,21 @@ impl Sequencer {
             }
 
             SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
-                if let Err(err) = self.seal_block(sort_data) {
-                    // todo: add a failsafe so we're not stuck forever here
-                    error!(%err, "failed commit seal");
-                    panic!("failed commit seal");
+                if sort_data.num_txs() > 0 {
+                    if let Err(err) = self.seal_block(sort_data) {
+                        // todo: add a failsafe so we're not stuck forever here
+                        error!(%err, "failed commit seal");
+                        panic!("failed commit seal");
+                    } else {
+                        // reset state for next block
+                        SequencerState::Sync
+                    }
                 } else {
-                    // reset state for next block
+                    // if we're here, all the orders were invalid, so the state nonces are
+                    // all for the actual state db (as opposed to ones we applied in the block),
+                    // use those to clear the txpool and restart the loop
+                    self.tx_pool.update_nonces(sort_data.state_nonces);
+                    debug!("exhausted active orders past target seal, resetting");
                     SequencerState::Sync
                 }
             }
@@ -246,13 +255,6 @@ impl Sequencer {
                 {
                     sort_data.active_orders = new_active;
                     SequencerState::Sorting(sort_data)
-                } else if sort_data.should_reset() {
-                    // if we're here, all the orders were invalid, so the state nonces are
-                    // all for the actual state db (as opposed to ones we applied in the block),
-                    // use those to clear the txpool and restart the loop
-                    self.tx_pool.update_nonces(sort_data.state_nonces);
-                    debug!("exhausted active orders past target seal, resetting");
-                    SequencerState::Sync
                 } else {
                     SequencerState::Sorting(sort_data)
                 }
