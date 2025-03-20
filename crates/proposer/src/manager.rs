@@ -316,14 +316,27 @@ fn request_from_blocks(
 
     let mut blocks = Vec::with_capacity(full_blocks.len());
     let mut tx_list = Vec::new();
-    let mut last_timestamp = 0;
+    let mut last_timestamp = full_blocks[0].header.timestamp;
 
     for block in full_blocks {
         let block = Arc::unwrap_or_clone(block);
 
         blocks.push(BlockParams {
             numTransactions: (block.transactions.len() - 1) as u16, // remove anchor
-            timeShift: 0,
+            timeShift: block
+                .header
+                .timestamp
+                .saturating_sub(last_timestamp)
+                .try_into()
+                .inspect_err(|_| {
+                    error!(
+                        prev_timestamp = last_timestamp,
+                        block_timestamp = block.header.timestamp,
+                        block_number = block.header.number,
+                        "resync time shift too large"
+                    )
+                })
+                .unwrap_or(0),
             signalSlots: vec![], // TODO
         });
 
