@@ -142,6 +142,13 @@ impl ProposerManager {
             }
 
             if reorg_by_number || reorg_by_timestamp {
+                warn!(
+                    anchor_block_id,
+                    by_number = reorg_by_number,
+                    by_timestamp = reorg_by_timestamp,
+                    "reorg"
+                );
+
                 has_reorged = true;
 
                 let msg = format!("re-orged blocks {start_block}-{end_block}");
@@ -352,18 +359,25 @@ fn request_from_blocks(
     }
 
     let last_timestamp = timestamp_override.unwrap_or(last_timestamp);
-
     let total_time_shift = blocks.iter().map(|b| b.timeShift as u64).sum::<u64>();
+    let compressed = encode_and_compress_tx_list(tx_list.clone());
 
-    debug!(last_timestamp, total_time_shift, ?timestamp_override, "request");
+    debug!(
+        batch_size = compressed.len(),
+        last_timestamp,
+        total_time_shift,
+        %coinbase,
+        ?timestamp_override,
+        "resync request"
+    );
 
     ProposeBatchParams {
         anchor_block_id,
         start_block_num,
         end_block_num,
         block_params: blocks,
-        all_tx_list: tx_list.clone(),
-        compressed: encode_and_compress_tx_list(tx_list),
+        all_tx_list: tx_list,
+        compressed,
         last_timestamp,
         coinbase,
     }
