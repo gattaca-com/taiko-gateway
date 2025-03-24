@@ -148,7 +148,7 @@ impl ProposerManager {
 
                 has_reorged = true;
 
-                let msg = format!("re-orged blocks {start_block}-{end_block}");
+                let msg = format!("reorging blocks {start_block}-{end_block}");
                 warn!("{msg}");
                 alert_discord(&msg);
 
@@ -385,6 +385,7 @@ fn request_from_blocks(
         total_txs,
         %coinbase,
         ?timestamp_override,
+        ?timeshift_override,
         "resync request"
     );
 
