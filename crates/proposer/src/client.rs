@@ -27,7 +27,7 @@ pub struct L1Client {
     router_address: Address,
 }
 
-const DEFAULT_GAS_LIMIT: u64 = 10_000_000;
+const _DEFAULT_GAS_LIMIT: u64 = 10_000_000;
 const DEFAULT_MAX_FEE_PER_GAS: u128 = 10_000_000_000;
 const DEFAULT_MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
 const DEFAULT_MAX_FEE_PER_BLOB_GAS: u128 = 5_000_000;
@@ -90,7 +90,7 @@ impl L1Client {
             .with_input(input.clone())
             .with_from(self.signer.address());
 
-        let gas_limit = self.provider().estimate_gas(&tx).await.unwrap_or(DEFAULT_GAS_LIMIT);
+        let gas_limit = self.provider().estimate_gas(&tx).await?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
@@ -137,7 +137,7 @@ impl L1Client {
             .with_to(to)
             .with_input(input.clone())
             .with_from(self.signer.address());
-        let gas_limit = self.provider().estimate_gas(&tx).await.unwrap_or(DEFAULT_GAS_LIMIT);
+        let gas_limit = self.provider().estimate_gas(&tx).await?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
