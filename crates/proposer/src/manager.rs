@@ -133,7 +133,7 @@ impl ProposerManager {
             let reorg_by_timestamp = l1_timestamp.saturating_sub(last_timestamp) >
                 taiko_config.params.max_anchor_height_offset * 12;
 
-            let total_time_shift = last_timestamp - blocks[blocks.len() - 1].header.timestamp;
+            let total_time_shift = last_timestamp - blocks[0].header.timestamp;
             let reorg_by_time_shift =
                 total_time_shift > taiko_config.params.max_anchor_height_offset * 12;
 
