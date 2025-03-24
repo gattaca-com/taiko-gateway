@@ -133,19 +133,16 @@ impl ProposerManager {
             let reorg_by_timestamp = l1_timestamp.saturating_sub(last_timestamp) >
                 taiko_config.params.max_anchor_height_offset * 12;
 
-            if reorg_by_number {
-                warn!(anchor_block_id, start_block, end_block, "reorg by number");
-            } else if reorg_by_timestamp {
-                warn!(anchor_block_id, start_block, end_block, "reorg by timestamp");
-            } else {
-                info!(anchor_block_id, start_block, end_block, "no reorg");
-            }
+            let total_time_shift = last_timestamp - blocks[blocks.len() - 1].header.timestamp;
+            let reorg_by_time_shift =
+                total_time_shift > taiko_config.params.max_anchor_height_offset * 12;
 
-            if reorg_by_number || reorg_by_timestamp {
+            if reorg_by_number || reorg_by_timestamp || reorg_by_time_shift {
                 warn!(
                     anchor_block_id,
                     by_number = reorg_by_number,
                     by_timestamp = reorg_by_timestamp,
+                    by_time_shift = reorg_by_time_shift,
                     "reorg"
                 );
 
@@ -155,15 +152,24 @@ impl ProposerManager {
                 warn!("{msg}");
                 alert_discord(&msg);
 
+                let timeshift_override = if reorg_by_time_shift { Some(0) } else { None };
+
                 // this can happen if we waited too long before restarting the proposer, a
                 // re-org is inevitable
-                let request = request_from_blocks(l1_head - 1, blocks, Some(l1_timestamp - 1));
+                let request = request_from_blocks(
+                    l1_head - 1,
+                    blocks,
+                    Some(l1_timestamp - 1),
+                    timeshift_override,
+                );
                 let is_our_coinbase = request.coinbase == self.config.coinbase;
                 self.propose_batch_with_retry(request).await;
                 ProposerMetrics::resync(is_our_coinbase);
             } else {
+                info!(anchor_block_id, start_block, end_block, "no reorg");
+
                 // propose same batch
-                let request = request_from_blocks(anchor_block_id, blocks, None);
+                let request = request_from_blocks(anchor_block_id, blocks, None, None);
                 let is_our_coinbase = request.coinbase == self.config.coinbase;
                 self.propose_batch_with_retry(request).await;
                 ProposerMetrics::resync(is_our_coinbase);
@@ -316,6 +322,7 @@ fn request_from_blocks(
     anchor_block_id: u64,
     full_blocks: Vec<Arc<Block>>,
     timestamp_override: Option<u64>,
+    timeshift_override: Option<u8>,
 ) -> ProposeBatchParams {
     let start_block_num = full_blocks[0].header.number;
     let end_block_num = full_blocks[full_blocks.len() - 1].header.number;
@@ -332,7 +339,7 @@ fn request_from_blocks(
     for block in full_blocks {
         let block = Arc::unwrap_or_clone(block);
 
-        let time_shift = block
+        let time_shift: u8 = block
             .header
             .timestamp
             .saturating_sub(last_timestamp)
@@ -346,6 +353,8 @@ fn request_from_blocks(
                 )
             })
             .unwrap_or(0);
+
+        let time_shift = timeshift_override.unwrap_or(time_shift);
 
         total_txs += block.transactions.len() - 1;
         total_time_shift += time_shift as u64;
