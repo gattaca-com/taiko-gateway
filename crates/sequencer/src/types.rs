@@ -5,7 +5,7 @@ use std::{
 };
 
 use alloy_primitives::Address;
-use alloy_rpc_types::Header;
+use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::Receiver;
 use pc_common::{
     metrics::SequencerMetrics,
@@ -27,7 +27,7 @@ pub struct SequencerSpine {
     // Receiver of L1 blocks
     pub l1_blocks_rx: Receiver<Header>,
     // Receiver of L2 preconf blocks
-    pub l2_blocks_rx: Receiver<Header>,
+    pub l2_blocks_rx: Receiver<Block>,
     // Receiver of L2 non preconf blocks
     pub origin_blocks_rx: Receiver<Header>,
     /// Receive sim results

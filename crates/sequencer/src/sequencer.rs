@@ -339,8 +339,8 @@ impl Sequencer {
 
         receive_for(
             Duration::from_millis(10),
-            |new_header| {
-                self.ctx.new_preconf_l2_block(&new_header, false);
+            |new_block| {
+                self.ctx.new_preconf_l2_block(&new_block, false);
             },
             &self.spine.l2_blocks_rx,
         );
@@ -400,6 +400,8 @@ impl Sequencer {
 
     fn maybe_refresh_anchor(&mut self) {
         let Some(safe_l1_header) = self.ctx.safe_l1_header().cloned() else {
+            // this can happen if we received a block from a previous operator, with a block id
+            // newer than our safe lag
             error!("missing l1 headers");
             return;
         };
@@ -514,7 +516,7 @@ impl Sequencer {
         self.tx_pool.clear_mined(block_number, txs);
 
         // mark for being verified later
-        self.ctx.new_preconf_l2_block(&block.header, true);
+        self.ctx.new_preconf_l2_block(&block, true);
         self.gossip_soft_block(block.clone());
 
         let is_first_block = self.proposer_request.is_none();

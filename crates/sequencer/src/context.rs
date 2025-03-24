@@ -7,13 +7,16 @@ use std::{
     time::Instant,
 };
 
-use alloy_rpc_types::Header;
+use alloy_consensus::Transaction;
+use alloy_rpc_types::{Block, Header};
+use alloy_sol_types::SolCall;
+use eyre::ContextCompat;
 use pc_common::{
     metrics::{BlocksMetrics, SequencerMetrics},
-    taiko::{AnchorParams, ParentParams},
+    taiko::{pacaya::l2::TaikoL2::anchorV3Call, AnchorParams, ParentParams, GOLDEN_TOUCH_ADDRESS},
     utils::verify_and_log_block,
 };
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::types::SequencerState;
 
@@ -35,6 +38,8 @@ pub struct SequencerContext {
     pub l2_origin: Arc<AtomicU64>,
     /// Last synced L1 block number
     pub l1_number: Arc<AtomicU64>,
+    /// Anchor block id of the parent block
+    pub parent_anchor_block_id: u64,
 }
 
 impl SequencerContext {
@@ -49,6 +54,7 @@ impl SequencerContext {
             to_verify: BTreeMap::new(),
             l2_origin,
             l1_number,
+            parent_anchor_block_id: 0,
         }
     }
 
@@ -65,36 +71,55 @@ impl SequencerContext {
         self.last_l1_receive = Instant::now();
     }
 
-    /// Insert a new preconfed L2 block, this could be sequenced by us or another gateway, we only
-    /// verify our blocks
-    pub fn new_preconf_l2_block(&mut self, new_header: &Header, ours: bool) {
-        if new_header.number > self.parent.block_number {
-            BlocksMetrics::l2_block(new_header);
+    /// Insert a new preconfed L2 block, this could be sequenced by us or another gateway
+    /// we only verify our blocks
+    pub fn new_preconf_l2_block(&mut self, new_block: &Block, ours: bool) {
+        let header = &new_block.header;
 
-            debug!(sequenced_locally = ours, number = new_header.number, hash = %new_header.hash, "new l2 preconf block");
+        if header.number > self.parent.block_number {
+            BlocksMetrics::l2_block(header);
 
-            self.parent = ParentParams {
-                timestamp: new_header.timestamp,
-                gas_used: new_header.gas_used.try_into().unwrap(),
-                block_number: new_header.number,
-                hash: new_header.hash,
-            };
-        } else if new_header.number == self.parent.block_number &&
-            new_header.hash != self.parent.hash
-        {
-            warn!(sequenced_locally = ours, number = new_header.number, new_hash = %new_header.hash, old_hash = %self.parent.hash, "l2 reorg");
+            debug!(sequenced_locally = ours, number = header.number, hash = %header.hash, "new l2 preconf block");
 
             self.parent = ParentParams {
-                timestamp: new_header.timestamp,
-                gas_used: new_header.gas_used.try_into().unwrap(),
-                block_number: new_header.number,
-                hash: new_header.hash,
+                timestamp: header.timestamp,
+                gas_used: header.gas_used.try_into().unwrap(),
+                block_number: header.number,
+                hash: header.hash,
             };
+            if let Err(err) = self.update_parent_block_id(new_block) {
+                error!(%err, "failed to update parent block id");
+            }
+        } else if header.number == self.parent.block_number && header.hash != self.parent.hash {
+            warn!(sequenced_locally = ours, number = header.number, new_hash = %header.hash, old_hash = %self.parent.hash, "l2 reorg");
+
+            self.parent = ParentParams {
+                timestamp: header.timestamp,
+                gas_used: header.gas_used.try_into().unwrap(),
+                block_number: header.number,
+                hash: header.hash,
+            };
+            if let Err(err) = self.update_parent_block_id(new_block) {
+                error!(%err, "failed to update parent block id");
+            }
         }
 
         if ours {
-            self.to_verify.insert(new_header.number, new_header.clone());
+            self.to_verify.insert(header.number, header.clone());
         }
+    }
+
+    fn update_parent_block_id(&mut self, block: &Block) -> eyre::Result<()> {
+        let block_transactions = block.transactions.as_transactions().context("block has txs")?;
+        let block_anchor = block_transactions.first().context("block has anchor tx")?;
+        assert_eq!(block_anchor.from, GOLDEN_TOUCH_ADDRESS);
+
+        let anchor_call = anchorV3Call::abi_decode(&block_anchor.input(), true)?;
+
+        let anchor_block_id = anchor_call._anchorBlockId;
+        self.parent_anchor_block_id = anchor_block_id;
+
+        Ok(())
     }
 
     /// Process a new L2 block as confirmed by L1 batch transaction.
@@ -120,7 +145,8 @@ impl SequencerContext {
     }
 
     pub fn safe_l1_header(&self) -> Option<&Header> {
-        self.l1_headers.first_key_value().map(|(_, h)| h)
+        let (_, safe_header) = self.l1_headers.first_key_value()?;
+        (safe_header.number >= self.parent_anchor_block_id).then_some(safe_header)
     }
 
     pub fn l2_origin(&self) -> u64 {
