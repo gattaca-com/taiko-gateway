@@ -123,7 +123,8 @@ impl ProposerManager {
         }
 
         for (anchor_block_id, blocks) in to_propose {
-            let bns = blocks.iter().map(|b| b.header.number).collect::<Vec<_>>();
+            let start_block = blocks[0].header.number;
+            let end_block = blocks[blocks.len() - 1].header.number;
 
             let reorg_by_number = l1_head.saturating_sub(anchor_block_id) >
                 taiko_config.params.max_anchor_height_offset;
@@ -133,17 +134,17 @@ impl ProposerManager {
                 taiko_config.params.max_anchor_height_offset * 12;
 
             if reorg_by_number {
-                warn!(anchor_block_id, ?bns, "reorg by number");
+                warn!(anchor_block_id, start_block, end_block, "reorg by number");
             } else if reorg_by_timestamp {
-                warn!(anchor_block_id, ?bns, "reorg by timestamp");
+                warn!(anchor_block_id, start_block, end_block, "reorg by timestamp");
             } else {
-                info!(anchor_block_id, ?bns, "no reorg");
+                info!(anchor_block_id, start_block, end_block, "no reorg");
             }
 
             if reorg_by_number || reorg_by_timestamp {
                 has_reorged = true;
 
-                let msg = format!("re-orged blocks {bns:?}");
+                let msg = format!("re-orged blocks {start_block}-{end_block}");
                 warn!("{msg}");
                 alert_discord(&msg);
 
@@ -351,6 +352,10 @@ fn request_from_blocks(
     }
 
     let last_timestamp = timestamp_override.unwrap_or(last_timestamp);
+
+    let total_time_shift = blocks.iter().map(|b| b.timeShift as u64).sum::<u64>();
+
+    debug!(last_timestamp, total_time_shift, ?timestamp_override, "request");
 
     ProposeBatchParams {
         anchor_block_id,
