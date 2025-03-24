@@ -123,7 +123,8 @@ impl ProposerManager {
         }
 
         for (anchor_block_id, blocks) in to_propose {
-            let bns = blocks.iter().map(|b| b.header.number).collect::<Vec<_>>();
+            let start_block = blocks[0].header.number;
+            let end_block = blocks[blocks.len() - 1].header.number;
 
             let reorg_by_number = l1_head.saturating_sub(anchor_block_id) >
                 taiko_config.params.max_anchor_height_offset;
@@ -132,30 +133,43 @@ impl ProposerManager {
             let reorg_by_timestamp = l1_timestamp.saturating_sub(last_timestamp) >
                 taiko_config.params.max_anchor_height_offset * 12;
 
-            if reorg_by_number {
-                warn!(anchor_block_id, ?bns, "reorg by number");
-            } else if reorg_by_timestamp {
-                warn!(anchor_block_id, ?bns, "reorg by timestamp");
-            } else {
-                info!(anchor_block_id, ?bns, "no reorg");
-            }
+            let total_time_shift = last_timestamp - blocks[0].header.timestamp;
+            let reorg_by_time_shift =
+                total_time_shift > taiko_config.params.max_anchor_height_offset * 12;
 
-            if reorg_by_number || reorg_by_timestamp {
+            if reorg_by_number || reorg_by_timestamp || reorg_by_time_shift {
+                warn!(
+                    anchor_block_id,
+                    by_number = reorg_by_number,
+                    by_timestamp = reorg_by_timestamp,
+                    by_time_shift = reorg_by_time_shift,
+                    "reorg"
+                );
+
                 has_reorged = true;
 
-                let msg = format!("re-orged blocks {bns:?}");
+                let msg = format!("reorging blocks {start_block}-{end_block}");
                 warn!("{msg}");
                 alert_discord(&msg);
 
+                let timeshift_override = if reorg_by_time_shift { Some(0) } else { None };
+
                 // this can happen if we waited too long before restarting the proposer, a
                 // re-org is inevitable
-                let request = request_from_blocks(l1_head - 1, blocks, Some(l1_timestamp - 1));
+                let request = request_from_blocks(
+                    l1_head - 1,
+                    blocks,
+                    Some(l1_timestamp - 1),
+                    timeshift_override,
+                );
                 let is_our_coinbase = request.coinbase == self.config.coinbase;
                 self.propose_batch_with_retry(request).await;
                 ProposerMetrics::resync(is_our_coinbase);
             } else {
+                info!(anchor_block_id, start_block, end_block, "no reorg");
+
                 // propose same batch
-                let request = request_from_blocks(anchor_block_id, blocks, None);
+                let request = request_from_blocks(anchor_block_id, blocks, None, None);
                 let is_our_coinbase = request.coinbase == self.config.coinbase;
                 self.propose_batch_with_retry(request).await;
                 ProposerMetrics::resync(is_our_coinbase);
@@ -308,6 +322,7 @@ fn request_from_blocks(
     anchor_block_id: u64,
     full_blocks: Vec<Arc<Block>>,
     timestamp_override: Option<u64>,
+    timeshift_override: Option<u8>,
 ) -> ProposeBatchParams {
     let start_block_num = full_blocks[0].header.number;
     let end_block_num = full_blocks[full_blocks.len() - 1].header.number;
@@ -318,25 +333,35 @@ fn request_from_blocks(
     let mut tx_list = Vec::new();
     let mut last_timestamp = full_blocks[0].header.timestamp;
 
+    let mut total_time_shift = 0;
+    let mut total_txs = 0;
+
     for block in full_blocks {
         let block = Arc::unwrap_or_clone(block);
 
+        let time_shift: u8 = block
+            .header
+            .timestamp
+            .saturating_sub(last_timestamp)
+            .try_into()
+            .inspect_err(|_| {
+                error!(
+                    prev_timestamp = last_timestamp,
+                    block_timestamp = block.header.timestamp,
+                    block_number = block.header.number,
+                    "resync time shift too large"
+                )
+            })
+            .unwrap_or(0);
+
+        let time_shift = timeshift_override.unwrap_or(time_shift);
+
+        total_txs += block.transactions.len() - 1;
+        total_time_shift += time_shift as u64;
+
         blocks.push(BlockParams {
             numTransactions: (block.transactions.len() - 1) as u16, // remove anchor
-            timeShift: block
-                .header
-                .timestamp
-                .saturating_sub(last_timestamp)
-                .try_into()
-                .inspect_err(|_| {
-                    error!(
-                        prev_timestamp = last_timestamp,
-                        block_timestamp = block.header.timestamp,
-                        block_number = block.header.number,
-                        "resync time shift too large"
-                    )
-                })
-                .unwrap_or(0),
+            timeShift: time_shift,
             signalSlots: vec![], // TODO
         });
 
@@ -351,14 +376,26 @@ fn request_from_blocks(
     }
 
     let last_timestamp = timestamp_override.unwrap_or(last_timestamp);
+    let compressed = encode_and_compress_tx_list(tx_list.clone());
+
+    debug!(
+        batch_size = compressed.len(),
+        last_timestamp,
+        total_time_shift,
+        total_txs,
+        %coinbase,
+        ?timestamp_override,
+        ?timeshift_override,
+        "resync request"
+    );
 
     ProposeBatchParams {
         anchor_block_id,
         start_block_num,
         end_block_num,
         block_params: blocks,
-        all_tx_list: tx_list.clone(),
-        compressed: encode_and_compress_tx_list(tx_list),
+        all_tx_list: tx_list,
+        compressed,
         last_timestamp,
         coinbase,
     }

@@ -30,14 +30,6 @@ pub fn utcnow_ns() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64
 }
 
-pub fn timestamp_of_slot_start_ms(slot: u64, genesis_time_sec: u64) -> u64 {
-    (genesis_time_sec + slot * 12) * 1_000
-}
-
-pub fn timestamp_of_prev_slot_start_ms(slot: u64, genesis_time_sec: u64) -> u64 {
-    (genesis_time_sec + slot.saturating_sub(1) * 12) * 1_000
-}
-
 pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_on_error: bool) {
     let header = &preconf_header;
     if header.hash != new_header.hash {
@@ -182,24 +174,4 @@ fn get_crate_filter(crates_level: tracing::Level) -> EnvFilter {
     }
 
     env_filter
-}
-
-// serde
-pub mod quoted_u64 {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(x: &u64, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&x.to_string())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        s.parse::<u64>().map_err(serde::de::Error::custom)
-    }
 }

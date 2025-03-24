@@ -4,7 +4,7 @@ use eyre::ensure;
 use serde::Deserialize;
 use url::Url;
 
-use crate::utils::{quoted_u64, utcnow_sec};
+use crate::utils::utcnow_sec;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BeaconHandle {
@@ -83,16 +83,16 @@ struct BeaconApiResponse<T> {
 
 #[derive(Deserialize)]
 struct Genesis {
-    #[serde(with = "quoted_u64")]
+    #[serde(with = "alloy_serde::displayfromstr")]
     genesis_time: u64,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 struct Spec {
-    #[serde(with = "quoted_u64")]
+    #[serde(with = "alloy_serde::displayfromstr")]
     seconds_per_slot: u64,
-    #[serde(with = "quoted_u64")]
+    #[serde(with = "alloy_serde::displayfromstr")]
     slots_per_epoch: u64,
 }
 
@@ -108,6 +108,6 @@ struct HeaderInner {
 
 #[derive(Deserialize)]
 struct Message {
-    #[serde(with = "quoted_u64")]
+    #[serde(with = "alloy_serde::displayfromstr")]
     slot: u64,
 }
