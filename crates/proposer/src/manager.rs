@@ -326,25 +326,33 @@ fn request_from_blocks(
     let mut tx_list = Vec::new();
     let mut last_timestamp = full_blocks[0].header.timestamp;
 
+    let mut total_time_shift = 0;
+    let mut total_txs = 0;
+
     for block in full_blocks {
         let block = Arc::unwrap_or_clone(block);
 
+        let time_shift = block
+            .header
+            .timestamp
+            .saturating_sub(last_timestamp)
+            .try_into()
+            .inspect_err(|_| {
+                error!(
+                    prev_timestamp = last_timestamp,
+                    block_timestamp = block.header.timestamp,
+                    block_number = block.header.number,
+                    "resync time shift too large"
+                )
+            })
+            .unwrap_or(0);
+
+        total_txs += block.transactions.len() - 1;
+        total_time_shift += time_shift as u64;
+
         blocks.push(BlockParams {
             numTransactions: (block.transactions.len() - 1) as u16, // remove anchor
-            timeShift: block
-                .header
-                .timestamp
-                .saturating_sub(last_timestamp)
-                .try_into()
-                .inspect_err(|_| {
-                    error!(
-                        prev_timestamp = last_timestamp,
-                        block_timestamp = block.header.timestamp,
-                        block_number = block.header.number,
-                        "resync time shift too large"
-                    )
-                })
-                .unwrap_or(0),
+            timeShift: time_shift,
             signalSlots: vec![], // TODO
         });
 
@@ -359,13 +367,13 @@ fn request_from_blocks(
     }
 
     let last_timestamp = timestamp_override.unwrap_or(last_timestamp);
-    let total_time_shift = blocks.iter().map(|b| b.timeShift as u64).sum::<u64>();
     let compressed = encode_and_compress_tx_list(tx_list.clone());
 
     debug!(
         batch_size = compressed.len(),
         last_timestamp,
         total_time_shift,
+        total_txs,
         %coinbase,
         ?timestamp_override,
         "resync request"
