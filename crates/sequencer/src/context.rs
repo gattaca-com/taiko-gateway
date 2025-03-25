@@ -114,7 +114,7 @@ impl SequencerContext {
         let block_anchor = block_transactions.first().context("block has anchor tx")?;
         assert_eq!(block_anchor.from, GOLDEN_TOUCH_ADDRESS);
 
-        let anchor_call = anchorV3Call::abi_decode(&block_anchor.input(), true)?;
+        let anchor_call = anchorV3Call::abi_decode(block_anchor.input(), true)?;
 
         let anchor_block_id = anchor_call._anchorBlockId;
         self.parent_anchor_block_id = anchor_block_id;
