@@ -127,11 +127,11 @@ impl ProposerManager {
             let end_block = blocks[blocks.len() - 1].header.number;
 
             let reorg_by_number = l1_head.saturating_sub(anchor_block_id) >
-                taiko_config.params.max_anchor_height_offset;
+                taiko_config.params.safe_anchor_height_offset();
             // assume all blocks in a batch have the same timestamp
             let last_timestamp = blocks[blocks.len() - 1].header.timestamp;
             let reorg_by_timestamp = l1_timestamp.saturating_sub(last_timestamp) >
-                taiko_config.params.max_anchor_height_offset * 12;
+                taiko_config.params.safe_anchor_height_offset() * 12;
 
             let total_time_shift = last_timestamp - blocks[0].header.timestamp;
             let reorg_by_time_shift =

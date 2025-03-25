@@ -230,6 +230,10 @@ impl TaikoChainParams {
             block_max_gas_limit: block_max_gas_limit as u128,
         }
     }
+
+    pub fn safe_anchor_height_offset(&self) -> u64 {
+        self.max_anchor_height_offset - 2
+    }
 }
 
 impl TaikoChainParams {
