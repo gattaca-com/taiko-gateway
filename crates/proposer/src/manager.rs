@@ -84,15 +84,6 @@ impl ProposerManager {
         end: u64,
         taiko_config: &TaikoConfig,
     ) -> eyre::Result<()> {
-        let l1_block = self
-            .client
-            .provider()
-            .get_block(BlockId::latest(), BlockTransactionsKind::Hashes)
-            .await?
-            .ok_or_eyre("missing last block")?;
-        let l1_head = l1_block.header.number;
-        let l1_timestamp = l1_block.header.timestamp;
-
         let mut to_verify = BTreeMap::new();
         let mut has_reorged = false;
 
@@ -123,6 +114,15 @@ impl ProposerManager {
         }
 
         for (anchor_block_id, blocks) in to_propose {
+            let l1_block = self
+                .client
+                .provider()
+                .get_block(BlockId::latest(), BlockTransactionsKind::Hashes)
+                .await?
+                .ok_or_eyre("missing last block")?;
+            let l1_head = l1_block.header.number;
+            let l1_timestamp = l1_block.header.timestamp;
+
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
 
@@ -191,18 +191,10 @@ impl ProposerManager {
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
-    async fn propose_batch_with_retry(&self, request: ProposeBatchParams) {
-        let start_bn = request.start_block_num;
-        let end_bn = request.end_block_num;
-
-        debug_assert!(!request.block_params.is_empty(), "no blocks to propose");
-
-        if self.config.dry_run {
-            warn!("dry run, skipping proposal");
-            return;
-        }
-
+    async fn prepare_batch(
+        &self,
+        request: ProposeBatchParams,
+    ) -> (Bytes, Option<BlobTransactionSidecar>) {
         let parent_meta_hash = self.client.last_meta_hash().await;
 
         let compressed: Bytes = request.compressed.clone();
@@ -217,6 +209,23 @@ impl ProposerManager {
             let input = propose_batch_calldata(request, parent_meta_hash, self.client.address());
             (input, None)
         };
+
+        (input, maybe_sidecar)
+    }
+
+    #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
+    async fn propose_batch_with_retry(&self, request: ProposeBatchParams) {
+        let start_bn = request.start_block_num;
+        let end_bn = request.end_block_num;
+
+        debug_assert!(!request.block_params.is_empty(), "no blocks to propose");
+
+        if self.config.dry_run {
+            warn!("dry run, skipping proposal");
+            return;
+        }
+
+        let (input, maybe_sidecar) = self.prepare_batch(request).await;
 
         const MAX_RETRIES: usize = 3;
         let mut retries = 0;
