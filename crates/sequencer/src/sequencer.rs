@@ -159,12 +159,11 @@ impl Sequencer {
                 let safe_l1 = safe_l1_header.number;
                 if safe_l1 < self.ctx.parent_anchor_block_id {
                     // need to wait for L1 blocks, is the safe lag too large?
-                    let parent_anchor_block = self.ctx.parent_anchor_block_id;
-
                     if safe_l1 != last_l1 {
                         warn!(
                             safe_l1,
-                            parent_anchor_block, "waiting for safe L1 block (this should be rare)"
+                            parent_anchor_block = self.ctx.parent_anchor_block_id,
+                            "waiting for safe L1 block (this should be rare)"
                         );
                     }
 
