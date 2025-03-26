@@ -10,14 +10,18 @@ pub mod pacaya;
 pub use checks::get_and_validate_config;
 pub mod lookahead;
 use pacaya::{
+    forced_inclusion::ForcedInclusionStore::ForcedInclusionStoreInstance,
     l1::TaikoL1::TaikoL1Instance, l2::TaikoL2::TaikoL2Instance,
     preconf::PreconfWhitelist::PreconfWhitelistInstance,
+    wrapper::TaikoWrapper::TaikoWrapperInstance,
 };
 use serde::{Deserialize, Serialize};
 
 pub type TaikoL1Client = TaikoL1Instance<(), alloy_provider::RootProvider>;
 pub type TaikoL2Client = TaikoL2Instance<(), alloy_provider::RootProvider>;
 pub type PreconfWhitelist = PreconfWhitelistInstance<(), alloy_provider::RootProvider>;
+pub type ForcedInclusionStore = ForcedInclusionStoreInstance<(), alloy_provider::RootProvider>;
+pub type TaikoWrapper = TaikoWrapperInstance<(), alloy_provider::RootProvider>;
 
 /// Golden touch is the key that needs to propose the anchor tx in every block
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 =

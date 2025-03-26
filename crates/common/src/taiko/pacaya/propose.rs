@@ -1,12 +1,15 @@
-use std::{io::Write, sync::Arc};
+use std::{
+    io::{Read, Write},
+    sync::Arc,
+};
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::{Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
-use libflate::zlib::Encoder as zlibEncoder;
+use libflate::zlib::{Decoder as zlibDecoder, Encoder as zlibEncoder};
 
-use super::{preconf::PreconfRouter, BatchParams};
+use super::{preconf::PreconfRouter, BatchParams, BlockParams};
 use crate::{
     proposer::ProposeBatchParams,
     taiko::{
@@ -26,6 +29,35 @@ pub fn propose_batch_calldata(
 ) -> Bytes {
     let compressed = request.compressed;
 
+    let forced_batch_params = request
+        .forced
+        .map(|f| {
+            // https://github.com/taikoxyz/taiko-mono/blob/f78dc19208366a7cb3d2b05b604263ad3c4db225/packages/taiko-client/proposer/transaction_builder/common.go#L28
+            let params = BatchParams {
+                proposer,
+                coinbase: request.coinbase,
+                parentMetaHash: parent_meta_hash,
+                anchorBlockId: request.anchor_block_id,
+                lastBlockTimestamp: request.last_timestamp,
+                revertIfNotFirstProposal: false,
+                blobParams: BlobParams {
+                    blobHashes: vec![f.inclusion.blobHash],
+                    firstBlobIndex: 0,
+                    numBlobs: 0,
+                    byteOffset: f.inclusion.blobByteOffset,
+                    byteSize: f.inclusion.blobByteSize,
+                    createdIn: f.inclusion.blobCreatedIn,
+                },
+                blocks: vec![BlockParams {
+                    numTransactions: f.min_txs_per_forced as u16,
+                    timeShift: 0,
+                    signalSlots: vec![],
+                }],
+            };
+            Bytes::from(params.abi_encode())
+        })
+        .unwrap_or_default();
+
     // TODO: check the offsets here
     let batch_params = BatchParams {
         proposer,
@@ -41,12 +73,12 @@ pub fn propose_batch_calldata(
             numBlobs: 0,
             byteOffset: 0,
             byteSize: compressed.len() as u32,
+            createdIn: 0,
         },
     };
 
-    let forced_tx_list = Bytes::new();
     let encoded_params =
-        (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
+        (forced_batch_params, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
     PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed }
         .abi_encode()
@@ -71,6 +103,35 @@ pub fn propose_batch_blobs(
         compressed.len()
     );
 
+    let forced_batch_params = request
+        .forced
+        .map(|f| {
+            // https://github.com/taikoxyz/taiko-mono/blob/f78dc19208366a7cb3d2b05b604263ad3c4db225/packages/taiko-client/proposer/transaction_builder/common.go#L28
+            let params = BatchParams {
+                proposer,
+                coinbase: request.coinbase,
+                parentMetaHash: parent_meta_hash,
+                anchorBlockId: request.anchor_block_id,
+                lastBlockTimestamp: request.last_timestamp,
+                revertIfNotFirstProposal: false,
+                blobParams: BlobParams {
+                    blobHashes: vec![f.inclusion.blobHash],
+                    firstBlobIndex: 0,
+                    numBlobs: 0,
+                    byteOffset: f.inclusion.blobByteOffset,
+                    byteSize: f.inclusion.blobByteSize,
+                    createdIn: f.inclusion.blobCreatedIn,
+                },
+                blocks: vec![BlockParams {
+                    numTransactions: f.min_txs_per_forced as u16,
+                    timeShift: 0,
+                    signalSlots: vec![],
+                }],
+            };
+            Bytes::from(params.abi_encode())
+        })
+        .unwrap_or_default();
+
     let blobs = compressed.chunks(MAX_BLOB_DATA_SIZE).map(encode_blob).collect();
     let sidecar = blobs_to_sidecar(blobs);
 
@@ -80,6 +141,7 @@ pub fn propose_batch_blobs(
         numBlobs: sidecar.blobs.len() as u8,
         byteOffset: 0,
         byteSize: compressed.len() as u32,
+        createdIn: 0,
     };
 
     let batch_params = BatchParams {
@@ -93,9 +155,8 @@ pub fn propose_batch_blobs(
         blocks: request.block_params,
     };
 
-    let forced_tx_list = Bytes::new();
     let encoded_params =
-        (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
+        (forced_batch_params, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
     let input =
         PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
@@ -126,7 +187,20 @@ fn compress_bytes(data: &[u8]) -> Vec<u8> {
     encoder.finish().into_result().unwrap()
 }
 
+fn decompress_bytes(data: &[u8]) -> Vec<u8> {
+    let mut decoder = zlibDecoder::new(data).unwrap();
+    let mut buffer = Vec::new();
+    decoder.read_to_end(&mut buffer).unwrap();
+    buffer
+}
+
 pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Bytes {
     let encoded = alloy_rlp::encode(tx_list);
     compress_bytes(&encoded).into()
+}
+
+pub fn decode_tx_list(tx_list: &[u8]) -> eyre::Result<Vec<TxEnvelope>> {
+    let decompressed = decompress_bytes(tx_list);
+    let txs = alloy_rlp::decode_exact(decompressed)?;
+    Ok(txs)
 }

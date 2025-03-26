@@ -1,10 +1,11 @@
 mod anchor;
+mod forced;
 mod propose;
 
 use alloy_sol_types::sol;
 pub use anchor::*;
+pub use forced::*;
 pub use propose::*;
-
 pub mod l1 {
     use alloy_sol_types::sol;
     sol!(
@@ -47,6 +48,28 @@ pub mod l2 {
     );
 }
 
+pub mod forced_inclusion {
+    use alloy_sol_types::sol;
+    sol!(
+        #[derive(Debug, Eq, PartialEq)]
+        #[sol(rpc)]
+        #[allow(missing_docs)]
+        ForcedInclusionStore,
+        "../../abi/ForcedInclusionStore.abi.json"
+    );
+}
+
+pub mod wrapper {
+    use alloy_sol_types::sol;
+    sol!(
+        #[derive(Debug, Eq, PartialEq)]
+        #[sol(rpc)]
+        #[allow(missing_docs)]
+        TaikoWrapper,
+        "../../abi/TaikoWrapper.abi.json"
+    );
+}
+
 // From ITaikoInbox.sol
 sol! {
     #[derive(Debug, Default)]
@@ -79,6 +102,8 @@ sol! {
         uint32 byteOffset;
         // The byte size of the blob.
         uint32 byteSize;
+        // The block number when the blob was created.
+        uint64 createdIn;
     }
 
     #[derive(Debug, Default)]

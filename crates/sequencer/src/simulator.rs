@@ -18,13 +18,14 @@ use pc_common::{
         pacaya::{
             self,
             l2::TaikoL2::{self},
+            ForcedInclusionClient, ForcedInclusionInfo,
         },
         AnchorParams, ParentParams, TaikoL2Client, GOLDEN_TOUCH_ADDRESS,
     },
     types::BlockEnv,
 };
 use tokio::runtime::Runtime;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::types::SimulatedOrder;
 
@@ -33,6 +34,7 @@ pub struct SimulatorClient {
     config: TaikoConfig,
     client: HttpClient,
     taiko_l2: TaikoL2Client,
+    forced_inclusion_client: ForcedInclusionClient,
     sim_tx: Sender<eyre::Result<SimulatedOrder>>,
     sim_url: Url,
 }
@@ -40,6 +42,7 @@ pub struct SimulatorClient {
 impl SimulatorClient {
     pub fn new(
         sim_url: Url,
+        forced_inclusion_client: ForcedInclusionClient,
         config: TaikoConfig,
         sim_tx: Sender<eyre::Result<SimulatedOrder>>,
     ) -> Self {
@@ -56,7 +59,7 @@ impl SimulatorClient {
             ProviderBuilder::new().disable_recommended_fillers().on_http(sim_url.clone());
         let taiko_l2 = TaikoL2::new(config.l2_contract, provider);
 
-        Self { runtime, config, client, taiko_l2, sim_tx, sim_url }
+        Self { runtime, config, client, taiko_l2, forced_inclusion_client, sim_tx, sim_url }
     }
 
     pub fn simulate_anchor(
@@ -143,5 +146,47 @@ impl SimulatorClient {
         let order = Order::new_with_sender(tx, GOLDEN_TOUCH_ADDRESS);
 
         Ok((order, l2_base_fee))
+    }
+
+    pub fn sim_tx_list(
+        &self,
+        txs: Vec<Order>,
+        state_id: StateId,
+    ) -> eyre::Result<SealBlockResponse> {
+        debug!(txs = txs.len(), "simulate tx list");
+
+        let mut sequenced = 0;
+        let mut seal_state = state_id;
+
+        for tx in txs {
+            let sim = self.runtime.block_on(async move {
+                self.client.simulate_tx_at_state(tx.raw().clone(), state_id).await
+            })?;
+
+            match sim.execution_result {
+                ExecutionResult::Success { state_id, .. } |
+                ExecutionResult::Revert { state_id, .. } => {
+                    sequenced += 1;
+                    seal_state = state_id;
+                }
+                ExecutionResult::Invalid { reason } => {
+                    warn!(?reason, "invalid tx")
+                }
+            };
+        }
+
+        debug!(sequenced, %seal_state, "sequenced txs");
+        self.seal_block(seal_state)
+    }
+
+    pub fn fetch_forced(&self) -> eyre::Result<Option<(ForcedInclusionInfo, Vec<Order>)>> {
+        let res = self.runtime.block_on(async move {
+            self.forced_inclusion_client
+                .get_forced_txs()
+                .await
+                .map_err(|err| eyre!("failed fetch forced txs: {err}"))
+        })?;
+
+        Ok(res)
     }
 }
