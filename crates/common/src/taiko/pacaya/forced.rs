@@ -95,7 +95,7 @@ impl ForcedInclusionClient {
         let min_txs_per_forced =
             self.taiko_wrapper.MIN_TXS_PER_FORCED_INCLUSION().call().await?._0 as usize;
 
-        let txs = txs.into_iter().map(|tx| Order::new(tx)).collect::<eyre::Result<Vec<Order>>>()?;
+        let txs = txs.into_iter().map(Order::new).collect::<eyre::Result<Vec<Order>>>()?;
         debug!(min_txs_per_forced, txs = txs.len(), "got txs in forced inclusion");
 
         Ok(Some((ForcedInclusionInfo { inclusion, min_txs_per_forced }, txs)))

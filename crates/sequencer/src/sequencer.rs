@@ -74,6 +74,7 @@ pub struct Sequencer {
 }
 
 impl Sequencer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
