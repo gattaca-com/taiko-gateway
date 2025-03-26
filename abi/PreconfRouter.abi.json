@@ -3,12 +3,17 @@
         "type": "constructor",
         "inputs": [
             {
-                "name": "_proposeBlockEntrypoint",
+                "name": "_proposeBatchEntrypoint",
                 "type": "address",
                 "internalType": "address"
             },
             {
                 "name": "_preconfWhitelist",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_fallbackPreconfer",
                 "type": "address",
                 "internalType": "address"
             }
@@ -21,6 +26,19 @@
         "inputs": [],
         "outputs": [],
         "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "fallbackPreconfer",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -115,7 +133,7 @@
             {
                 "name": "",
                 "type": "address",
-                "internalType": "address"
+                "internalType": "contract IPreconfWhitelist"
             }
         ],
         "stateMutability": "view"
@@ -185,6 +203,11 @@
                     },
                     {
                         "name": "proposedIn",
+                        "type": "uint64",
+                        "internalType": "uint64"
+                    },
+                    {
+                        "name": "blobCreatedIn",
                         "type": "uint64",
                         "internalType": "uint64"
                     },
@@ -289,13 +312,13 @@
     },
     {
         "type": "function",
-        "name": "proposeBlockEntrypoint",
+        "name": "proposeBatchEntrypoint",
         "inputs": [],
         "outputs": [
             {
                 "name": "",
                 "type": "address",
-                "internalType": "address"
+                "internalType": "contract IProposeBatch"
             }
         ],
         "stateMutability": "view"
@@ -528,12 +551,17 @@
     },
     {
         "type": "error",
-        "name": "NotTheOperator",
+        "name": "NotFallbackPreconfer",
         "inputs": []
     },
     {
         "type": "error",
-        "name": "ProposerIsNotTheSender",
+        "name": "NotPreconfer",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "ProposerIsNotPreconfer",
         "inputs": []
     },
     {

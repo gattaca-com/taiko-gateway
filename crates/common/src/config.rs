@@ -36,6 +36,8 @@ pub struct L2ChainConfig {
     pub l2_contract: Address,
     pub router_contract: Address,
     pub whitelist_contract: Address,
+    pub inclusion_store_address: Address,
+    pub taiko_wrapper_address: Address,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

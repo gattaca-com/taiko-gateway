@@ -10,11 +10,13 @@ beacon_url = ""
 name = "taiko"
 rpc_url = "http://0.0.0.0:8545"
 ws_url = "ws://0.0.0.0:8546"
-taiko_token = "0x439d5662aACf0693D9CB549979b3D93bf43b86B3"          # taikoTokenAddress
-l1_contract = "0xc2DD6e8DC8d0558F00Cc1FA6A16FFF1A62Cc436B"          # taikoInboxAddress
-l2_contract = "0x1670100000000000000000000000000000010001"          # taikoAnchorAddress
-router_contract = "0x8dDEA87FfA296B951881aDacbAe8011090C54cAC"      # preconfRouterAddress
-whitelist_contract = "0x83F71950e2b30Deb2419De69b6173A2c581b1C13"   # preconfWhitelistAddress
+taiko_token = "0x439d5662aACf0693D9CB549979b3D93bf43b86B3"              # taikoTokenAddress
+l1_contract = "0xc2DD6e8DC8d0558F00Cc1FA6A16FFF1A62Cc436B"              # taikoInboxAddress
+l2_contract = "0x1670100000000000000000000000000000010001"              # taikoAnchorAddress
+router_contract = "0x8dDEA87FfA296B951881aDacbAe8011090C54cAC"          # preconfRouterAddress
+whitelist_contract = "0x83F71950e2b30Deb2419De69b6173A2c581b1C13"       # preconfWhitelistAddress
+inclusion_store_address = ""  # ForcedInclusionStoreAddress
+taiko_wrapper_address = ""    # TaikoWrapperAddress
 
 [gateway]
 rpc_port = 10001

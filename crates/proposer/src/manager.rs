@@ -407,5 +407,6 @@ fn request_from_blocks(
         compressed,
         last_timestamp,
         coinbase,
+        forced: None,
     }
 }

@@ -343,6 +343,12 @@
                 "type": "address",
                 "indexed": true,
                 "internalType": "address"
+            },
+            {
+                "name": "activeSince",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
             }
         ],
         "anonymous": false
@@ -356,6 +362,12 @@
                 "type": "address",
                 "indexed": true,
                 "internalType": "address"
+            },
+            {
+                "name": "inactiveSince",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
             }
         ],
         "anonymous": false
@@ -470,6 +482,11 @@
     {
         "type": "error",
         "name": "OperatorAlreadyExists",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "OperatorAlreadyRemoved",
         "inputs": []
     },
     {

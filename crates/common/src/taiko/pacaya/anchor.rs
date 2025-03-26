@@ -76,13 +76,14 @@ mod tests {
     use alloy_primitives::{address, b256, hex, Address, Bytes};
     use alloy_provider::{Provider, ProviderBuilder};
     use alloy_rpc_types::Block;
-    use alloy_sol_types::{SolInterface, SolType};
+    use alloy_sol_types::{SolInterface, SolValue};
 
     use super::*;
     use crate::{
         config::{L2ChainConfig, TaikoChainParams},
         taiko::{
             pacaya::{
+                decode_tx_list,
                 l1::TaikoL1::{proposeBatchCall, TaikoL1Errors},
                 l2::TaikoL2::{self, TaikoL2Errors},
                 preconf::{
@@ -137,19 +138,19 @@ mod tests {
     async fn test_validate_anchor_v3() {
         let base_fee_config = TaikoChainParams::new_helder().base_fee_config;
 
-        let parent_block: Block = serde_json::from_str(include_str!("750.json")).expect("parent");
+        let parent_block: Block = serde_json::from_str(include_str!("1199.json")).expect("parent");
         assert_eq!(
             parent_block.header.hash,
-            b256!("d9a5648a447658d9f51846d546a2cd56f0abe39a7d7910f0f43ee2ea054b94ba")
+            b256!("cd056f5b5c0f07c007bc7fdb22b0ad36a259219c1fb420795be03e13b18dd7a4")
         );
-        assert_eq!(parent_block.header.number, 750);
+        assert_eq!(parent_block.header.number, 1199);
 
-        let block: Block = serde_json::from_str(include_str!("751.json")).expect("block");
+        let block: Block = serde_json::from_str(include_str!("1200.json")).expect("block");
         assert_eq!(
             block.header.hash,
-            b256!("58bcf2dfc2a67e820f30e7f320d8e3c532629c5411856a401c60883d91d22971")
+            b256!("eaaa3d28a1148c4fca302e1b618387fd7002c30bc762808a64dba49b748bde66")
         );
-        assert_eq!(block.header.number, 751);
+        assert_eq!(block.header.number, 1200);
 
         let block_transactions = block.transactions.as_transactions().unwrap().to_vec();
         let block_anchor = block_transactions.first().unwrap();
@@ -196,6 +197,8 @@ mod tests {
                 l2_contract: block_anchor.inner.to().unwrap(),
                 router_contract: Address::ZERO,
                 whitelist_contract: Address::ZERO,
+                inclusion_store_address: Address::ZERO,
+                taiko_wrapper_address: Address::ZERO,
             },
             params: TaikoChainParams::new_helder(),
         };
@@ -225,27 +228,27 @@ mod tests {
     #[test]
     fn test_decode_propose_block() {
         let anchor_block: Block =
-            serde_json::from_str(include_str!("1275729.json")).expect("block");
-        // assert_eq!(
-        //     anchor_block.header.hash,
-        //     b256!("d7f49b0a0b22969d2640172cb4fcb93bef05793c93ebb07c4bfc2eb647d0a2f51")
-        // );
-        assert_eq!(anchor_block.header.number, 1275729);
+            serde_json::from_str(include_str!("1478988.json")).expect("block");
+        assert_eq!(
+            anchor_block.header.hash,
+            b256!("4482999a8813eb4f7fef7db09c4ecc8551e7eb194e31bea490e794f035637de0")
+        );
+        assert_eq!(anchor_block.header.number, 1478988);
 
         let propose_block: Block =
-            serde_json::from_str(include_str!("1275730.json")).expect("block");
+            serde_json::from_str(include_str!("1478998.json")).expect("block");
         assert_eq!(
             propose_block.header.hash,
-            b256!("d0a1c88b01959e435f972cc46707aec2567cec1f964159b89ad0e4e873c8bdb7")
+            b256!("9621c396d59b9c9de72d8015cc2c873e269eafdcb6ab9dc1cf6d6790cb9cda1b")
         );
-        assert_eq!(propose_block.header.number, 1275730);
+        assert_eq!(propose_block.header.number, 1478998);
 
-        let l2_block: Block = serde_json::from_str(include_str!("751.json")).expect("block");
+        let l2_block: Block = serde_json::from_str(include_str!("1200.json")).expect("block");
         assert_eq!(
             l2_block.header.hash,
-            b256!("ccdd76f4a02856cfdd33ad52be94e32acdb0260f5bc682706bda6c2b3ab562b9")
+            b256!("eaaa3d28a1148c4fca302e1b618387fd7002c30bc762808a64dba49b748bde66")
         );
-        assert_eq!(l2_block.header.number, 5);
+        assert_eq!(l2_block.header.number, 1200);
 
         let anchor_tx = l2_block.transactions.txns().next().unwrap().clone();
         assert_eq!(anchor_tx.from, GOLDEN_TOUCH_ADDRESS);
@@ -260,24 +263,36 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>()
             .into_iter()
-            .find(|tx| tx.to() == Some(address!("55FC9869E51885B6523D25d20A82A4bD9787998F")))
+            .find(|tx| tx.from == address!("F3384dCC14F03f079Ac7cd3C2299256B19261Bb0"))
             .unwrap();
 
         let input = propose_tx.input();
         let call = proposeBatchCall::abi_decode(&input, true).expect("decode input");
 
-        let params = call._params;
+        let tx_list = decode_tx_list(&call._txList)
+            .unwrap()
+            .into_iter()
+            .map(|tx| *tx.tx_hash())
+            .collect::<Vec<_>>();
 
-        assert!(BatchParams::abi_decode(&params, true).is_ok());
+        // skip anchor
+        assert!(l2_block.transactions.hashes().skip(1).all(|h| tx_list.contains(&h)));
+
+        let (_forced, params_bytes) =
+            <(Bytes, Bytes)>::abi_decode_params(&call._params, true).unwrap();
+
+        let params = <BatchParams as SolValue>::abi_decode(&params_bytes, true).unwrap();
+
+        assert_eq!(params.anchorBlockId, anchor_block.header.number);
     }
 
     #[ignore]
     #[tokio::test]
     async fn test_fetch_block() {
         let provider =
-            ProviderBuilder::new().on_http("http://18.199.195.154:18545".parse().unwrap());
+            ProviderBuilder::new().on_http("http://18.199.195.154:8545".parse().unwrap());
 
-        let bn = provider.get_block_by_number(751.into(), true.into()).await.unwrap().unwrap();
+        let bn = provider.get_block_by_number(1478998.into(), true.into()).await.unwrap().unwrap();
 
         let s = serde_json::to_string(&bn).unwrap();
         println!("{}", s);

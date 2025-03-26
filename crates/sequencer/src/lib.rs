@@ -11,7 +11,7 @@ use pc_common::{
     proposer::ProposalRequest,
     runtime::spawn,
     sequencer::Order,
-    taiko::lookahead::LookaheadHandle,
+    taiko::{lookahead::LookaheadHandle, pacaya::ForcedInclusionClient},
 };
 use sequencer::Sequencer;
 use tokio::sync::mpsc::UnboundedSender;
@@ -85,9 +85,18 @@ pub fn start_sequencer(
         sim_rx,
     };
 
+    let forced_inclusion_client = ForcedInclusionClient::new(
+        config.l1.rpc_url.clone(),
+        config.l2.rpc_url.clone(),
+        lookahead.beacon,
+        taiko_config.taiko_wrapper_address,
+        taiko_config.inclusion_store_address,
+    );
+
     let sequencer = Sequencer::new(
         sequencer_config,
         taiko_config,
+        forced_inclusion_client,
         spine,
         lookahead,
         l2_origin,
