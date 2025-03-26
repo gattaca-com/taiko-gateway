@@ -53,26 +53,29 @@ pub fn start_sequencer(
 
     let sequencer_config: SequencerConfig = (config, jwt_secret, operator_address).into();
 
-    let (l1_blocks_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
+    let (l1_headers_tx, l1_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l1.rpc_url.clone();
     let ws_url = config.l1.ws_url.clone();
-    spawn(BlockFetcher::new(rpc_url, l1_blocks_tx).run_fetch(
+    spawn(BlockFetcher::new(rpc_url).run_fetch(
         "l1",
         ws_url,
         sequencer_config.l1_safe_lag,
+        l1_headers_tx,
     ));
 
     let (l2_blocks_tx, l2_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l2.rpc_url.clone();
     let ws_url = config.l2.ws_url.clone();
-    spawn(BlockFetcher::new(rpc_url, l2_blocks_tx).run_fetch("l2", ws_url, 1));
+    spawn(BlockFetcher::new(rpc_url).run_full_fetch("l2", ws_url, 1, l2_blocks_tx));
 
     let l2_origin = Arc::new(AtomicU64::new(0));
     let (origin_blocks_tx, origin_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l2.rpc_url.clone();
-    spawn(
-        BlockFetcher::new(rpc_url, origin_blocks_tx).run_origin_fetch("origin", l2_origin.clone()),
-    );
+    spawn(BlockFetcher::new(rpc_url).run_origin_fetch(
+        "origin",
+        origin_blocks_tx,
+        l2_origin.clone(),
+    ));
 
     let (sim_tx, sim_rx) = crossbeam_channel::unbounded();
     let spine = SequencerSpine {

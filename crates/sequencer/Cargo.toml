@@ -12,6 +12,7 @@ alloy-provider.workspace = true
 alloy-rlp.workspace = true
 alloy-rpc-types.workspace = true
 alloy-eips.workspace = true
+alloy-sol-types.workspace = true
 crossbeam-channel.workspace = true
 eyre.workspace = true
 jsonrpsee.workspace = true

@@ -5,7 +5,7 @@ use std::{
 };
 
 use alloy_primitives::Address;
-use alloy_rpc_types::Header;
+use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::Receiver;
 use pc_common::{
     metrics::SequencerMetrics,
@@ -27,26 +27,31 @@ pub struct SequencerSpine {
     // Receiver of L1 blocks
     pub l1_blocks_rx: Receiver<Header>,
     // Receiver of L2 preconf blocks
-    pub l2_blocks_rx: Receiver<Header>,
+    pub l2_blocks_rx: Receiver<Block>,
     // Receiver of L2 non preconf blocks
     pub origin_blocks_rx: Receiver<Header>,
     /// Receive sim results
     pub sim_rx: Receiver<eyre::Result<SimulatedOrder>>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub enum SequencerState {
     /// Syncing L1/L2 blocks
-    #[default]
-    Sync,
+    Sync { last_l1: u64 },
     /// Simualted anchor and sequencing user txs
     Sorting(SortData),
+}
+
+impl Default for SequencerState {
+    fn default() -> Self {
+        Self::Sync { last_l1: 0 }
+    }
 }
 
 impl SequencerState {
     pub fn record_metrics(&self) {
         let state_id = match self {
-            SequencerState::Sync => 0,
+            SequencerState::Sync { .. } => 0,
             SequencerState::Sorting(..) => 2,
         };
 
@@ -57,7 +62,7 @@ impl SequencerState {
 impl std::fmt::Debug for SequencerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SequencerState::Sync => write!(f, "Sync"),
+            SequencerState::Sync { .. } => write!(f, "Sync"),
             SequencerState::Sorting(sort_data) => {
                 write!(
                     f,
