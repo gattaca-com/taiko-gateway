@@ -145,8 +145,7 @@ impl SequencerContext {
     }
 
     pub fn safe_l1_header(&self) -> Option<&Header> {
-        let (_, safe_header) = self.l1_headers.first_key_value()?;
-        (safe_header.number >= self.parent_anchor_block_id).then_some(safe_header)
+        self.l1_headers.first_key_value().map(|(_, h)| h)
     }
 
     pub fn l2_origin(&self) -> u64 {

@@ -34,19 +34,24 @@ pub struct SequencerSpine {
     pub sim_rx: Receiver<eyre::Result<SimulatedOrder>>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub enum SequencerState {
     /// Syncing L1/L2 blocks
-    #[default]
-    Sync,
+    Sync { last_l1: u64 },
     /// Simualted anchor and sequencing user txs
     Sorting(SortData),
+}
+
+impl Default for SequencerState {
+    fn default() -> Self {
+        Self::Sync { last_l1: 0 }
+    }
 }
 
 impl SequencerState {
     pub fn record_metrics(&self) {
         let state_id = match self {
-            SequencerState::Sync => 0,
+            SequencerState::Sync { .. } => 0,
             SequencerState::Sorting(..) => 2,
         };
 
@@ -57,7 +62,7 @@ impl SequencerState {
 impl std::fmt::Debug for SequencerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SequencerState::Sync => write!(f, "Sync"),
+            SequencerState::Sync { .. } => write!(f, "Sync"),
             SequencerState::Sorting(sort_data) => {
                 write!(
                     f,

@@ -151,9 +151,29 @@ impl Sequencer {
 
     fn state_transition(&mut self, state: SequencerState) -> SequencerState {
         match state {
-            SequencerState::Sync => {
+            SequencerState::Sync { last_l1 } => {
+                let Some(safe_l1_header) = self.ctx.safe_l1_header() else {
+                    return state;
+                };
+
+                let safe_l1 = safe_l1_header.number;
+                if safe_l1 < self.ctx.parent_anchor_block_id {
+                    // need to wait for L1 blocks, is the safe lag too large?
+                    let parent_anchor_block = self.ctx.parent_anchor_block_id;
+
+                    if safe_l1 != last_l1 {
+                        warn!(
+                            safe_l1,
+                            parent_anchor_block, "waiting for safe L1 block (this should be rare)"
+                        );
+                    }
+
+                    return SequencerState::Sync { last_l1: safe_l1 };
+                }
+
+                // after here we have enough L1 blocks, dont need to check it anymore
                 if !self.flags.can_sequence {
-                    return SequencerState::Sync;
+                    return SequencerState::default();
                 }
 
                 let max_block_size = TARGET_BATCH_SIZE.saturating_sub(
@@ -161,11 +181,11 @@ impl Sequencer {
                 );
 
                 if max_block_size == 0 {
-                    return SequencerState::Sync;
+                    return SequencerState::default();
                 }
 
                 if !self.tx_pool.new_orders() {
-                    return SequencerState::Sync;
+                    return SequencerState::default();
                 }
 
                 match self.anchor_block() {
@@ -176,7 +196,7 @@ impl Sequencer {
                             .active_orders(block_info.block_number, block_info.base_fee)
                         else {
                             self.tx_pool.set_no_orders();
-                            return SequencerState::Sync;
+                            return SequencerState::default();
                         };
 
                         // we have orders, start building a block
@@ -204,7 +224,7 @@ impl Sequencer {
 
                     Err(err) => {
                         error!(%err, "failed anchoring");
-                        SequencerState::Sync
+                        SequencerState::default()
                     }
                 }
             }
@@ -217,7 +237,7 @@ impl Sequencer {
                         panic!("failed commit seal");
                     } else {
                         // reset state for next block
-                        SequencerState::Sync
+                        SequencerState::default()
                     }
                 } else {
                     // if we're here, all the orders were invalid, so the state nonces are
@@ -225,7 +245,7 @@ impl Sequencer {
                     // use those to clear the txpool and restart the loop
                     self.tx_pool.update_nonces(sort_data.state_nonces);
                     debug!("exhausted active orders past target seal, resetting");
-                    SequencerState::Sync
+                    SequencerState::default()
                 }
             }
 
@@ -400,8 +420,6 @@ impl Sequencer {
 
     fn maybe_refresh_anchor(&mut self) {
         let Some(safe_l1_header) = self.ctx.safe_l1_header().cloned() else {
-            // this can happen if we received a block from a previous operator, with a block id
-            // newer than our safe lag
             error!("missing l1 headers");
             return;
         };
