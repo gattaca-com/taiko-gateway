@@ -30,13 +30,21 @@ pub async fn start_proposer(
         config.l2.router_contract,
     )
     .await?;
-    let proposer = ProposerManager::new(proposer_config, includer, new_blocks_rx);
 
     let l2_provider =
         ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
 
+    let proposer = ProposerManager::new(
+        proposer_config,
+        includer,
+        new_blocks_rx,
+        l2_provider,
+        taiko_config,
+        config.gateway.l1_safe_lag,
+    );
+
     // start proposer
-    spawn(proposer.run(l2_provider, taiko_config));
+    spawn(proposer.run());
 
     Ok(())
 }

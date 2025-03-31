@@ -90,7 +90,11 @@ impl L1Client {
             .with_input(input.clone())
             .with_from(self.signer.address());
 
-        let gas_limit = self.provider().estimate_gas(&tx).await?;
+        let gas_limit = self
+            .provider()
+            .estimate_gas(&tx)
+            .await
+            .map_err(|err| eyre!(format!("failed gas estimation: {err}")))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
@@ -134,15 +138,17 @@ impl L1Client {
 
         let blob_versioned_hashes = sidecar.versioned_hashes().collect::<Vec<_>>();
 
-        // should we add the blob for estimation?
         let mut tx = TransactionRequest::default()
             .with_to(to)
             .with_input(input.clone())
             .with_from(self.signer.address());
-
         tx.blob_versioned_hashes = Some(blob_versioned_hashes.clone());
 
-        let gas_limit = self.provider().estimate_gas(&tx).await?;
+        let gas_limit = self
+            .provider()
+            .estimate_gas(&tx)
+            .await
+            .map_err(|err| eyre!(format!("failed gas estimation: {err}")))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
