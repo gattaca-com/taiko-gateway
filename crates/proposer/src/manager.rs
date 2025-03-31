@@ -121,7 +121,10 @@ impl ProposerManager {
         let l1_timestamp = l1_block.header.timestamp;
 
         // check if any batch will reorg
-        let will_reorg = to_propose.iter().any(|(anchor_block_id, blocks)| {
+        let mut will_reorg = false;
+
+        // dont use any() because we want to log all reorgs
+        to_propose.iter().for_each(|(anchor_block_id, blocks)| {
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
 
@@ -137,21 +140,11 @@ impl ProposerManager {
                 total_time_shift > self.taiko_config.params.max_anchor_height_offset * 12;
 
             if reorg_by_number || reorg_by_timestamp || reorg_by_time_shift {
-                warn!(
-                    anchor_block_id,
-                    by_number = reorg_by_number,
-                    by_timestamp = reorg_by_timestamp,
-                    by_time_shift = reorg_by_time_shift,
-                    "batch will reorg"
-                );
-
-                let msg = format!("reorging blocks {start_block}-{end_block}");
+                let msg = format!("batch will reorg: anchor_block_id={anchor_block_id}, blocks={start_block}-{end_block}, by_number={reorg_by_number}, by_timestamp={reorg_by_timestamp}, by_time_shift={reorg_by_time_shift}");
                 warn!("{msg}");
                 alert_discord(&msg);
 
-                true
-            } else {
-                false
+                will_reorg = true;
             }
         });
 
@@ -463,9 +456,12 @@ fn request_from_blocks(
         i += 1;
     }
 
+    batches.push(cur_params);
+
     for params in batches.iter() {
         debug!(
             batch_size = params.compressed.len(),
+            blocks = params.block_params.len(),
             last_timestamp = params.last_timestamp,
             total_time_shift,
             total_txs,
