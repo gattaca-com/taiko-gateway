@@ -132,11 +132,16 @@ impl L1Client {
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
+        let blob_versioned_hashes = sidecar.versioned_hashes().collect::<Vec<_>>();
+
         // should we add the blob for estimation?
-        let tx = TransactionRequest::default()
+        let mut tx = TransactionRequest::default()
             .with_to(to)
             .with_input(input.clone())
             .with_from(self.signer.address());
+
+        tx.blob_versioned_hashes = Some(blob_versioned_hashes.clone());
+
         let gas_limit = self.provider().estimate_gas(&tx).await?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
@@ -171,7 +176,7 @@ impl L1Client {
             to,
             input,
             max_fee_per_blob_gas,
-            blob_versioned_hashes: sidecar.versioned_hashes().collect(),
+            blob_versioned_hashes,
             value: Default::default(),
             access_list: Default::default(),
         };
