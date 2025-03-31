@@ -5,7 +5,6 @@ use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::{Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
-use tracing::debug;
 
 use super::{preconf::PreconfRouter, BatchParams};
 use crate::{
@@ -75,13 +74,6 @@ pub fn propose_batch_blobs(
     let blobs = compressed.chunks(MAX_BLOB_DATA_SIZE).map(encode_blob).collect();
     let sidecar = blobs_to_sidecar(blobs);
 
-    debug!(
-        blobs = sidecar.blobs.len(),
-        proof_size = sidecar.proofs.len(),
-        commitments = sidecar.commitments.len(),
-        "blob sidecar"
-    );
-
     let blob_params = BlobParams {
         blobHashes: vec![],
         firstBlobIndex: 0,
@@ -89,8 +81,6 @@ pub fn propose_batch_blobs(
         byteOffset: 0,
         byteSize: compressed.len() as u32,
     };
-
-    debug!(?blob_params, "blob params");
 
     let batch_params = BatchParams {
         proposer,
