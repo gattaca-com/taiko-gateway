@@ -13,7 +13,7 @@ use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use eyre::{ensure, eyre, OptionExt};
 use pc_common::taiko::TaikoL1Client;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use url::Url;
 
 type AlloyProvider = RootProvider;
@@ -175,6 +175,13 @@ impl L1Client {
             value: Default::default(),
             access_list: Default::default(),
         };
+
+        debug!(
+            versioned_hashes = tx.blob_versioned_hashes.len(),
+            blobs = sidecar.blobs.len(),
+            "building sidecar"
+        );
+
         let tx = TxEip4844WithSidecar::from_tx_and_sidecar(tx, sidecar);
 
         let sig = self.signer.sign_hash_sync(&tx.signature_hash())?;
