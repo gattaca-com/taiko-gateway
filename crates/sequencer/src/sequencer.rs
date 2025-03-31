@@ -14,7 +14,7 @@ use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
     metrics::{BlocksMetrics, SequencerMetrics},
-    proposer::{is_propose_delayed, ProposalRequest, ProposeBatchParams},
+    proposer::{is_propose_delayed, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE},
     runtime::spawn,
     sequencer::{ExecutionResult, StateId},
     taiko::{
@@ -38,10 +38,6 @@ use crate::{
     tx_pool::TxPool,
     types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
 };
-
-const BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
-/// Use max 3 blobs, potentially we could exceed this but the buffer should be enough
-const TARGET_BATCH_SIZE: usize = 3 * BLOBS_SAFE_SIZE;
 
 #[derive(Debug, Default)]
 struct SequencerFlags {
@@ -67,6 +63,7 @@ pub struct Sequencer {
     lookahead: LookaheadHandle,
     flags: SequencerFlags,
     proposer_request: Option<ProposeBatchParams>,
+    last_anchor_error: Instant,
 }
 
 impl Sequencer {
@@ -93,6 +90,7 @@ impl Sequencer {
             lookahead,
             flags: SequencerFlags::default(),
             proposer_request: None,
+            last_anchor_error: Instant::now(),
         }
     }
 
@@ -187,6 +185,12 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
+                // because block time is >> 100ms we dont need to reset this if anchor succeeds (ie
+                // we never need to anchor more frequently than every 100ms)
+                if self.last_anchor_error.elapsed() < Duration::from_millis(100) {
+                    return SequencerState::default();
+                }
+
                 match self.anchor_block() {
                     Ok((state_id, block_info)) => {
                         debug!(?block_info, %state_id, "anchored");
@@ -223,6 +227,7 @@ impl Sequencer {
 
                     Err(err) => {
                         error!(%err, "failed anchoring");
+                        self.last_anchor_error = Instant::now();
                         SequencerState::default()
                     }
                 }

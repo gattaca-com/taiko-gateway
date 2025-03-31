@@ -90,7 +90,11 @@ impl L1Client {
             .with_input(input.clone())
             .with_from(self.signer.address());
 
-        let gas_limit = self.provider().estimate_gas(&tx).await?;
+        let gas_limit = self
+            .provider()
+            .estimate_gas(&tx)
+            .await
+            .map_err(|err| eyre!(format!("failed gas estimation: {err}")))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
@@ -132,12 +136,19 @@ impl L1Client {
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
-        // should we add the blob for estimation?
-        let tx = TransactionRequest::default()
+        let blob_versioned_hashes = sidecar.versioned_hashes().collect::<Vec<_>>();
+
+        let mut tx = TransactionRequest::default()
             .with_to(to)
             .with_input(input.clone())
             .with_from(self.signer.address());
-        let gas_limit = self.provider().estimate_gas(&tx).await?;
+        tx.blob_versioned_hashes = Some(blob_versioned_hashes.clone());
+
+        let gas_limit = self
+            .provider()
+            .estimate_gas(&tx)
+            .await
+            .map_err(|err| eyre!(format!("failed gas estimation: {err}")))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {
@@ -171,10 +182,11 @@ impl L1Client {
             to,
             input,
             max_fee_per_blob_gas,
-            blob_versioned_hashes: sidecar.versioned_hashes().collect(),
+            blob_versioned_hashes,
             value: Default::default(),
             access_list: Default::default(),
         };
+
         let tx = TxEip4844WithSidecar::from_tx_and_sidecar(tx, sidecar);
 
         let sig = self.signer.sign_hash_sync(&tx.signature_hash())?;
