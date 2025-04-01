@@ -110,9 +110,6 @@ async fn subscribe_mempool(rpc_url: Url, ws_url: Url, mempool_tx: Sender<Order>)
                     }
                 }
             }
-            Ok(Message::Binary(_)) => {
-                debug!("Received binary message, ignoring.");
-            }
             Err(e) => {
                 error!(%e, "WebSocket connection error.");
                 break;
