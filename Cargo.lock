@@ -2857,7 +2857,6 @@ name = "pc-rpc"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
- "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types-txpool",
