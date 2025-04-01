@@ -2857,17 +2857,21 @@ name = "pc-rpc"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types-txpool",
  "async-trait",
  "crossbeam-channel",
  "eyre",
+ "futures-util",
  "jsonrpsee",
  "pc-common",
  "reqwest",
+ "serde_json",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
 ]
 
