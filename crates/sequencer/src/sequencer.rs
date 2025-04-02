@@ -20,8 +20,8 @@ use pc_common::{
     taiko::{
         get_difficulty, get_extra_data,
         lookahead::LookaheadHandle,
-        pacaya::{encode_and_compress_tx_list, BlockParams},
-        AnchorParams, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
+        pacaya::{estimate_compressed_size, BlockParams},
+        AnchorParams, ANCHOR_GAS_LIMIT,
     },
     types::BlockEnv,
     utils::utcnow_sec,
@@ -174,7 +174,7 @@ impl Sequencer {
                 }
 
                 let max_block_size = TARGET_BATCH_SIZE.saturating_sub(
-                    self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0),
+                    self.proposer_request.as_ref().map(|p| p.compressed_est).unwrap_or(0),
                 );
 
                 if max_block_size == 0 {
@@ -444,7 +444,7 @@ impl Sequencer {
 
         // if the batch with this anchor has too many txs, refresh it
         let current_batch_size =
-            self.proposer_request.as_ref().map(|p| p.compressed.len()).unwrap_or(0);
+            self.proposer_request.as_ref().map(|p| p.compressed_est).unwrap_or(0);
         // note we could exceed the size here if the last block is large, but we have a buffer so
         // shouldnt be a problem
         let is_batch_big = current_batch_size > TARGET_BATCH_SIZE;
@@ -568,18 +568,19 @@ impl Sequencer {
             signalSlots: vec![],
         });
 
-        let txs = Arc::unwrap_or_clone(block)
-            .transactions
-            .into_transactions()
-            .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| tx.inner.into());
-        request.all_tx_list.extend(txs);
-        request.compressed = encode_and_compress_tx_list(request.all_tx_list.clone());
+        assert_eq!(
+            block.transactions.len(), // with anchor
+            sort_data.orders.len() + 1,
+            "mismatch in tx from block and sorting"
+        );
+
+        request.all_tx_list.extend(sort_data.orders);
+        request.compressed_est += estimate_compressed_size(sort_data.uncompressed_size);
 
         info!(
             start = request.start_block_num,
             end = request.end_block_num,
-            batch_size = request.compressed.len(),
+            est_batch_size = request.compressed_est,
             txs = request.all_tx_list.len(),
             "batch info"
         );

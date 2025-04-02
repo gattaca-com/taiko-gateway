@@ -8,7 +8,7 @@ use alloy_primitives::{utils::format_ether, Address};
 use pc_common::{
     metrics::SequencerMetrics,
     sequencer::{ExecutionResult, InvalidReason, Order, StateId},
-    taiko::pacaya::encode_and_compress_tx_list,
+    taiko::pacaya::estimate_compressed_size,
 };
 use tracing::{debug, info, warn};
 
@@ -30,6 +30,10 @@ pub struct SortData {
     pub active_orders: ActiveOrders,
     /// Simulated nonces, sender -> state nonce
     pub state_nonces: StateNonces,
+    /// All orders in the current block (excluding the anchor)
+    pub orders: Vec<Order>,
+    /// Cumulative size of the sequenced txs, rlp encoded
+    pub uncompressed_size: usize,
     /// Time when we should stop sequencing this block
     target_seal: Instant,
     /// Cumulative builder payment
@@ -38,8 +42,6 @@ pub struct SortData {
     gas_remaining: u128,
     /// Cumulative size of the block
     max_block_size: usize,
-    /// All orders in the current block
-    orders: Vec<Order>,
     /// Next best order (simulated on the current block_info state_id), when all sims come back
     /// (in_flight_sims == 0) we update the block info with this state id
     next_best: Option<ValidOrder>,
@@ -137,6 +139,7 @@ impl SortData {
             state_nonces: StateNonces::new(block_info.block_number),
             should_seal: false,
             last_logged: Instant::now(),
+            uncompressed_size: 0,
         }
     }
 
@@ -150,16 +153,13 @@ impl SortData {
             self.state_id = next_best.new_state_id;
             self.builder_payment += next_best.builder_payment;
             self.gas_remaining -= next_best.gas_used;
+            self.uncompressed_size += next_best.order.raw().len();
             self.orders.push(next_best.order);
 
-            if self.num_txs() % 100 == 0 {
-                let compressed =
-                    encode_and_compress_tx_list(self.orders.iter().map(|o| o.tx()).collect());
-
-                if compressed.len() > self.max_block_size {
-                    warn!("exceeding block size, sealing early");
-                    self.should_seal = true;
-                }
+            let compressed = estimate_compressed_size(self.uncompressed_size);
+            if compressed > self.max_block_size {
+                warn!("exceeding block size, sealing early");
+                self.should_seal = true;
             }
         }
 

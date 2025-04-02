@@ -1,14 +1,17 @@
-use std::{io::Write, sync::Arc};
+use std::{io::Write, sync::Arc, time::Instant};
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::{Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
+use tracing::{debug, warn};
 
 use super::{preconf::PreconfRouter, BatchParams};
 use crate::{
-    proposer::ProposeBatchParams,
+    metrics::ProposerMetrics,
+    proposer::{ProposeBatchParams, TARGET_BATCH_SIZE},
+    sequencer::Order,
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
         pacaya::BlobParams,
@@ -24,7 +27,18 @@ pub fn propose_batch_calldata(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> Bytes {
-    let compressed = request.compressed;
+    let compressed = encode_and_compress_orders(request.all_tx_list);
+    ProposerMetrics::batch_size(compressed.len() as u64);
+
+    if compressed.len() > TARGET_BATCH_SIZE {
+        let diff = compressed.len() - TARGET_BATCH_SIZE;
+        warn!(
+            actual = compressed.len(),
+            target = TARGET_BATCH_SIZE,
+            diff,
+            "exceeding target batch size, is the compression estimate correct?"
+        );
+    }
 
     // TODO: check the offsets here
     let batch_params = BatchParams {
@@ -63,7 +77,18 @@ pub fn propose_batch_blobs(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> (Bytes, BlobTransactionSidecar) {
-    let compressed = request.compressed;
+    let compressed = encode_and_compress_orders(request.all_tx_list);
+    ProposerMetrics::batch_size(compressed.len() as u64);
+
+    if compressed.len() > TARGET_BATCH_SIZE {
+        let diff = compressed.len() - TARGET_BATCH_SIZE;
+        warn!(
+            actual = compressed.len(),
+            target = TARGET_BATCH_SIZE,
+            diff,
+            "exceeding target batch size, is the compression estimate correct?"
+        );
+    }
 
     assert!(
         compressed.len() / MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
@@ -126,7 +151,43 @@ fn compress_bytes(data: &[u8]) -> Vec<u8> {
     encoder.finish().into_result().unwrap()
 }
 
+// TODO: re-use the RLP encoding here
+pub fn encode_and_compress_orders(orders: Vec<Order>) -> Bytes {
+    let tx_list = orders.iter().map(|o| o.tx()).collect::<Vec<_>>();
+    encode_and_compress_tx_list(tx_list)
+}
+
 pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Bytes {
+    let n_txs = tx_list.len();
+    let start = Instant::now();
     let encoded = alloy_rlp::encode(tx_list);
-    compress_bytes(&encoded).into()
+    let encode_time = start.elapsed();
+    let encoded_len = encoded.len();
+    let start = Instant::now();
+    let b = compress_bytes(&encoded);
+    let compress_time = start.elapsed();
+    let compress_len = b.len();
+
+    let compressed_ratio = (compress_len as f64) / (encoded_len as f64);
+
+    let expected_len = (COMPRESS_RATIO * encoded_len as f64).round() as usize;
+
+    debug!(
+        n_txs,
+        encoded_len,
+        ?encode_time,
+        ?compress_time,
+        compress_len,
+        expected_len,
+        compressed_ratio,
+        "compress tx list"
+    );
+
+    b.into()
+}
+
+const COMPRESS_RATIO: f64 = 0.63;
+
+pub fn estimate_compressed_size(uncompressed_size: usize) -> usize {
+    (COMPRESS_RATIO * uncompressed_size as f64).round() as usize
 }
