@@ -80,7 +80,8 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         .map_err(|e| eyre!("proposer init: {e}"))?;
 
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
-    let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
+    let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded(); 
+    let (hash_tx, hash_rx) = mpsc::unbounded_channel();
 
     let operator_address = envs.proposer_signer_key.address();
 
@@ -95,7 +96,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         operator_address,
     );
 
-    start_rpc(&config, rpc_tx, mempool_tx);
+    start_rpc(&config, rpc_tx, mempool_tx, hash_tx, hash_rx);
 
     // wait for SIGTERM or SIGINT
     let mut sigint = tokio::signal::unix::signal(SignalKind::interrupt())?;
