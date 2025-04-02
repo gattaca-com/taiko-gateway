@@ -186,7 +186,7 @@ pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Bytes {
     b.into()
 }
 
-const COMPRESS_RATIO: f64 = 0.63;
+const COMPRESS_RATIO: f64 = 0.625;
 
 pub fn estimate_compressed_size(uncompressed_size: usize) -> usize {
     (COMPRESS_RATIO * uncompressed_size as f64).round() as usize

@@ -60,7 +60,8 @@ pub struct GatewayConfig {
     pub lookahead: LookaheadConfig,
     pub jwt_secret_path: PathBuf,
     pub coinbase: Address,
-    #[serde(default = "default_usize::<5>")]
+    /// Number of simulators to run in parallel when sorting, higher means better blocks but more
+    /// overhead
     pub max_sims_per_loop: usize,
 }
 
