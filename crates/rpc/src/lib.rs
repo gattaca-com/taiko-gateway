@@ -1,8 +1,10 @@
 use std::time::Duration;
 
-use alloy_provider::{Provider, ProviderBuilder, WsConnect};
+use alloy_provider::{Provider, ProviderBuilder};
+use alloy_rpc_types::eth::Transaction;
 use alloy_rpc_types_txpool::TxpoolContent;
 use crossbeam_channel::Sender;
+use eyre::{bail, eyre};
 use pc_common::{
     config::{RpcConfig, StaticConfig},
     metrics::MempoolMetrics,
@@ -10,12 +12,14 @@ use pc_common::{
     sequencer::Order,
 };
 use reqwest::Url;
+use serde::{Deserialize, Serialize};
 use server::RpcServer;
 use tokio::time::sleep;
-use tracing::{debug, error, info, Instrument};
-
+use tracing::{debug, error, info, warn, Instrument};
 mod error;
 mod server;
+use futures_util::{SinkExt, StreamExt};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 pub fn start_rpc(config: &StaticConfig, sequence_tx: Sender<Order>, mempool_tx: Sender<Order>) {
     let rpc_config: RpcConfig = config.into();
@@ -41,7 +45,7 @@ async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sende
     spawn(
         async move {
             loop {
-                // refetch full txpool every 5 minutes
+                // refetch full txpool every 30 seconds
                 if let Err(err) = fetch_txpool(rpc_url.clone(), tx_clone.clone()).await {
                     error!(%err, backoff, "txpool fetch failed. Retrying..");
                 }
@@ -62,20 +66,63 @@ async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sende
     }
 }
 
-async fn subscribe_mempool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {
-    info!(rpc_url = %rpc_url, "subscribing to mempool");
+async fn subscribe_mempool(ws_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {
+    info!(%ws_url, "subscribing to mempool transactions");
 
-    let provider = ProviderBuilder::new().on_ws(WsConnect::new(rpc_url)).await?;
+    let (ws_stream, _response) = connect_async(ws_url.as_str()).await?;
+    let (mut write, mut read) = ws_stream.split();
 
-    let mut sub = provider.subscribe_full_pending_transactions().await?;
+    // send a sub message
+    let subscribe_message = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_subscribe",
+        "params": ["newPendingTransactions", true]
+    })
+    .to_string();
 
-    while let Ok(tx) = sub.recv().await {
-        MempoolMetrics::tx_received();
-        // debug!(hash = %tx.inner.tx_hash(), "received from mempool");
-        let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from));
+    write.send(Message::Text(subscribe_message.into())).await?;
+
+    // skip sub confirmation
+    read.next().await;
+
+    while let Some(message) = read.next().await {
+        let message = message.map_err(|err| eyre!("ws connection error: {:?}", err))?;
+
+        match message {
+            Message::Text(raw) => {
+                let tx = match serde_json::from_str::<TxMessage>(&raw) {
+                    Ok(tx) => tx.params.result,
+                    Err(err) => {
+                        warn!(%err, %raw, "invalid message from mempool subscription");
+                        continue;
+                    }
+                };
+
+                MempoolMetrics::tx_received();
+                // debug!(hash = %tx.inner.tx_hash(), "received from mempool");
+                let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from));
+            }
+
+            Message::Ping(bytes) => {
+                write.send(Message::Pong(bytes)).await?;
+            }
+
+            Message::Close(frame) => {
+                if frame.is_some() {
+                    bail!("received close frame with data: {frame:?}");
+                } else {
+                    bail!("ws server closed the connection");
+                }
+            }
+
+            _ => {
+                warn!(?message, "unhandled message from mempool subscription");
+            }
+        }
     }
 
-    Ok(())
+    bail!("mempool subscription disconnected");
 }
 
 async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {
@@ -102,4 +149,29 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<(
     debug!(count, "fetched from txpool");
 
     Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TxMessage {
+    pub params: TxNotification,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TxNotification {
+    pub result: Transaction,
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::address;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_decode() {
+        let msg = json!({"jsonrpc":"2.0","method":"eth_subscription","params":{"subscription":"0xc87874441f89ee77d2146fbbc527ea67","result":{"blockHash":null,"blockNumber":null,"from":"0x8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4","gas":"0x5208","gasPrice":"0x5f5e100","maxFeePerGas":"0x5f5e100","maxPriorityFeePerGas":"0x1","hash":"0x707ba93a2e28a7aad8c4f3f8b950a4125c0665bd1d5e20b05fe0ed76d0dbc712","input":"0x","nonce":"0x5a","to":"0x8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4","transactionIndex":null,"value":"0x1","type":"0x2","accessList":[],"chainId":"0x28c62","v":"0x0","r":"0x3b5f60e7be4d4a4f70b95f03475f789f6898521c9efe4adf07f8e4c0e358dea5","s":"0x7b7b4cde4a0a5b12fff64672620566295481c42a7836d4091a7fda58cbea7966","yParity":"0x0"}}});
+        let tx: Transaction = serde_json::from_value::<TxMessage>(msg).unwrap().params.result;
+        assert_eq!(tx.from, address!("8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4"));
+    }
 }
