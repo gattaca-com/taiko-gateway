@@ -19,9 +19,10 @@ use pc_common::{
     proposer::{
         set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
     },
+    sequencer::Order,
     taiko::{
         pacaya::{
-            encode_and_compress_tx_list, l2::TaikoL2, propose_batch_blobs, propose_batch_calldata,
+            encode_and_compress_orders, l2::TaikoL2, propose_batch_blobs, propose_batch_calldata,
             BlockParams,
         },
         GOLDEN_TOUCH_ADDRESS,
@@ -66,7 +67,7 @@ impl ProposerManager {
                     info!(
                         n_blocks = request.block_params.len(),
                         all_txs = request.all_tx_list.len(),
-                        batch_size = request.compressed.len(),
+                        est_batch_size = request.compressed_est,
                         "proposing batch for blocks {}-{}",
                         request.start_block_num,
                         request.end_block_num
@@ -229,10 +230,7 @@ impl ProposerManager {
     ) -> (Bytes, Option<BlobTransactionSidecar>) {
         let parent_meta_hash = self.client.last_meta_hash().await;
 
-        let compressed: Bytes = request.compressed.clone();
-        ProposerMetrics::batch_size(compressed.len() as u64);
-
-        let should_use_blobs = self.should_use_blobs(&compressed);
+        let should_use_blobs = self.should_use_blobs(request.compressed_est);
         let (input, maybe_sidecar) = if should_use_blobs {
             let (input, sidecar) =
                 propose_batch_blobs(request, parent_meta_hash, self.client.address());
@@ -335,9 +333,9 @@ impl ProposerManager {
         }
     }
 
-    fn should_use_blobs(&self, compressed: &Bytes) -> bool {
+    fn should_use_blobs(&self, compressed_size: usize) -> bool {
         const CALLDATA_SIZE: usize = 100_000; // max calldata with some buffer
-        compressed.len() > CALLDATA_SIZE
+        compressed_size > CALLDATA_SIZE
     }
 }
 
@@ -381,7 +379,7 @@ fn request_from_blocks(
         end_block_num: full_blocks[0].header.number,
         block_params: Vec::new(),
         all_tx_list: Vec::new(),
-        compressed: Bytes::new(),
+        compressed_est: 0,
         last_timestamp: timestamp_override.unwrap_or(full_blocks[0].header.timestamp),
         coinbase,
     };
@@ -396,13 +394,13 @@ fn request_from_blocks(
             .transactions
             .into_transactions()
             .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| tx.inner.into())
+            .map(|tx| Order::new_with_sender(tx.inner, tx.from))
             .collect::<Vec<_>>();
 
         let mut new_tx_list = cur_params.all_tx_list.clone();
         new_tx_list.extend(txs.clone());
 
-        let compressed = encode_and_compress_tx_list(new_tx_list.clone());
+        let compressed = encode_and_compress_orders(new_tx_list.clone());
         if compressed.len() > TARGET_BATCH_SIZE {
             // push previous params and start new one
             let new_params = ProposeBatchParams {
@@ -410,8 +408,8 @@ fn request_from_blocks(
                 start_block_num: block.header.number,
                 end_block_num: 0, // set later
                 block_params: Vec::new(),
-                all_tx_list: txs.clone(),
-                compressed: encode_and_compress_tx_list(txs),
+                all_tx_list: txs,
+                compressed_est: compressed.len(),
                 last_timestamp: 0, // set later
                 coinbase,
             };
@@ -420,7 +418,7 @@ fn request_from_blocks(
             batches.push(old_params);
         } else {
             cur_params.all_tx_list = new_tx_list;
-            cur_params.compressed = compressed;
+            cur_params.compressed_est = compressed.len();
         }
 
         cur_params.last_timestamp = timestamp_override.unwrap_or(block.header.timestamp);
@@ -460,7 +458,7 @@ fn request_from_blocks(
 
     for params in batches.iter() {
         debug!(
-            batch_size = params.compressed.len(),
+            est_batch_size = params.compressed_est,
             blocks = params.block_params.len(),
             last_timestamp = params.last_timestamp,
             total_time_shift,

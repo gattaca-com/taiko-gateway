@@ -3,11 +3,10 @@ use std::sync::{
     Arc,
 };
 
-use alloy_consensus::TxEnvelope;
-use alloy_primitives::{Address, Bytes};
+use alloy_primitives::Address;
 use lazy_static::lazy_static;
 
-use crate::taiko::pacaya::BlockParams;
+use crate::{sequencer::Order, taiko::pacaya::BlockParams};
 
 lazy_static! {
     static ref IS_PROPOSE_DELAYED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -34,10 +33,10 @@ pub struct ProposeBatchParams {
     pub end_block_num: u64,
     pub last_timestamp: u64,
     pub block_params: Vec<BlockParams>,
-    /// all txs in the blocks, without anchor tx
-    pub all_tx_list: Vec<Arc<TxEnvelope>>,
-    /// Encoded / compressed tx lists
-    pub compressed: Bytes,
+    /// all orders in this batch, without anchor txs
+    pub all_tx_list: Vec<Order>,
+    /// estimated encoded / compressed tx list size
+    pub compressed_est: usize,
     pub coinbase: Address,
 }
 

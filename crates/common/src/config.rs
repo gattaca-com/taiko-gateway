@@ -42,7 +42,6 @@ pub struct L2ChainConfig {
 pub struct GatewayConfig {
     pub rpc_port: u16,
     pub simulator_url: Url,
-    pub propose_frequency_secs: u64,
     pub l2_target_block_time_ms: u64,
     pub dry_run: bool,
     /// If we dont receive a new L1 block for this amount of time, stop sequencing
@@ -61,7 +60,8 @@ pub struct GatewayConfig {
     pub lookahead: LookaheadConfig,
     pub jwt_secret_path: PathBuf,
     pub coinbase: Address,
-    #[serde(default = "default_usize::<5>")]
+    /// Number of simulators to run in parallel when sorting, higher means better blocks but more
+    /// overhead
     pub max_sims_per_loop: usize,
 }
 
@@ -158,7 +158,6 @@ impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
 }
 
 pub struct ProposerConfig {
-    pub propose_frequency: Duration,
     pub dry_run: bool,
     /// time
     pub l1_safe_lag: Duration,
@@ -168,7 +167,6 @@ pub struct ProposerConfig {
 impl From<&StaticConfig> for ProposerConfig {
     fn from(config: &StaticConfig) -> Self {
         Self {
-            propose_frequency: Duration::from_secs(config.gateway.propose_frequency_secs),
             dry_run: config.gateway.dry_run,
             l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
             coinbase: config.gateway.coinbase,

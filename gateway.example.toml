@@ -19,7 +19,6 @@ whitelist_contract = "0x83F71950e2b30Deb2419De69b6173A2c581b1C13"   # preconfWhi
 [gateway]
 rpc_port = 10001
 simulator_url = "http://0.0.0.0:8545"
-propose_frequency_secs = 30
 l2_target_block_time_ms = 2_000
 dry_run = false
 # if gateway doesnt receive a new L1 block for this amount of time, stop sequencing
@@ -35,3 +34,5 @@ soft_block_url = ""
 handover_window_slots = 4
 handover_start_buffer_ms = 6_000
 jwt_secret_path = "~/taiko-geth-gattaca/geth/jwtsecret"
+# Number of simulators to run in parallel when sorting, higher means better blocks but more overhead
+max_sims_per_loop = 5
