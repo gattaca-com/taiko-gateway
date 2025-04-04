@@ -5,7 +5,9 @@ use std::{
 };
 
 use ::backtrace::Backtrace;
+use alloy_primitives::hex;
 use alloy_rpc_types::Header;
+use alloy_sol_types::SolInterface;
 use tracing::{error, info};
 use tracing_appender::{non_blocking::WorkerGuard, rolling::Rotation};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
@@ -174,4 +176,33 @@ fn get_crate_filter(crates_level: tracing::Level) -> EnvFilter {
     }
 
     env_filter
+}
+
+pub fn extract_revert_reason<T: SolInterface>(input: &str) -> Option<T> {
+    const MARKER: &str = "data: \"0x";
+
+    let start = input.find(MARKER)?;
+    let code_start = start + MARKER.len();
+    let code_end = code_start + 8; // 4 bytes in hex
+    let hex_str = input.get(code_start..code_end)?;
+    let bytes = hex::decode(hex_str).ok()?;
+
+    let err = T::abi_decode(&bytes, true).ok()?;
+
+    Some(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::taiko::pacaya::preconf::PreconfWhitelist::{
+        InvalidOperatorCount, PreconfWhitelistErrors,
+    };
+
+    #[test]
+    fn test_extract_revert_reason() {
+        let input = r#"server returned an error response: error code 3: execution reverted, data: "0x7d943b8f""#;
+        let result: PreconfWhitelistErrors = extract_revert_reason(input).unwrap();
+        assert_eq!(PreconfWhitelistErrors::InvalidOperatorCount(InvalidOperatorCount {}), result);
+    }
 }
