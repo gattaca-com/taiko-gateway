@@ -109,7 +109,7 @@ pub async fn start_looahead_loop(
                             extract_revert_reason::<PreconfWhitelistErrors>(&err.to_string())
                         {
                             match err {
-                                PreconfWhitelistErrors::OperatorNotAvailableYet(_) 
+                                PreconfWhitelistErrors::OperatorNotAvailableYet(_)
                                 | PreconfWhitelistErrors::InvalidOperatorCount(_) => {
                                     Address::ZERO
                                 }
