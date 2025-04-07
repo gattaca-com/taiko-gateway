@@ -4,10 +4,13 @@ use alloy_primitives::{Address, U256};
 use alloy_provider::{network::EthereumWallet, Provider, ProviderBuilder};
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::sol;
+use eyre::bail;
 use tracing::{info, warn};
 use url::Url;
 
-use crate::{metrics::ProposerMetrics, runtime::spawn, taiko::pacaya::l1::TaikoL1};
+use crate::{
+    config::TaikoChainParams, metrics::ProposerMetrics, runtime::spawn, taiko::pacaya::l1::TaikoL1,
+};
 
 sol!(
     #[derive(Debug, Eq, PartialEq)]
@@ -23,6 +26,7 @@ pub async fn check_and_approve_balance(
     l1_contract: Address,
     l1_rpc: Url,
     operator: PrivateKeySigner, // signer of who will call proposeBatch
+    taiko_config: &TaikoChainParams,
 ) -> eyre::Result<()> {
     let operator_address = operator.address();
     let wallet = EthereumWallet::new(operator);
@@ -49,6 +53,18 @@ pub async fn check_and_approve_balance(
         info!("depositing bond to TaikoInbox contract");
         let tx_hash = taiko_l1.depositBond(current_balance).send().await?.watch().await?;
         info!(%tx_hash, "deposited bond");
+    }
+
+    let current_balance = erc20.balanceOf(operator_address).call().await?._0;
+    let contract_balance = taiko_l1.bondBalanceOf(operator_address).call().await?._0;
+
+    let total_balance = current_balance + contract_balance;
+    // 1 block every 2 seconds for 32 L1 blocks
+    let min_bond = U256::from(taiko_config.bond_base) +
+        U256::from(taiko_config.bond_per_block) * U256::from(200);
+
+    if total_balance < min_bond {
+        bail!("total balance is too low, get more tokens: {} < {}", total_balance, min_bond);
     }
 
     spawn(record_balances_loop(taiko_token, l1_contract, l1_rpc, operator_address));
