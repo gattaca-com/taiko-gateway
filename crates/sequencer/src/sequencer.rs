@@ -249,6 +249,12 @@ impl Sequencer {
                     // use those to clear the txpool and restart the loop
                     self.tx_pool.update_nonces(sort_data.state_nonces);
                     debug!("exhausted active orders past target seal, resetting");
+                    if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
+                        self.send_batch_to_proposer(
+                            "sealed last for this anchor (no active orders)",
+                            false,
+                        );
+                    }
                     SequencerState::default()
                 }
             }
