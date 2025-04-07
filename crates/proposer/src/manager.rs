@@ -266,11 +266,7 @@ impl ProposerManager {
             let err_str = err.to_string();
             let err = if let Some(decoded) = extract_revert_reason::<TaikoL1Errors>(&err_str) {
                 // TODO: decide what to do here
-                match decoded {
-                    _ => {
-                        format!("revert: {decoded:?}")
-                    }
-                }
+                format!("revert: {decoded:?}")
             } else {
                 err_str
             };
