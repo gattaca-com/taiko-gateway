@@ -91,7 +91,12 @@ impl TxPool {
     }
 
     pub fn update_nonces(&mut self, state_nonces: StateNonces) {
-        self.nonces = state_nonces;
+        // merge nonces, note this is potentially unbounded as we need to keep all user nonces
+        // in memory. this is not an issue since the size is very small, (address + nonce) and
+        // the cache will be cleared every epoch or so since we currently dont process blocks
+        // sequenced by others
+
+        self.nonces.merge_or_update(state_nonces);
 
         for (sender, state_nonce) in self.nonces.iter() {
             if let Some(tx_list) = self.tx_lists.get_mut(sender) {

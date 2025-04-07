@@ -14,6 +14,7 @@ use pc_common::{
     taiko::AnchorParams,
 };
 use tokio::sync::mpsc::UnboundedSender;
+use tracing::debug;
 
 use crate::sorting::SortData;
 
@@ -139,6 +140,35 @@ impl StateNonces {
 
     pub fn is_valid_block(&self, block_number: u64) -> bool {
         self.valid_block == block_number
+    }
+
+    pub fn merge_or_update(&mut self, new_nonces: Self) {
+        let old = self.nonces.len();
+        if new_nonces.valid_block == self.valid_block + 1 {
+            self.extend(new_nonces.nonces);
+
+            let new = self.nonces.len();
+            debug!(
+                old,
+                new,
+                valid = new_nonces.valid_block,
+                old_valid = self.valid_block,
+                "merged nonce cache"
+            );
+        } else {
+            self.nonces = new_nonces.nonces;
+
+            let new = self.nonces.len();
+            debug!(
+                old,
+                new,
+                valid = new_nonces.valid_block,
+                old_valid = self.valid_block,
+                "replaced nonce cache"
+            );
+        }
+
+        self.valid_block = new_nonces.valid_block;
     }
 }
 
