@@ -22,12 +22,12 @@ use pc_common::{
     sequencer::Order,
     taiko::{
         pacaya::{
-            encode_and_compress_orders, l2::TaikoL2, propose_batch_blobs, propose_batch_calldata,
-            BlockParams,
+            encode_and_compress_orders, l1::TaikoL1::TaikoL1Errors, l2::TaikoL2,
+            propose_batch_blobs, propose_batch_calldata, BlockParams,
         },
         GOLDEN_TOUCH_ADDRESS,
     },
-    utils::{alert_discord, verify_and_log_block},
+    utils::{alert_discord, extract_revert_reason, verify_and_log_block},
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
@@ -263,12 +263,24 @@ impl ProposerManager {
         while let Err(err) = self.propose_one_batch(input.clone(), maybe_sidecar.clone()).await {
             ProposerMetrics::proposed_batches(false);
 
+            let err_str = err.to_string();
+            let err = if let Some(decoded) = extract_revert_reason::<TaikoL1Errors>(&err_str) {
+                // TODO: decide what to do here
+                match decoded {
+                    _ => {
+                        format!("revert: {decoded:?}")
+                    }
+                }
+            } else {
+                err_str
+            };
+
             set_propose_delayed();
             retries += 1;
 
             if retries == 1 {
                 let msg = format!(
-                    "failed to propose batch, retrying in 12 secs. bns={start_bn}-{end_bn}, err={err:?}"
+                    "failed to propose batch, retrying in 12 secs. bns={start_bn}-{end_bn}, err={err}"
                 );
                 error!("{msg}");
                 alert_discord(&msg);
