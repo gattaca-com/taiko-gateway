@@ -41,15 +41,6 @@ async fn main() {
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
 
-    check_and_approve_balance(
-        config.l2.taiko_token,
-        config.l2.l1_contract,
-        config.l1.rpc_url.clone(),
-        envs.proposer_signer_key.clone(),
-    )
-    .await
-    .map_err(|e| eyre!("balance checks: {e}"))?;
-
     let chain_config = get_and_validate_config(
         config.l1.clone(),
         config.l2.clone(),
@@ -58,6 +49,16 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     )
     .await
     .map_err(|e| eyre!("get config: {e}"))?;
+
+    check_and_approve_balance(
+        config.l2.taiko_token,
+        config.l2.l1_contract,
+        config.l1.rpc_url.clone(),
+        envs.proposer_signer_key.clone(),
+        &chain_config,
+    )
+    .await
+    .map_err(|e| eyre!("balance checks: {e}"))?;
 
     let beacon_handle = init_beacon(config.l1.beacon_url.clone()).await?;
     let l1_number = Arc::new(AtomicU64::new(0));

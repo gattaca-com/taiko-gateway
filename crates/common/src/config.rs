@@ -1,6 +1,6 @@
 use std::{fs, ops::Deref, path::PathBuf, time::Duration};
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use alloy_signer_local::PrivateKeySigner;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -211,6 +211,10 @@ pub struct TaikoChainParams {
     pub max_anchor_timestamp_offset: u64,
     /// Max gas limit for a block, this + anchor gas limit is the gas limit of the block
     pub block_max_gas_limit: u128,
+    /// Liveness bond base
+    pub bond_base: U256,
+    /// Liveness bond multiplier
+    pub bond_per_block: U256,
 }
 
 impl TaikoChainParams {
@@ -219,6 +223,8 @@ impl TaikoChainParams {
         base_fee_config: BaseFeeConfig,
         max_anchor_height_offset: u64,
         block_max_gas_limit: u64,
+        bond_base: U256,
+        bond_per_block: U256,
     ) -> Self {
         Self {
             chain_id,
@@ -226,6 +232,8 @@ impl TaikoChainParams {
             max_anchor_height_offset,
             max_anchor_timestamp_offset: max_anchor_height_offset * 12,
             block_max_gas_limit: block_max_gas_limit as u128,
+            bond_base,
+            bond_per_block,
         }
     }
 
@@ -235,6 +243,7 @@ impl TaikoChainParams {
 }
 
 impl TaikoChainParams {
+    #[cfg(test)]
     pub const fn new_helder() -> Self {
         const BASE_FEE_CONFIG: BaseFeeConfig = BaseFeeConfig {
             adjustment_quotient: 8,
@@ -254,6 +263,8 @@ impl TaikoChainParams {
             BASE_FEE_CONFIG,
             MAX_ANCHOR_HEIGHT_OFFSET,
             BLOCK_MAX_GAS_LIMIT,
+            U256::ZERO,
+            U256::ZERO,
         )
     }
 }
