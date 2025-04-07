@@ -410,7 +410,7 @@ fn request_from_blocks(
                 block_params: Vec::new(),
                 all_tx_list: txs,
                 compressed_est: compressed.len(),
-                last_timestamp: 0, // set later
+                last_timestamp: timestamp_override.unwrap_or(block.header.timestamp),
                 coinbase,
             };
 
@@ -420,9 +420,6 @@ fn request_from_blocks(
             cur_params.all_tx_list = new_tx_list;
             cur_params.compressed_est = compressed.len();
         }
-
-        cur_params.last_timestamp = timestamp_override.unwrap_or(block.header.timestamp);
-        cur_params.end_block_num = block.header.number;
 
         let time_shift: u8 = block
             .header
@@ -440,6 +437,9 @@ fn request_from_blocks(
             .unwrap_or(0);
         let time_shift = timeshift_override.unwrap_or(time_shift);
         total_time_shift += time_shift as u64;
+
+        cur_params.last_timestamp = timestamp_override.unwrap_or(block.header.timestamp);
+        cur_params.end_block_num = block.header.number;
 
         cur_params.block_params.push(BlockParams {
             numTransactions: block_txs as u16,
