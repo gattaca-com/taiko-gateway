@@ -21,7 +21,7 @@ use pc_common::{
         get_difficulty, get_extra_data,
         lookahead::LookaheadHandle,
         pacaya::{estimate_compressed_size, BlockParams},
-        AnchorParams, ANCHOR_GAS_LIMIT,
+        AnchorParams, ANCHOR_GAS_LIMIT, GOLDEN_TOUCH_ADDRESS,
     },
     types::BlockEnv,
     utils::utcnow_sec,
@@ -544,7 +544,9 @@ impl Sequencer {
 
         // TODO: remove this
         for (address, nonce) in txs {
-            assert_eq!(sort_data.state_nonces.get(&address), Some(&(nonce + 1)));
+            if address != GOLDEN_TOUCH_ADDRESS {
+                assert_eq!(sort_data.state_nonces.get(&address), Some(&(nonce + 1)));
+            }
         }
 
         // sort_data.state_nonces is a superset of block txs as it has all invalid nonces simulated
