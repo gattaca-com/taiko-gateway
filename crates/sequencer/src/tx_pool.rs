@@ -107,15 +107,15 @@ impl TxPool {
         }
     }
 
-    /// Clear all mined nonces for each address (built block is now the parent)
-    pub fn clear_mined(
-        &mut self,
-        mined_block: u64,
-        mined_txs: impl Iterator<Item = (Address, u64)>,
-    ) {
-        let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
-        self.update_nonces(nonces);
-    }
+    // /// Clear all mined nonces for each address (built block is now the parent)
+    // pub fn clear_mined(
+    //     &mut self,
+    //     mined_block: u64,
+    //     mined_txs: impl Iterator<Item = (Address, u64)>,
+    // ) {
+    //     let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
+    //     self.update_nonces(nonces);
+    // }
 
     pub fn set_no_orders(&mut self) {
         self.new_orders = false;

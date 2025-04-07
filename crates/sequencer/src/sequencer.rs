@@ -541,7 +541,19 @@ impl Sequencer {
         BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
-        self.tx_pool.clear_mined(block_number, txs);
+
+        // TODO: remove this
+        for (address, nonce) in txs {
+            assert_eq!(sort_data.state_nonces.get(&address), Some(&(nonce + 1)));
+        }
+
+        // sort_data.state_nonces is a superset of block txs as it has all invalid nonces simulated
+        // before
+        let mut state_nonces = sort_data.state_nonces;
+        state_nonces.valid_block = block_number + 1;
+
+        // self.tx_pool.clear_mined(block_number, txs);
+        self.tx_pool.update_nonces(state_nonces);
 
         // mark for being verified later
         self.ctx.new_preconf_l2_block(&block, true);
