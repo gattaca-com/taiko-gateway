@@ -8,6 +8,7 @@ use std::{
 };
 
 use alloy_consensus::Transaction;
+use alloy_primitives::Address;
 use alloy_rpc_types::{Block, Header};
 use alloy_sol_types::SolCall;
 use eyre::ContextCompat;
@@ -22,6 +23,7 @@ use crate::types::SequencerState;
 
 /// Sequencing state
 pub struct SequencerContext {
+    pub coinbase: Address,
     pub l1_safe_lag: u64,
     pub last_l1_receive: Instant,
     /// Current state
@@ -44,7 +46,12 @@ pub struct SequencerContext {
 }
 
 impl SequencerContext {
-    pub fn new(l1_safe_lag: u64, l2_origin: Arc<AtomicU64>, l1_number: Arc<AtomicU64>) -> Self {
+    pub fn new(
+        l1_safe_lag: u64,
+        l2_origin: Arc<AtomicU64>,
+        l1_number: Arc<AtomicU64>,
+        coinbase: Address,
+    ) -> Self {
         Self {
             l1_safe_lag,
             last_l1_receive: Instant::now(),
@@ -56,6 +63,7 @@ impl SequencerContext {
             l2_origin,
             l1_number,
             parent_anchor_block_id: 0,
+            coinbase,
         }
     }
 
@@ -74,31 +82,32 @@ impl SequencerContext {
 
     /// Insert a new preconfed L2 block, this could be sequenced by us or another gateway
     /// we only verify our blocks
-    pub fn new_preconf_l2_block(&mut self, new_block: &Block, ours: bool) {
+    pub fn new_preconf_l2_block(&mut self, new_block: &Block) {
         let header = &new_block.header;
+
+        let ours = header.beneficiary == self.coinbase;
+
         if ours {
             self.to_verify.insert(header.number, header.clone());
         }
 
-        let Some(parent) = self.l2_headers.back() else {
+        let Some(last_seen) = self.l2_headers.back() else {
             // first block
             self.update_parent_block_id(new_block);
             return;
         };
 
-        debug!(
-            ours,
-            new_number = header.number,
-            last_number = parent.block_number,
-            n_txs = new_block.transactions.len(),
-            new_hash = %header.hash,
-            last_hash = %parent.hash,
-            coinbase = %header.beneficiary,
-            "new l2 preconf block"
-        );
-
-        if parent.block_number + 1 == header.number && parent.hash == header.parent_hash {
+        if last_seen.block_number + 1 == header.number && last_seen.hash == header.parent_hash {
             // happy case, we have the previous block
+            debug!(
+                number = header.number,
+                n_txs = new_block.transactions.len(),
+                hash = %header.hash,
+                parent_hash = %last_seen.hash,
+                coinbase = %header.beneficiary,
+                "new l2 preconf block"
+            );
+
             self.update_parent_block_id(new_block);
             return;
         }
@@ -107,7 +116,14 @@ impl SequencerContext {
         if let Some(local) = self.l2_headers.iter().position(|p| p.block_number == header.number) {
             if self.l2_headers[local].hash != header.hash {
                 // reorg, reset all following blocks
-                warn!(new_hash = %header.hash, old_hash = %self.l2_headers[local].hash, "l2 reorg: {} -> {}", self.l2_headers[local].block_number, parent.block_number);
+
+                debug!(
+                    n_txs = new_block.transactions.len(),
+                    new_hash = %header.hash,
+                    reorged_hash = %self.l2_headers[local].hash,
+                    coinbase = %header.beneficiary,
+                    "l2 reorg: {} -> {}", header.number, last_seen.block_number
+                );
                 self.l2_headers.truncate(local); // remove local too
                 self.update_parent_block_id(new_block);
             } else {
@@ -115,11 +131,15 @@ impl SequencerContext {
             }
         } else {
             // missed some blocks
-            if parent.block_number < header.number {
+            if last_seen.block_number < header.number {
                 warn!(
-                    new_number = header.number,
-                    last_number = parent.block_number,
-                    "l2 block was never seen"
+                    number = header.number,
+                    last_seen = last_seen.block_number,
+                    n_txs = new_block.transactions.len(),
+                    hash = %header.hash,
+                    parent_hash = %last_seen.hash,
+                    coinbase = %header.beneficiary,
+                    "new l2 preconf block (missed blocks)"
                 );
 
                 self.update_parent_block_id(new_block);
@@ -127,9 +147,13 @@ impl SequencerContext {
                 // missed some previous blocks, the parent is now potentially on
                 // the wrong fork
                 warn!(
-                    new_number = header.number,
-                    last_number = parent.block_number,
-                    "l2 block may cause an unhandled reorg"
+                    number = header.number,
+                    last_seen = last_seen.block_number,
+                    n_txs = new_block.transactions.len(),
+                    hash = %header.hash,
+                    parent_hash = %last_seen.hash,
+                    coinbase = %header.beneficiary,
+                    "new l2 preconf block may cause an unhandled reorg"
                 );
             }
         }

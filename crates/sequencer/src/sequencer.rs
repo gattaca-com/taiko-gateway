@@ -78,7 +78,12 @@ impl Sequencer {
     ) -> Self {
         let chain_config = taiko_config.params;
         let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config, sim_tx);
-        let ctx = SequencerContext::new(config.l1_safe_lag, l2_origin, l1_number);
+        let ctx = SequencerContext::new(
+            config.l1_safe_lag,
+            l2_origin,
+            l1_number,
+            config.coinbase_address,
+        );
 
         Self {
             config,
@@ -370,7 +375,7 @@ impl Sequencer {
         receive_for(
             Duration::from_millis(10),
             |new_block| {
-                self.ctx.new_preconf_l2_block(&new_block, false);
+                self.ctx.new_preconf_l2_block(&new_block);
             },
             &self.spine.l2_blocks_rx,
         );
@@ -544,8 +549,7 @@ impl Sequencer {
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
         self.tx_pool.clear_mined(block_number, txs);
 
-        // mark for being verified later
-        self.ctx.new_preconf_l2_block(&block, true);
+        self.ctx.new_preconf_l2_block(&block);
         self.gossip_soft_block(block.clone());
 
         let is_first_block = self.proposer_request.is_none();
