@@ -199,7 +199,6 @@ impl SequencerContext {
         }
 
         // prune l2 blocks
-        let n_before = self.l2_headers.len();
         while let Some(l2_block) = self.l2_headers.front() {
             // keep last origin block
             if l2_block.block_number < new_header.number {
@@ -208,8 +207,6 @@ impl SequencerContext {
                 break;
             }
         }
-        let n_after = self.l2_headers.len();
-        debug!(pruned = n_before - n_after, "pruned l2 blocks");
     }
 
     pub fn safe_l1_header(&self) -> Option<&Header> {
