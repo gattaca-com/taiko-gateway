@@ -342,7 +342,7 @@ impl Sequencer {
             .proposer_request
             .as_ref()
             .map(|p| p.start_block_num - 1) // assumption is that we're still in the first batch being sequenced
-            .unwrap_or(self.ctx.parent.block_number);
+            .unwrap_or(self.ctx.l2_parent().block_number);
 
         if l2_origin < end {
             warn!("resyncing to L2 origin: {l2_origin} -> {end}");
@@ -388,7 +388,7 @@ impl Sequencer {
         receive_for(
             Duration::from_millis(10),
             |tx| {
-                self.tx_pool.put(tx, self.ctx.parent.block_number);
+                self.tx_pool.put(tx, self.ctx.l2_parent().block_number);
             },
             &self.spine.rpc_rx,
         );
@@ -396,7 +396,7 @@ impl Sequencer {
         receive_for(
             Duration::from_millis(10),
             |tx| {
-                self.tx_pool.put(tx, self.ctx.parent.block_number);
+                self.tx_pool.put(tx, self.ctx.l2_parent().block_number);
             },
             &self.spine.mempool_rx,
         );
@@ -425,7 +425,7 @@ impl Sequencer {
 
     fn is_ready(&self) -> bool {
         self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag &&
-            self.ctx.parent.block_number > 0
+            self.ctx.l2_headers.back().is_some()
     }
 
     fn maybe_refresh_anchor(&mut self) {
@@ -464,7 +464,7 @@ impl Sequencer {
         let new = AnchorParams {
             block_id: safe_l1_header.number,
             state_root: safe_l1_header.state_root,
-            timestamp: self.ctx.parent.timestamp.max(safe_l1_header.timestamp),
+            timestamp: self.ctx.l2_parent().timestamp.max(safe_l1_header.timestamp),
         };
 
         debug!(reason, anchor =? new, "refresh anchor");
@@ -478,13 +478,14 @@ impl Sequencer {
             bail!("no anchor");
         };
 
-        debug!(?anchor, parent =? self.ctx.parent, "assembling anchor");
+        let parent = *self.ctx.l2_parent();
+
+        debug!(?anchor, parent =? parent, "assembling anchor");
 
         let timestamp = utcnow_sec() + self.config.target_block_time.as_secs();
-        let (tx, l2_base_fee) =
-            self.simulator.assemble_anchor(timestamp, self.ctx.parent, anchor)?;
+        let (tx, l2_base_fee) = self.simulator.assemble_anchor(timestamp, parent, anchor)?;
 
-        let block_number = self.ctx.parent.block_number + 1;
+        let block_number = parent.block_number + 1;
         let block_env = get_block_env_from_anchor(
             block_number,
             self.chain_config.block_max_gas_limit,
@@ -503,7 +504,7 @@ impl Sequencer {
                     bail!("failed simulate anchor, res={res:?}");
                 };
 
-                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.parent, gas_used, builder_payment, "simulated anchor");
+                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.l2_headers, gas_used, builder_payment, "simulated anchor");
                 Ok((state_id, block_info))
             }
             Err(err) => {

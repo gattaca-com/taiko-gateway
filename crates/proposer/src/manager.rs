@@ -22,7 +22,12 @@ use pc_common::{
     sequencer::Order,
     taiko::{
         pacaya::{
-            encode_and_compress_orders, l1::TaikoL1::TaikoL1Errors, l2::TaikoL2,
+            encode_and_compress_orders,
+            l1::TaikoL1::TaikoL1Errors,
+            l2::TaikoL2,
+            preconf::{
+                PreconfRouter::PreconfRouterErrors, PreconfWhitelist::PreconfWhitelistErrors,
+            },
             propose_batch_blobs, propose_batch_calldata, BlockParams,
         },
         GOLDEN_TOUCH_ADDRESS,
@@ -264,12 +269,18 @@ impl ProposerManager {
             ProposerMetrics::proposed_batches(false);
 
             let err_str = err.to_string();
-            let err = if let Some(decoded) = extract_revert_reason::<TaikoL1Errors>(&err_str) {
-                // TODO: decide what to do here
-                format!("revert: {decoded:?}")
-            } else {
-                err_str
-            };
+
+            let err = extract_revert_reason::<TaikoL1Errors>(&err_str)
+                .map(|e| format!("{e:?}"))
+                .or_else(|| {
+                    extract_revert_reason::<PreconfWhitelistErrors>(&err_str)
+                        .map(|e| format!("{e:?}"))
+                })
+                .or_else(|| {
+                    extract_revert_reason::<PreconfRouterErrors>(&err_str).map(|e| format!("{e:?}"))
+                })
+                .map(|e| format!("revert: {e}"))
+                .unwrap_or_else(|| err_str);
 
             set_propose_delayed();
             retries += 1;
@@ -358,7 +369,7 @@ async fn fetch_n_blocks(
         let block = provider
             .get_block_by_number(bn.into(), BlockTransactionsKind::Full)
             .await?
-            .ok_or_eyre("missing block")?;
+            .ok_or_else(|| eyre!("failed to fetch block {bn} from rpc"))?;
         blocks.push(block.into());
     }
 
