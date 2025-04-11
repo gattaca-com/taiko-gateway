@@ -16,7 +16,7 @@ use pc_common::metrics::BlocksMetrics;
 use reqwest::Url;
 use serde::Deserialize;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// Fetches new blocks from rpc
 // TODO: fix error flows
@@ -99,7 +99,7 @@ impl BlockFetcher {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "preconf_fetch" fields(id = %id))]
+    #[tracing::instrument(skip_all, name = "origin_fetch" fields(id = %id))]
     pub async fn run_origin_fetch(
         self,
         id: &str,
@@ -215,13 +215,15 @@ async fn fetch_origin_blocks(
 
         let last = l2_origin.swap(l2_new_origin, Ordering::Relaxed);
 
+        debug!(last, new = l2_new_origin, "fetched l2 origin");
+
         if l2_new_origin > last {
             BlocksMetrics::l2_origin_block_number(l2_new_origin);
             // fetch all the proposed blocks
             fetch_last_headers(&provider, tx.clone(), last + 1, l2_new_origin).await?;
         }
 
-        sleep(Duration::from_secs(12)).await;
+        sleep(Duration::from_secs(6)).await;
     }
 }
 
