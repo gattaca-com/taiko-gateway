@@ -342,16 +342,16 @@ impl Sequencer {
 
     // if some blocks havent landed yet, we resync to the latest anchor
     fn check_resync(&mut self) {
-        let l2_origin = self.ctx.l2_origin();
-        let end = self
+        let origin = self.ctx.l2_origin();
+        let target = self
             .proposer_request
             .as_ref()
             .map(|p| p.start_block_num - 1) // assumption is that we're still in the first batch being sequenced
             .unwrap_or(self.ctx.l2_parent().block_number);
 
-        if l2_origin < end {
-            warn!("resyncing to L2 origin: {l2_origin} -> {end}");
-            let _ = self.spine.proposer_tx.send(ProposalRequest::Resync { origin: l2_origin, end });
+        if origin < target {
+            warn!(origin, target, "resyncing to L2 origin");
+            let _ = self.spine.proposer_tx.send(ProposalRequest::Resync { origin, end: target });
         }
     }
 

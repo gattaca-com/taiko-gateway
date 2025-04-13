@@ -27,7 +27,7 @@ pub fn propose_batch_calldata(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> Bytes {
-    let compressed = encode_and_compress_orders(request.all_tx_list);
+    let compressed = encode_and_compress_orders(request.all_tx_list, true);
     ProposerMetrics::batch_size(compressed.len() as u64);
 
     if compressed.len() > TARGET_BATCH_SIZE {
@@ -77,7 +77,7 @@ pub fn propose_batch_blobs(
     parent_meta_hash: B256,
     proposer: Address,
 ) -> (Bytes, BlobTransactionSidecar) {
-    let compressed = encode_and_compress_orders(request.all_tx_list);
+    let compressed = encode_and_compress_orders(request.all_tx_list, true);
     ProposerMetrics::batch_size(compressed.len() as u64);
 
     if compressed.len() > TARGET_BATCH_SIZE {
@@ -152,12 +152,12 @@ fn compress_bytes(data: &[u8]) -> Vec<u8> {
 }
 
 // TODO: re-use the RLP encoding here
-pub fn encode_and_compress_orders(orders: Vec<Order>) -> Bytes {
+pub fn encode_and_compress_orders(orders: Vec<Order>, log: bool) -> Bytes {
     let tx_list = orders.iter().map(|o| o.tx()).collect::<Vec<_>>();
-    encode_and_compress_tx_list(tx_list)
+    encode_and_compress_tx_list(tx_list, log)
 }
 
-pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Bytes {
+pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>, log: bool) -> Bytes {
     let n_txs = tx_list.len();
     let start = Instant::now();
     let encoded = alloy_rlp::encode(tx_list);
@@ -172,16 +172,18 @@ pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> Bytes {
 
     let expected_len = (COMPRESS_RATIO * encoded_len as f64).round() as usize;
 
-    debug!(
-        n_txs,
-        encoded_len,
-        ?encode_time,
-        ?compress_time,
-        compress_len,
-        expected_len,
-        compressed_ratio,
-        "compress tx list"
-    );
+    if log {
+        debug!(
+            n_txs,
+            encoded_len,
+            ?encode_time,
+            ?compress_time,
+            compress_len,
+            expected_len,
+            compressed_ratio,
+            "compress tx list"
+        );
+    }
 
     b.into()
 }

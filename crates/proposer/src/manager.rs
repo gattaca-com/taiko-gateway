@@ -455,7 +455,7 @@ fn request_from_blocks(
         let mut new_tx_list = cur_params.all_tx_list.clone();
         new_tx_list.extend(txs.clone());
 
-        let compressed = encode_and_compress_orders(new_tx_list.clone());
+        let compressed = encode_and_compress_orders(new_tx_list.clone(), false);
         if compressed.len() > TARGET_BATCH_SIZE ||
             cur_params.block_params.len() >= max_blocks_per_batch
         {
