@@ -71,7 +71,7 @@ pub async fn get_and_validate_config(
         taiko_config.blockMaxGasLimit as u64,
         U256::from(taiko_config.livenessBondBase),
         U256::from(taiko_config.livenessBondPerBlock),
-        taiko_config.maxBlocksPerBatch.try_into().unwrap(),
+        taiko_config.maxBlocksPerBatch.into(),
     );
 
     Ok(chain_config)
