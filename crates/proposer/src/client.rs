@@ -148,7 +148,7 @@ impl L1Client {
             .provider()
             .estimate_gas(&tx)
             .await
-            .map_err(|err| eyre!(format!("failed gas estimation: {err}")))?;
+            .map_err(|err| eyre!("failed gas estimation: {err}"))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
             match self.provider().estimate_eip1559_fees(None).await {

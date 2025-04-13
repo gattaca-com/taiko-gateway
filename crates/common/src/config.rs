@@ -215,6 +215,8 @@ pub struct TaikoChainParams {
     pub bond_base: U256,
     /// Liveness bond multiplier
     pub bond_per_block: U256,
+    /// Max number of blocks in a batch
+    pub max_blocks_per_batch: usize,
 }
 
 impl TaikoChainParams {
@@ -225,6 +227,7 @@ impl TaikoChainParams {
         block_max_gas_limit: u64,
         bond_base: U256,
         bond_per_block: U256,
+        max_blocks_per_batch: usize,
     ) -> Self {
         Self {
             chain_id,
@@ -234,6 +237,7 @@ impl TaikoChainParams {
             block_max_gas_limit: block_max_gas_limit as u128,
             bond_base,
             bond_per_block,
+            max_blocks_per_batch,
         }
     }
 
@@ -257,6 +261,7 @@ impl TaikoChainParams {
         const BLOCK_MAX_GAS_LIMIT: u64 = 240_000_000;
 
         const HELDER_TAIKO_CHAIN_ID: u64 = 167010;
+        const MAX_BLOCKS_PER_BATCH: usize = 768;
 
         Self::new(
             HELDER_TAIKO_CHAIN_ID,
@@ -265,6 +270,7 @@ impl TaikoChainParams {
             BLOCK_MAX_GAS_LIMIT,
             U256::ZERO,
             U256::ZERO,
+            MAX_BLOCKS_PER_BATCH,
         )
     }
 }
