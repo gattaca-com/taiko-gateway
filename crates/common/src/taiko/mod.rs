@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use alloy_primitives::{address, b256, keccak256, Address, Bytes, B256, U256};
+use alloy_rpc_types::Header;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolValue;
 mod blob;
@@ -61,12 +62,23 @@ pub struct AnchorParams {
     pub timestamp: u64,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct ParentParams {
     pub timestamp: u64,
     pub gas_used: u32,
     pub block_number: u64,
     pub hash: B256,
+}
+
+impl From<&Header> for ParentParams {
+    fn from(header: &Header) -> Self {
+        Self {
+            timestamp: header.timestamp,
+            gas_used: header.gas_used.try_into().unwrap(),
+            block_number: header.number,
+            hash: header.hash,
+        }
+    }
 }
 
 #[cfg(test)]

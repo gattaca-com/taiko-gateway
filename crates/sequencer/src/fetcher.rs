@@ -160,7 +160,7 @@ async fn fetch_last_blocks(
 }
 
 async fn subscribe_headers(ws_url: Url, tx: Sender<Header>) -> eyre::Result<()> {
-    info!(ws_url = %ws_url, "subscribing to headers");
+    info!(%ws_url, "subscribing to headers");
 
     let provider =
         ProviderBuilder::new().disable_recommended_fillers().on_ws(WsConnect::new(ws_url)).await?;
@@ -173,12 +173,13 @@ async fn subscribe_headers(ws_url: Url, tx: Sender<Header>) -> eyre::Result<()> 
 }
 
 async fn subscribe_blocks(rpc_url: Url, ws_url: Url, tx: Sender<Block>) -> eyre::Result<()> {
-    info!(ws_url = %ws_url, "subscribing to blocks");
+    info!(%ws_url, "subscribing to blocks");
 
     let http_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(rpc_url);
     let ws_provider =
         ProviderBuilder::new().disable_recommended_fillers().on_ws(WsConnect::new(ws_url)).await?;
     let mut sub = ws_provider.subscribe_blocks().await?;
+
     while let Ok(header) = sub.recv().await {
         let block = http_provider
             .get_block_by_number(
