@@ -40,7 +40,7 @@ impl BuildPreconfBlockRequestBody {
 
         debug!(n_txs = tx_list.len(), "creating soft block");
 
-        let compressed = encode_and_compress_tx_list(tx_list);
+        let compressed = encode_and_compress_tx_list(tx_list, true);
 
         let executable_data = ExecutableData {
             parent_hash: block.header.parent_hash,
