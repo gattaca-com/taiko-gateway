@@ -14,7 +14,7 @@ use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
-    config::{ProposerConfig, TaikoConfig},
+    config::{ProposerConfig, TaikoChainParams, TaikoConfig},
     metrics::ProposerMetrics,
     proposer::{
         set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
@@ -22,17 +22,12 @@ use pc_common::{
     sequencer::Order,
     taiko::{
         pacaya::{
-            encode_and_compress_orders,
-            l1::TaikoL1::TaikoL1Errors,
-            l2::TaikoL2,
-            preconf::{
-                PreconfRouter::PreconfRouterErrors, PreconfWhitelist::PreconfWhitelistErrors,
-            },
-            propose_batch_blobs, propose_batch_calldata, BlockParams,
+            encode_and_compress_orders, l1::TaikoL1::TaikoL1Errors, l2::TaikoL2,
+            propose_batch_blobs, propose_batch_calldata, BlockParams, RevertReason,
         },
         GOLDEN_TOUCH_ADDRESS,
     },
-    utils::{alert_discord, extract_revert_reason, verify_and_log_block},
+    utils::{alert_discord, verify_and_log_block},
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
@@ -108,7 +103,7 @@ impl ProposerManager {
 
             ensure!(
                 anchor_tx.from == GOLDEN_TOUCH_ADDRESS,
-                "expected anchor tx to be from golden touch"
+                "expected anchor tx to be from golden touch!"
             );
 
             let anchor_data = TaikoL2::anchorV3Call::abi_decode(anchor_tx.input(), true)?;
@@ -126,33 +121,54 @@ impl ProposerManager {
         let l1_head = l1_block.header.number;
         let l1_timestamp = l1_block.header.timestamp;
 
+        // the parent of the first block in the first batch
+        let l2_parent = self
+            .l2_provider
+            .get_block(BlockId::number(origin), BlockTransactionsKind::Full)
+            .await?
+            .ok_or_eyre("missing last block")?;
+
+        let mut l2_parent_timestamp = l2_parent.header.timestamp;
+        let l2_parent_anchor = l2_parent
+            .transactions
+            .as_transactions()
+            .and_then(|txs| txs.first())
+            .ok_or_eyre(format!("missing anchor tx in block {origin}"))?;
+
+        ensure!(
+            l2_parent_anchor.from == GOLDEN_TOUCH_ADDRESS,
+            "expected anchor tx to be from golden touch!"
+        );
+
+        let mut l2_parent_anchor_block_id =
+            TaikoL2::anchorV3Call::abi_decode(l2_parent_anchor.input(), true)?._anchorBlockId;
+
         // check if any batch will reorg
         let mut will_reorg = false;
 
-        // dont use any() because we want to log all reorgs
-        to_propose.iter().for_each(|(anchor_block_id, blocks)| {
+        for (anchor_block_id, blocks) in to_propose.iter() {
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
 
-            let reorg_by_number = l1_head.saturating_sub(*anchor_block_id) >
-                self.taiko_config.params.safe_anchor_height_offset();
-
-            let last_timestamp = blocks[blocks.len() - 1].header.timestamp;
-            let reorg_by_timestamp = l1_timestamp.saturating_sub(last_timestamp) >
-                self.taiko_config.params.safe_anchor_height_offset() * 12;
-
-            let total_time_shift = last_timestamp - blocks[0].header.timestamp;
-            let reorg_by_time_shift =
-                total_time_shift > self.taiko_config.params.max_anchor_height_offset * 12;
-
-            if reorg_by_number || reorg_by_timestamp || reorg_by_time_shift {
-                let msg = format!("batch will reorg: anchor_block_id={anchor_block_id}, blocks={start_block}-{end_block}, by_number={reorg_by_number}, by_timestamp={reorg_by_timestamp}, by_time_shift={reorg_by_time_shift}");
+            if let Err(err) = validate_batch_params(
+                l2_parent_anchor_block_id,
+                l2_parent_timestamp,
+                l1_head,
+                l1_timestamp,
+                *anchor_block_id,
+                blocks,
+                &self.taiko_config.params,
+            ) {
+                let msg = format!("batch will reorg: blocks={start_block}-{end_block}, reason={err}, anchor_block_id={anchor_block_id}");
                 warn!("{msg}");
                 alert_discord(&msg);
-
                 will_reorg = true;
             }
-        });
+
+            // parent params for next batch (incorrect if reorg)
+            l2_parent_anchor_block_id = *anchor_block_id;
+            l2_parent_timestamp = blocks[blocks.len() - 1].header.timestamp;
+        }
 
         if will_reorg {
             // if any batch reorgs, re-anchor all batches and try to propose in as few txs as
@@ -174,7 +190,13 @@ impl ProposerManager {
                 }
 
                 // propose same batches
-                let requests = request_from_blocks(anchor_block_id, blocks, None, None);
+                let requests = request_from_blocks(
+                    anchor_block_id,
+                    blocks,
+                    None,
+                    None,
+                    self.taiko_config.params.max_blocks_per_batch,
+                );
 
                 for request in requests {
                     let is_our_coinbase = request.coinbase == self.config.coinbase;
@@ -218,6 +240,7 @@ impl ProposerManager {
             blocks,
             Some(l1_block.header.timestamp),
             Some(0),
+            self.taiko_config.params.max_blocks_per_batch,
         );
 
         for request in requests {
@@ -269,18 +292,30 @@ impl ProposerManager {
             ProposerMetrics::proposed_batches(false);
 
             let err_str = err.to_string();
+            let err = match RevertReason::try_from(err_str.as_str()) {
+                Ok(reason) => match reason {
+                    RevertReason::TaikoL1(err) => match err {
+                        TaikoL1Errors::TimestampTooLarge(err) => {
+                            warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
+                            tokio::time::sleep(Duration::from_secs(12)).await;
+                            continue;
+                        }
 
-            let err = extract_revert_reason::<TaikoL1Errors>(&err_str)
-                .map(|e| format!("{e:?}"))
-                .or_else(|| {
-                    extract_revert_reason::<PreconfWhitelistErrors>(&err_str)
-                        .map(|e| format!("{e:?}"))
-                })
-                .or_else(|| {
-                    extract_revert_reason::<PreconfRouterErrors>(&err_str).map(|e| format!("{e:?}"))
-                })
-                .map(|e| format!("revert: {e}"))
-                .unwrap_or_else(|| err_str);
+                        _ => {
+                            format!("unhandled TaikoInbox revert: {err:?}")
+                        }
+                    },
+
+                    RevertReason::PreconfRouter(err) => {
+                        format!("unhandled PreconfRouter revert: {err:?}")
+                    }
+
+                    RevertReason::PreconfWhitelist(err) => {
+                        format!("unhandled PreconfWhitelist revert: {err:?}")
+                    }
+                },
+                Err(_) => err_str,
+            };
 
             set_propose_delayed();
             retries += 1;
@@ -297,7 +332,7 @@ impl ProposerManager {
                 let msg = format!(
                     "max retries reached to propose batch. bns={start_bn}-{end_bn}, err={err}"
                 );
-                panic!("{}", msg);
+                panic!("{msg}");
             }
 
             tokio::time::sleep(Duration::from_secs(12)).await;
@@ -381,6 +416,7 @@ fn request_from_blocks(
     full_blocks: Vec<Arc<Block>>,
     timestamp_override: Option<u64>,
     timeshift_override: Option<u8>,
+    max_blocks_per_batch: usize,
 ) -> Vec<ProposeBatchParams> {
     assert!(!full_blocks.is_empty(), "no blocks to propose");
 
@@ -420,7 +456,9 @@ fn request_from_blocks(
         new_tx_list.extend(txs.clone());
 
         let compressed = encode_and_compress_orders(new_tx_list.clone());
-        if compressed.len() > TARGET_BATCH_SIZE {
+        if compressed.len() > TARGET_BATCH_SIZE ||
+            cur_params.block_params.len() >= max_blocks_per_batch
+        {
             // push previous params and start new one
             let new_params = ProposeBatchParams {
                 anchor_block_id,
@@ -490,4 +528,47 @@ fn request_from_blocks(
     }
 
     batches
+}
+
+// checks similar to _validateBatchParams in TaikoInbox
+fn validate_batch_params(
+    l2_parent_anchor_block_id: u64,
+    l2_parent_timestamp: u64,
+    l1_head: u64,
+    l1_timestamp: u64,
+    anchor_block_id: u64,
+    blocks: &[Arc<Block>],
+    config: &TaikoChainParams,
+) -> eyre::Result<()> {
+    ensure!(!blocks.is_empty(), "no blocks to propose");
+    ensure!(blocks.len() <= config.max_blocks_per_batch, "too many blocks to propose");
+
+    ensure!(
+        anchor_block_id + config.safe_anchor_height_offset() >= l1_head,
+        "anchor block id too small"
+    );
+    ensure!(anchor_block_id < l1_head, "anchor block id too large");
+    ensure!(anchor_block_id >= l2_parent_anchor_block_id, "anchor block id smaller than parent");
+
+    let first_timestamp = blocks[0].header.timestamp;
+    let last_timestamp = blocks[blocks.len() - 1].header.timestamp;
+
+    ensure!(last_timestamp <= l1_timestamp, "timestamp too large");
+    // skip first timeshift == 0
+
+    ensure!(last_timestamp >= first_timestamp, "block timestamps should increase");
+
+    let total_time_shift = last_timestamp - first_timestamp;
+    ensure!(last_timestamp >= total_time_shift, "last timestamp too small");
+
+    ensure!(
+        first_timestamp + config.safe_anchor_height_offset() * 12 >= l1_timestamp,
+        "first timestamp too small"
+    );
+
+    ensure!(first_timestamp >= l2_parent_timestamp, "first timestamp smaller than parent");
+
+    // skip metahash check for now
+
+    Ok(())
 }

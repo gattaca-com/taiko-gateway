@@ -3,7 +3,12 @@ mod propose;
 
 use alloy_sol_types::sol;
 pub use anchor::*;
+use eyre::bail;
+use l1::TaikoL1::TaikoL1Errors;
+use preconf::{PreconfRouter::PreconfRouterErrors, PreconfWhitelist::PreconfWhitelistErrors};
 pub use propose::*;
+
+use crate::utils::extract_revert_reason;
 
 pub mod l1 {
     use alloy_sol_types::sol;
@@ -45,6 +50,29 @@ pub mod l2 {
         TaikoL2,
         "../../abi/TaikoAnchor.abi.json"
     );
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RevertReason {
+    TaikoL1(TaikoL1Errors),
+    PreconfWhitelist(PreconfWhitelistErrors),
+    PreconfRouter(PreconfRouterErrors),
+}
+
+impl TryFrom<&str> for RevertReason {
+    type Error = eyre::Report;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if let Some(err) = extract_revert_reason::<TaikoL1Errors>(value) {
+            Ok(Self::TaikoL1(err))
+        } else if let Some(err) = extract_revert_reason::<PreconfWhitelistErrors>(value) {
+            Ok(Self::PreconfWhitelist(err))
+        } else if let Some(err) = extract_revert_reason::<PreconfRouterErrors>(value) {
+            Ok(Self::PreconfRouter(err))
+        } else {
+            bail!("unknown revert reason")
+        }
+    }
 }
 
 // From ITaikoInbox.sol
