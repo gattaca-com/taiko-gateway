@@ -51,6 +51,8 @@ pub struct SortData {
     telemetry: SortingTelemetry,
     /// Whether we should seal the block because we reached some limits
     should_seal: bool,
+    /// Whether we should discard the current block and restart
+    should_discard: bool,
     /// When we last logged info about current block
     last_logged: Instant,
 }
@@ -138,6 +140,7 @@ impl SortData {
             telemetry: SortingTelemetry::default(),
             state_nonces: StateNonces::new(block_info.block_number),
             should_seal: false,
+            should_discard: false,
             last_logged: Instant::now(),
             uncompressed_size: 0,
         }
@@ -220,8 +223,12 @@ impl SortData {
                         self.state_nonces.insert(sender, sim.order.nonce());
                         self.active_orders.remove_sender(&sender);
                     }
+                    InvalidReason::StateIdNotFound { state } => {
+                        warn!(state, "state id not found! this should not happen, are multiple sequencers running?");
+                        self.should_discard = true;
+                    }
                     InvalidReason::Uknown(reason) => {
-                        warn!(reason, "unknown reason");
+                        warn!(reason, "unhandled invalid simulation");
                     }
                 }
                 return;
@@ -285,6 +292,10 @@ impl SortData {
 
     pub fn should_seal(&self) -> bool {
         self.should_seal || self.is_past_target_seal()
+    }
+
+    pub fn should_discard(&self) -> bool {
+        self.should_discard
     }
 
     pub fn is_past_target_seal(&self) -> bool {

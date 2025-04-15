@@ -238,6 +238,18 @@ impl Sequencer {
                 }
             }
 
+            SequencerState::Sorting(sort_data) if sort_data.should_discard() => {
+                error!("invalid state detected, resetting sorting loop");
+                self.tx_pool.clear_nonces();
+                if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
+                    self.send_batch_to_proposer(
+                        "sealed last for this anchor (invalid state detected)",
+                        false,
+                    );
+                }
+                SequencerState::default()
+            }
+
             SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
                 if sort_data.num_txs() > 0 {
                     if let Err(err) = self.seal_block(sort_data) {
