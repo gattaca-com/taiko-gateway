@@ -521,7 +521,7 @@ impl Sequencer {
                     bail!("failed simulate anchor, res={res:?}");
                 };
 
-                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, parent = ?self.ctx.l2_headers, gas_used, builder_payment, "simulated anchor");
+                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, ?parent, gas_used, builder_payment, "simulated anchor");
                 Ok((state_id, block_info))
             }
             Err(err) => {
