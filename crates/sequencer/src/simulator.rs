@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{future::Future, time::Instant};
 
 use alloy_primitives::Bytes;
 use alloy_provider::ProviderBuilder;
@@ -68,7 +68,7 @@ impl SimulatorClient {
         debug!(hash = %tx.tx_hash(), ?block_env, ?extra_data, "simulate anchor");
 
         let mut metric = SimulatorMetric::new("anchor");
-        let response = self.runtime.block_on(async move {
+        let response = self.block_on(async move {
             self.client
                 .simulate_anchor_tx(tx.raw().clone(), block_env, extra_data)
                 .await
@@ -118,7 +118,7 @@ impl SimulatorClient {
         debug!(%state_id, "seal block");
         let mut metric = SimulatorMetric::new("seal");
 
-        let res = self.runtime.block_on(async move {
+        let res = self.block_on(async move {
             self.client.seal_block(state_id).await.map_err(|err| eyre!("seal block err: {err}"))
         })?;
 
@@ -143,5 +143,9 @@ impl SimulatorClient {
         let order = Order::new_with_sender(tx, GOLDEN_TOUCH_ADDRESS);
 
         Ok((order, l2_base_fee))
+    }
+
+    pub fn block_on<T>(&self, future: impl Future<Output = T>) -> T {
+        self.runtime.block_on(future)
     }
 }

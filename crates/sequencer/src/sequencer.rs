@@ -15,7 +15,6 @@ use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
     metrics::{BlocksMetrics, SequencerMetrics},
     proposer::{is_propose_delayed, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE},
-    runtime::spawn,
     sequencer::{ExecutionResult, StateId},
     taiko::{
         get_difficulty, get_extra_data,
@@ -190,8 +189,8 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                // because block time is >> 100ms we dont need to reset this if anchor succeeds (ie
-                // we never need to anchor more frequently than every 100ms)
+                // because block time is >> 100ms we dont need to reset this if anchor succeeds
+                // ie. we never need to anchor more frequently than every 100ms
                 if self.last_anchor_error.elapsed() < Duration::from_millis(100) {
                     return SequencerState::default();
                 }
@@ -556,13 +555,15 @@ impl Sequencer {
             "sealed block"
         );
 
+        // fail if gossiping fails
+        self.gossip_soft_block(&block)?;
+
         BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
         let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
         self.tx_pool.clear_mined(block_number, txs);
 
         self.ctx.new_preconf_l2_block(&block);
-        self.gossip_soft_block(block.clone());
 
         let is_first_block = self.proposer_request.is_none();
         let request = &mut self.proposer_request.get_or_insert(ProposeBatchParams::default());
@@ -639,30 +640,22 @@ impl Sequencer {
         }
     }
 
-    fn gossip_soft_block(&self, block: Arc<Block>) {
+    fn gossip_soft_block(&self, block: &Block) -> eyre::Result<()> {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
         let url = self.config.soft_block_url.clone();
 
         let jwt_secret = self.config.jwt_secret.clone();
 
-        spawn(
+        self.simulator.block_on(
             async move {
                 let block_number = block.header.number;
                 let request = BuildPreconfBlockRequestBody::new(block);
 
-                let raw = serde_json::to_string(&request).unwrap();
-
                 let mut req_builder = Client::new().post(url).json(&request);
 
                 if !jwt_secret.is_empty() {
-                    let token = generate_jwt(jwt_secret);
-
-                    if let Ok(jwt) = token {
-                        req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
-                    } else {
-                        error!("Failed to generate JWT");
-                        return
-                    }
+                    let jwt = generate_jwt(jwt_secret).unwrap();
+                    req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
                 }
 
                 match req_builder.send().await {
@@ -672,17 +665,18 @@ impl Sequencer {
 
                         if status.is_success() {
                             debug!(block_number, "soft block posted");
+                            Ok(())
                         } else {
-                            error!(code = status.as_u16(), err = body, %raw, "soft block failed");
+                            bail!("soft block failed: code = {}, err = {}", status.as_u16(), body);
                         }
                     }
                     Err(err) => {
-                        error!(%err, %raw, "failed to post soft block")
+                        bail!("failed to post soft block: {err}");
                     }
                 }
             }
             .in_current_span(),
-        );
+        )
     }
 
     fn record_metrics(&self) {
