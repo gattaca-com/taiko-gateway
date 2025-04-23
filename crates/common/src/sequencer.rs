@@ -138,6 +138,7 @@ pub enum InvalidReason {
     NotEnoughGas,
     CapLessThanBaseFee,
     InsufficientFunds { have: u128, want: u128 },
+    StateIdNotFound { state: u64 },
     Uknown(String),
 }
 
@@ -174,6 +175,12 @@ impl<'de> Deserialize<'de> for InvalidReason {
 
         if s.contains("max fee per gas less than block base fee") {
             return Ok(InvalidReason::CapLessThanBaseFee);
+        }
+
+        if let Some(captures) = s.strip_prefix("state not found for id ") {
+            if let Ok(state) = captures.parse::<u64>() {
+                return Ok(InvalidReason::StateIdNotFound { state });
+            }
         }
 
         if let Some(captures) =
@@ -265,6 +272,19 @@ mod tests {
                     have: 56831218464375,
                     want: 114297842054944
                 });
+            }
+            _ => panic!("expected invalid"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_state_id_not_found_reason_serde() {
+        let data = r#"{"execution_result": {"invalid": {"reason": "state not found for id 228"}}}"#;
+        let decoded: SimulateTxResponse = serde_json::from_str(&data).unwrap();
+
+        match decoded.execution_result {
+            ExecutionResult::Invalid { reason } => {
+                assert_eq!(reason, InvalidReason::StateIdNotFound { state: 228 });
             }
             _ => panic!("expected invalid"),
         }

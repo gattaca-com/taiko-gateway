@@ -112,6 +112,11 @@ impl TxPool {
         self.update_nonces(nonces);
     }
 
+    pub fn clear_nonces(&mut self) {
+        debug!("clearing state nonces");
+        self.nonces.clear();
+    }
+
     pub fn set_no_orders(&mut self) {
         self.new_orders = false;
     }
