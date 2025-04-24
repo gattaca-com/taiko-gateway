@@ -16,6 +16,7 @@ use pc_common::{
 use sequencer::Sequencer;
 use tokio::sync::mpsc::UnboundedSender;
 mod context;
+mod error;
 mod fetcher;
 mod jwt;
 mod sequencer;

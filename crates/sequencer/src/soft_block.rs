@@ -34,7 +34,7 @@ pub struct BuildPreconfBlockResponseBody {
 }
 
 impl BuildPreconfBlockRequestBody {
-    pub fn new(block: Arc<Block>) -> Self {
+    pub fn new(block: &Block) -> Self {
         let tx_list: Vec<Arc<TxEnvelope>> =
             block.transactions.txns().map(|tx| tx.inner.clone().into()).collect();
 
