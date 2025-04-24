@@ -1,13 +1,7 @@
 [
     {
         "type": "constructor",
-        "inputs": [
-            {
-                "name": "_resolver",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
+        "inputs": [],
         "stateMutability": "nonpayable"
     },
     {
@@ -22,13 +16,65 @@
         "name": "addOperator",
         "inputs": [
             {
-                "name": "_operatorAddress",
+                "name": "_operator",
                 "type": "address",
                 "internalType": "address"
             }
         ],
         "outputs": [],
         "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "consolidate",
+        "inputs": [],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "epochStartTimestamp",
+        "inputs": [
+            {
+                "name": "_offset",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint64",
+                "internalType": "uint64"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getOperatorCandidatesForCurrentEpoch",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address[]",
+                "internalType": "address[]"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getOperatorCandidatesForNextEpoch",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address[]",
+                "internalType": "address[]"
+            }
+        ],
+        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -52,6 +98,19 @@
                 "name": "",
                 "type": "address",
                 "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "havingPerfectOperators",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "bool",
+                "internalType": "bool"
             }
         ],
         "stateMutability": "view"
@@ -90,6 +149,11 @@
                 "name": "_owner",
                 "type": "address",
                 "internalType": "address"
+            },
+            {
+                "name": "_operatorChangeDelay",
+                "type": "uint8",
+                "internalType": "uint8"
             }
         ],
         "outputs": [],
@@ -97,19 +161,37 @@
     },
     {
         "type": "function",
-        "name": "isOperator",
+        "name": "isOperatorActive",
         "inputs": [
             {
-                "name": "operator",
+                "name": "_operator",
                 "type": "address",
                 "internalType": "address"
+            },
+            {
+                "name": "_epochTimestamp",
+                "type": "uint64",
+                "internalType": "uint64"
             }
         ],
         "outputs": [
             {
-                "name": "isOperator",
+                "name": "",
                 "type": "bool",
                 "internalType": "bool"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "operatorChangeDelay",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint8",
+                "internalType": "uint8"
             }
         ],
         "stateMutability": "view"
@@ -121,18 +203,18 @@
         "outputs": [
             {
                 "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
+                "type": "uint8",
+                "internalType": "uint8"
             }
         ],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "operatorIndexToOperator",
+        "name": "operatorMapping",
         "inputs": [
             {
-                "name": "operatorIndex",
+                "name": "index",
                 "type": "uint256",
                 "internalType": "uint256"
             }
@@ -142,6 +224,35 @@
                 "name": "operator",
                 "type": "address",
                 "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "operators",
+        "inputs": [
+            {
+                "name": "operator",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "activeSince",
+                "type": "uint64",
+                "internalType": "uint64"
+            },
+            {
+                "name": "inactiveSince",
+                "type": "uint64",
+                "internalType": "uint64"
+            },
+            {
+                "name": "index",
+                "type": "uint8",
+                "internalType": "uint8"
             }
         ],
         "stateMutability": "view"
@@ -210,11 +321,49 @@
         "name": "removeOperator",
         "inputs": [
             {
+                "name": "_operator",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_effectiveImmediately",
+                "type": "bool",
+                "internalType": "bool"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "removeOperator",
+        "inputs": [
+            {
+                "name": "_operator",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "removeOperator",
+        "inputs": [
+            {
                 "name": "_operatorIndex",
                 "type": "uint256",
                 "internalType": "uint256"
             }
         ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "removeSelf",
+        "inputs": [],
         "outputs": [],
         "stateMutability": "nonpayable"
     },
@@ -237,6 +386,19 @@
             }
         ],
         "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "setOperatorChangeDelay",
+        "inputs": [
+            {
+                "name": "_operatorChangeDelay",
+                "type": "uint8",
+                "internalType": "uint8"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
     },
     {
         "type": "function",
@@ -323,6 +485,31 @@
     },
     {
         "type": "event",
+        "name": "Consolidated",
+        "inputs": [
+            {
+                "name": "previousCount",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "uint8"
+            },
+            {
+                "name": "newCount",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "uint8"
+            },
+            {
+                "name": "havingPerfectOperators",
+                "type": "bool",
+                "indexed": false,
+                "internalType": "bool"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
         "name": "Initialized",
         "inputs": [
             {
@@ -343,6 +530,25 @@
                 "type": "address",
                 "indexed": true,
                 "internalType": "address"
+            },
+            {
+                "name": "activeSince",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "OperatorChangeDelaySet",
+        "inputs": [
+            {
+                "name": "delay",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "uint8"
             }
         ],
         "anonymous": false
@@ -356,6 +562,12 @@
                 "type": "address",
                 "indexed": true,
                 "internalType": "address"
+            },
+            {
+                "name": "inactiveSince",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
             }
         ],
         "anonymous": false
@@ -470,6 +682,11 @@
     {
         "type": "error",
         "name": "OperatorAlreadyExists",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "OperatorAlreadyRemoved",
         "inputs": []
     },
     {

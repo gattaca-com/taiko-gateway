@@ -46,11 +46,12 @@ pub async fn get_and_validate_config(
 
     // fetch forever till we are in the whitelist
     loop {
-        let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
+        let operator_count: usize = whitelist.operatorCount().call().await?._0.into();
+
         let mut operators = Vec::with_capacity(operator_count);
 
         for i in 0..operator_count {
-            let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
+            let operator = whitelist.operatorMapping(U256::from(i)).call().await?.operator;
             operators.push(operator);
         }
 
