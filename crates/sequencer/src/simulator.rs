@@ -26,7 +26,7 @@ use pc_common::{
 use tokio::runtime::Runtime;
 use tracing::debug;
 
-use crate::types::SimulatedOrder;
+use crate::{error::SequencerError, types::SimulatedOrder};
 
 pub struct SimulatorClient {
     runtime: Runtime,
@@ -114,13 +114,11 @@ impl SimulatorClient {
         });
     }
 
-    pub fn seal_block(&self, state_id: StateId) -> eyre::Result<SealBlockResponse> {
+    pub fn seal_block(&self, state_id: StateId) -> Result<SealBlockResponse, SequencerError> {
         debug!(%state_id, "seal block");
         let mut metric = SimulatorMetric::new("seal");
 
-        let res = self.block_on(async move {
-            self.client.seal_block(state_id).await.map_err(|err| eyre!("seal block err: {err}"))
-        })?;
+        let res = self.block_on(async move { self.client.seal_block(state_id).await })?;
 
         metric.record();
         Ok(res)

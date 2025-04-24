@@ -30,6 +30,7 @@ use tracing::{debug, error, info, warn, Instrument};
 
 use crate::{
     context::SequencerContext,
+    error::SequencerError,
     jwt::generate_jwt,
     simulator::SimulatorClient,
     soft_block::BuildPreconfBlockRequestBody,
@@ -252,9 +253,13 @@ impl Sequencer {
             SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
                 if sort_data.num_txs() > 0 {
                     if let Err(err) = self.seal_block(sort_data) {
-                        // todo: add a failsafe so we're not stuck forever here
-                        error!(%err, "failed commit seal");
-                        panic!("failed commit seal");
+                        if let SequencerError::SoftBlock(status, err) = err {
+                            warn!(status, %err, "failed commit seal");
+                            SequencerState::default()
+                        } else {
+                            error!(%err, "failed commit seal");
+                            panic!("failed commit seal");
+                        }
                     } else {
                         // reset state for next block
                         SequencerState::default()
@@ -529,7 +534,7 @@ impl Sequencer {
         }
     }
 
-    fn seal_block(&mut self, sort_data: SortData) -> eyre::Result<()> {
+    fn seal_block(&mut self, sort_data: SortData) -> Result<(), SequencerError> {
         sort_data.report();
 
         let seal_state_id = sort_data.state_id;
@@ -640,7 +645,7 @@ impl Sequencer {
         }
     }
 
-    fn gossip_soft_block(&self, block: &Block) -> eyre::Result<()> {
+    fn gossip_soft_block(&self, block: &Block) -> Result<(), SequencerError> {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
         let url = self.config.soft_block_url.clone();
 
@@ -658,21 +663,16 @@ impl Sequencer {
                     req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
                 }
 
-                match req_builder.send().await {
-                    Ok(res) => {
-                        let status = res.status();
-                        let body = res.text().await.unwrap();
+                let res = req_builder.send().await?;
 
-                        if status.is_success() {
-                            debug!(block_number, "soft block posted");
-                            Ok(())
-                        } else {
-                            bail!("soft block failed: code = {}, err = {}", status.as_u16(), body);
-                        }
-                    }
-                    Err(err) => {
-                        bail!("failed to post soft block: {err}");
-                    }
+                let status = res.status();
+                let body = res.text().await.unwrap();
+
+                if status.is_success() {
+                    debug!(block_number, "soft block posted");
+                    Ok(())
+                } else {
+                    return Err(SequencerError::SoftBlock(status.as_u16(), body));
                 }
             }
             .in_current_span(),
