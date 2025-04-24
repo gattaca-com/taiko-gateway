@@ -666,7 +666,7 @@ impl Sequencer {
                 let res = req_builder.send().await?;
 
                 let status = res.status();
-                let body = res.text().await.unwrap();
+                let body = res.text().await?;
 
                 if status.is_success() {
                     debug!(block_number, "soft block posted");
