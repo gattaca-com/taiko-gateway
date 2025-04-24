@@ -672,7 +672,7 @@ impl Sequencer {
                     debug!(block_number, "soft block posted");
                     Ok(())
                 } else {
-                    return Err(SequencerError::SoftBlock(status.as_u16(), body));
+                    Err(SequencerError::SoftBlock(status.as_u16(), body))
                 }
             }
             .in_current_span(),
