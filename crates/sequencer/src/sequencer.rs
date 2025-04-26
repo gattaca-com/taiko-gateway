@@ -254,11 +254,11 @@ impl Sequencer {
                 if sort_data.num_txs() > 0 {
                     if let Err(err) = self.seal_block(sort_data) {
                         if let SequencerError::SoftBlock(status, err) = err {
-                            warn!(status, %err, "failed commit seal");
+                            warn!(status, %err, "failed seal");
                             SequencerState::default()
                         } else {
-                            error!(%err, "failed commit seal");
-                            panic!("failed commit seal");
+                            error!(%err, "failed seal");
+                            panic!("failed seal");
                         }
                     } else {
                         // reset state for next block
