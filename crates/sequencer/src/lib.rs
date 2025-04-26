@@ -72,11 +72,7 @@ pub fn start_sequencer(
     let l2_origin = Arc::new(AtomicU64::new(0));
     let (origin_blocks_tx, origin_blocks_rx) = crossbeam_channel::unbounded();
     let rpc_url = config.l2.rpc_url.clone();
-    spawn(BlockFetcher::new(rpc_url).run_origin_fetch(
-        "origin",
-        origin_blocks_tx,
-        l2_origin.clone(),
-    ));
+    spawn(BlockFetcher::new(rpc_url).run_origin_fetch(origin_blocks_tx, l2_origin.clone()));
 
     let (sim_tx, sim_rx) = crossbeam_channel::unbounded();
     let spine = SequencerSpine {

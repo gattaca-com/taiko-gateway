@@ -436,7 +436,6 @@ impl Sequencer {
             };
 
             let SequencerState::Sorting(sort_data) = &mut self.ctx.state else {
-                warn!(sim_tx = %sim_res.order.tx_hash(), origin_state_id =% sim_res.origin_state_id, current_state =? self.ctx.state, "stale sim result");
                 return;
             };
 

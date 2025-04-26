@@ -103,8 +103,8 @@ impl SequencerContext {
                 number = header.number,
                 n_txs = new_block.transactions.len(),
                 hash = %header.hash,
-                parent_hash = %last_seen.hash,
                 coinbase = %header.beneficiary,
+                parent_hash = %last_seen.hash,
                 "new l2 preconf block"
             );
 

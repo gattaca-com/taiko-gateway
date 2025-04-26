@@ -180,7 +180,6 @@ impl SortData {
     /// Handle a new simulation result
     pub fn handle_sim(&mut self, sim: SimulatedOrder) {
         if !self.is_valid(sim.origin_state_id) {
-            warn!("sim is not valid!");
             return;
         }
 
@@ -356,7 +355,15 @@ impl SortingTelemetry {
         let success_rate = get_rate(self.n_sims_success, self.n_sims_sent);
         let revert_rate = get_rate(self.n_sims_revert, self.n_sims_sent);
         let invalid_rate = get_rate(self.n_sims_invalid, self.n_sims_sent);
-        let stale_rate = 100.0 - success_rate - revert_rate - invalid_rate; // we didnt get these back
+        let received_rate = success_rate + revert_rate + invalid_rate;
+        let stale_rate = 100.0 - received_rate; // we didnt get these back
+
+        let avg_sim_time = if received_rate > 0.0 && self.n_sims_sent > 0 {
+            self.tot_sim_time / self.n_sims_sent as u32 / (received_rate * 100.0).round() as u32 *
+                10000
+        } else {
+            Duration::from_secs(0)
+        };
 
         info!(
             n_sims_sent = self.n_sims_sent,
@@ -364,6 +371,7 @@ impl SortingTelemetry {
             revert_rate,
             invalid_rate,
             stale_rate,
+            avg_sim_time =? avg_sim_time,
             tot_sim_time =? self.tot_sim_time,
             "sorting telemetry",
         );
