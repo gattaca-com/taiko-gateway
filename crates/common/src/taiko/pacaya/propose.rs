@@ -5,12 +5,11 @@ use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::{Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::{preconf::PreconfRouter, BatchParams};
 use crate::{
-    metrics::ProposerMetrics,
-    proposer::{ProposeBatchParams, TARGET_BATCH_SIZE},
+    proposer::ProposeBatchParams,
     sequencer::Order,
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
@@ -26,20 +25,8 @@ pub fn propose_batch_calldata(
     request: ProposeBatchParams,
     parent_meta_hash: B256,
     proposer: Address,
+    compressed: Bytes,
 ) -> Bytes {
-    let compressed = encode_and_compress_orders(request.all_tx_list, true);
-    ProposerMetrics::batch_size(compressed.len() as u64);
-
-    if compressed.len() > TARGET_BATCH_SIZE {
-        let diff = compressed.len() - TARGET_BATCH_SIZE;
-        warn!(
-            actual = compressed.len(),
-            target = TARGET_BATCH_SIZE,
-            diff,
-            "exceeding target batch size, is the compression estimate correct?"
-        );
-    }
-
     // TODO: check the offsets here
     let batch_params = BatchParams {
         proposer,
@@ -76,20 +63,8 @@ pub fn propose_batch_blobs(
     request: ProposeBatchParams,
     parent_meta_hash: B256,
     proposer: Address,
+    compressed: Bytes,
 ) -> (Bytes, BlobTransactionSidecar) {
-    let compressed = encode_and_compress_orders(request.all_tx_list, true);
-    ProposerMetrics::batch_size(compressed.len() as u64);
-
-    if compressed.len() > TARGET_BATCH_SIZE {
-        let diff = compressed.len() - TARGET_BATCH_SIZE;
-        warn!(
-            actual = compressed.len(),
-            target = TARGET_BATCH_SIZE,
-            diff,
-            "exceeding target batch size, is the compression estimate correct?"
-        );
-    }
-
     assert!(
         compressed.len() / MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
         "too many bytes to encode in blobs {}",
