@@ -23,7 +23,8 @@ use pc_common::{
     taiko::{
         pacaya::{
             encode_and_compress_orders, l1::TaikoL1::TaikoL1Errors, l2::TaikoL2,
-            propose_batch_blobs, propose_batch_calldata, BlockParams, RevertReason,
+            preconf::PreconfRouter::PreconfRouterErrors, propose_batch_blobs,
+            propose_batch_calldata, BlockParams, RevertReason,
         },
         GOLDEN_TOUCH_ADDRESS,
     },
@@ -254,17 +255,35 @@ impl ProposerManager {
 
     async fn prepare_batch(
         &self,
-        request: ProposeBatchParams,
+        mut request: ProposeBatchParams,
     ) -> (Bytes, Option<BlobTransactionSidecar>) {
         let parent_meta_hash = self.client.last_meta_hash().await;
 
-        let should_use_blobs = self.should_use_blobs(request.compressed_est);
+        let compressed = encode_and_compress_orders(std::mem::take(&mut request.all_tx_list), true);
+        ProposerMetrics::batch_size(compressed.len() as u64);
+
+        if compressed.len() > TARGET_BATCH_SIZE {
+            let diff = compressed.len() - TARGET_BATCH_SIZE;
+            warn!(
+                actual = compressed.len(),
+                target = TARGET_BATCH_SIZE,
+                diff,
+                "exceeding target batch size, is the compression estimate correct?"
+            );
+        }
+
+        let should_use_blobs = self.should_use_blobs(compressed.len());
         let (input, maybe_sidecar) = if should_use_blobs {
             let (input, sidecar) =
-                propose_batch_blobs(request, parent_meta_hash, self.client.address());
+                propose_batch_blobs(request, parent_meta_hash, self.client.address(), compressed);
             (input, Some(sidecar))
         } else {
-            let input = propose_batch_calldata(request, parent_meta_hash, self.client.address());
+            let input = propose_batch_calldata(
+                request,
+                parent_meta_hash,
+                self.client.address(),
+                compressed,
+            );
             (input, None)
         };
 
@@ -306,9 +325,15 @@ impl ProposerManager {
                         }
                     },
 
-                    RevertReason::PreconfRouter(err) => {
-                        format!("unhandled PreconfRouter revert: {err:?}")
-                    }
+                    RevertReason::PreconfRouter(err) => match err {
+                        PreconfRouterErrors::NotPreconfer(_) => {
+                            warn!("failed proposing before change in preconfer, stop retrying");
+                            break;
+                        }
+                        _ => {
+                            format!("unhandled PreconfRouter revert: {err:?}")
+                        }
+                    },
 
                     RevertReason::PreconfWhitelist(err) => {
                         format!("unhandled PreconfWhitelist revert: {err:?}")

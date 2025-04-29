@@ -39,6 +39,12 @@ use crate::{
     types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
 };
 
+// because block time is >> 100ms we dont need to reset this if anchor succeeds (ie
+// we never need to anchor more frequently than every 100ms)
+const ANCHOR_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+// 10S
+const MAX_ANCHOR_ERRORS: u64 = 1000;
+
 #[derive(Debug, Default)]
 struct SequencerFlags {
     /// Can we sequence new blocks
@@ -64,6 +70,7 @@ pub struct Sequencer {
     flags: SequencerFlags,
     proposer_request: Option<ProposeBatchParams>,
     last_anchor_error: Instant,
+    anchor_error_count: u64,
 }
 
 impl Sequencer {
@@ -96,6 +103,7 @@ impl Sequencer {
             flags: SequencerFlags::default(),
             proposer_request: None,
             last_anchor_error: Instant::now(),
+            anchor_error_count: 0,
         }
     }
 
@@ -190,14 +198,13 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                // because block time is >> 100ms we dont need to reset this if anchor succeeds
-                // ie. we never need to anchor more frequently than every 100ms
-                if self.last_anchor_error.elapsed() < Duration::from_millis(100) {
+                if self.last_anchor_error.elapsed() < ANCHOR_RETRY_INTERVAL {
                     return SequencerState::default();
                 }
 
                 match self.anchor_block() {
                     Ok((state_id, block_info)) => {
+                        self.anchor_error_count = 0;
                         debug!(?block_info, %state_id, "anchored");
                         let Some(active) = self
                             .tx_pool
@@ -233,6 +240,13 @@ impl Sequencer {
                     Err(err) => {
                         error!(%err, "failed anchoring");
                         self.last_anchor_error = Instant::now();
+                        self.anchor_error_count += 1;
+
+                        if self.anchor_error_count > MAX_ANCHOR_ERRORS {
+                            error!("too many anchor errors, resetting");
+                            panic!("too many anchor errors, resetting");
+                        }
+
                         SequencerState::default()
                     }
                 }
@@ -252,13 +266,14 @@ impl Sequencer {
 
             SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
                 if sort_data.num_txs() > 0 {
+                    let block_number = sort_data.block_info.block_number;
                     if let Err(err) = self.seal_block(sort_data) {
                         if let SequencerError::SoftBlock(status, err) = err {
                             warn!(status, %err, "failed seal");
                             SequencerState::default()
                         } else {
-                            error!(%err, "failed seal");
-                            panic!("failed seal: {err}");
+                            error!(block_number, %err, "failed seal");
+                            panic!("failed seal block {}: {err}", block_number);
                         }
                     } else {
                         // reset state for next block
