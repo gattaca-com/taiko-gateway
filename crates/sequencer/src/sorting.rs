@@ -357,6 +357,7 @@ impl SortingTelemetry {
         let invalid_rate = get_rate(self.n_sims_invalid, self.n_sims_sent);
         let received_rate = success_rate + revert_rate + invalid_rate;
         let stale_rate = 100.0 - received_rate; // we didnt get these back
+        let stale_rate = (stale_rate * 100.0).round() / 100.0;
 
         let avg_sim_time = if received_rate > 0.0 && self.n_sims_sent > 0 {
             self.tot_sim_time / self.n_sims_sent as u32 / (received_rate * 100.0).round() as u32 *

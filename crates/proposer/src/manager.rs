@@ -540,6 +540,15 @@ fn validate_batch_params(
     blocks: &[Arc<Block>],
     config: &TaikoChainParams,
 ) -> eyre::Result<()> {
+    debug!(
+        anchor_block_id,
+        l2_parent_anchor_block_id,
+        l2_parent_timestamp,
+        l1_head,
+        l1_timestamp,
+        "validating batch params"
+    );
+
     ensure!(!blocks.is_empty(), "no blocks to propose");
     ensure!(blocks.len() <= config.max_blocks_per_batch, "too many blocks to propose");
 

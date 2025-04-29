@@ -258,7 +258,7 @@ impl Sequencer {
                             SequencerState::default()
                         } else {
                             error!(%err, "failed seal");
-                            panic!("failed seal");
+                            panic!("failed seal: {err}");
                         }
                     } else {
                         // reset state for next block
