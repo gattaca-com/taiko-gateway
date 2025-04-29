@@ -99,13 +99,8 @@ impl BlockFetcher {
         }
     }
 
-    #[tracing::instrument(skip_all, name = "origin_fetch" fields(id = %id))]
-    pub async fn run_origin_fetch(
-        self,
-        id: &str,
-        new_header_tx: Sender<Header>,
-        l2_origin: Arc<AtomicU64>,
-    ) {
+    #[tracing::instrument(skip_all, name = "origin_fetch")]
+    pub async fn run_origin_fetch(self, new_header_tx: Sender<Header>, l2_origin: Arc<AtomicU64>) {
         info!(rpc_url = %self.url, "starting preconf check fetch");
 
         let backoff = 4;

@@ -103,8 +103,8 @@ impl SequencerContext {
                 number = header.number,
                 n_txs = new_block.transactions.len(),
                 hash = %header.hash,
-                parent_hash = %last_seen.hash,
                 coinbase = %header.beneficiary,
+                parent_hash = %last_seen.hash,
                 "new l2 preconf block"
             );
 
@@ -125,6 +125,17 @@ impl SequencerContext {
                     "l2 reorg: {} -> {}", header.number, last_seen.block_number
                 );
                 self.l2_headers.truncate(local); // remove local too
+
+                // future blocks will anyways fail verification
+                let to_verify_len = self.to_verify.len();
+                self.to_verify.retain(|bn, _| *bn < header.number);
+                let to_verify_len_after = self.to_verify.len();
+                if to_verify_len - to_verify_len_after > 0 {
+                    warn!(
+                        pruned = to_verify_len - to_verify_len_after,
+                        "pruned verifications due to reorg"
+                    );
+                }
                 self.update_parent_block_id(new_block);
             } else {
                 // saw this block before
