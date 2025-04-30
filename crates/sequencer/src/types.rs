@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::Receiver;
 use pc_common::{
@@ -82,6 +82,8 @@ pub struct BlockInfo {
     pub block_number: u64,
     /// Base fee
     pub base_fee: u128,
+    /// Parent hash
+    pub parent_hash: B256,
 }
 
 #[derive(Debug, Clone)]

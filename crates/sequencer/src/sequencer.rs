@@ -222,6 +222,7 @@ impl Sequencer {
                             target_time = ?self.config.target_block_time,
                             max_block_size,
                             gas_limit = self.chain_config.block_max_gas_limit,
+                            parent =% block_info.parent_hash,
                             "start block building"
                         );
 
@@ -270,6 +271,11 @@ impl Sequencer {
                     if let Err(err) = self.seal_block(sort_data) {
                         if let SequencerError::SoftBlock(status, err) = err {
                             warn!(status, %err, "failed seal");
+                            self.tx_pool.clear_nonces();
+                            SequencerState::default()
+                        } else if err.is_nil_block() {
+                            error!(block_number, %err, "nil block on seal. is there a reorg?");
+                            self.tx_pool.clear_nonces();
                             SequencerState::default()
                         } else {
                             error!(block_number, %err, "failed seal");
@@ -406,7 +412,23 @@ impl Sequencer {
         receive_for(
             Duration::from_millis(10),
             |new_block| {
-                self.ctx.new_preconf_l2_block(&new_block);
+                let coinbase = new_block.header.beneficiary;
+                let bn = new_block.header.number;
+                let hash = new_block.header.hash;
+
+                if self.ctx.new_preconf_l2_block(&new_block) {
+                    if let Some(req) = self.proposer_request.as_ref() {
+                        if bn <= req.end_block_num {
+                            // we saw a reorg that affected this batch, panic and trigger a resync
+                            // just in case
+                            // TODO: a cleaner approach would be to just have the same resync
+                            // fetch / check when proposing regular batches
+                            let msg = format!("reorged block in batch, triggering resync, bn={bn}, hash={hash}, coinbase={coinbase}, start={}, end={}, blocks={}, txs={}", req.start_block_num, req.end_block_num, req.block_params.len(), req.all_tx_list.len());
+                            error!(msg);
+                            panic!("{msg}");
+                        }
+                    }
+                }
             },
             &self.spine.l2_blocks_rx,
         );
@@ -451,6 +473,7 @@ impl Sequencer {
             };
 
             let SequencerState::Sorting(sort_data) = &mut self.ctx.state else {
+                // ignore stale sims
                 return;
             };
 
@@ -528,7 +551,12 @@ impl Sequencer {
             timestamp,
             l2_base_fee,
         );
-        let block_info = BlockInfo { anchor_params: anchor, block_number, base_fee: l2_base_fee };
+        let block_info = BlockInfo {
+            anchor_params: anchor,
+            block_number,
+            base_fee: l2_base_fee,
+            parent_hash: parent.hash,
+        };
 
         let extra_data = get_extra_data(self.chain_config.base_fee_config.sharing_pctg);
 
