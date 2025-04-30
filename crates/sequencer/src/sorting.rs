@@ -196,13 +196,15 @@ impl SortData {
             }
             ExecutionResult::Invalid { reason } => {
                 match reason {
-                    InvalidReason::NonceTooLow { tx, state } => {
-                        warn!(tx, state, sender = ?sim.order.sender(), "nonce too low, updating nonce cache");
+                    InvalidReason::NonceTooLow { tx: _, state } => {
+                        // warn!(tx, state, sender = ?sim.order.sender(), "nonce too low, updating
+                        // nonce cache");
                         let sender = *sim.order.sender();
                         self.state_nonces.insert(sender, state);
                     }
-                    InvalidReason::NonceTooHigh { tx, state } => {
-                        warn!(tx, state, sender = ?sim.order.sender(), "nonce too high, updating nonce cache");
+                    InvalidReason::NonceTooHigh { tx: _, state } => {
+                        // warn!(tx, state, sender = ?sim.order.sender(), "nonce too high, updating
+                        // nonce cache");
                         let sender = *sim.order.sender();
                         self.state_nonces.insert(sender, state);
                     }

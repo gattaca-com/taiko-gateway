@@ -424,7 +424,7 @@ impl Sequencer {
                             // TODO: a cleaner approach would be to just have the same resync
                             // fetch / check when proposing regular batches
                             let msg = format!("reorged block in batch, triggering resync, bn={bn}, hash={hash}, coinbase={coinbase}, start={}, end={}, blocks={}, txs={}", req.start_block_num, req.end_block_num, req.block_params.len(), req.all_tx_list.len());
-                            error!(msg);
+                            error!("{msg}");
                             panic!("{msg}");
                         }
                     }
