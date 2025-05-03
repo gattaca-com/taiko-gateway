@@ -7,7 +7,7 @@ use pc_common::{
     config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
     metrics::start_metrics_server,
     runtime::init_runtime,
-    taiko::{get_and_validate_config, lookahead::start_looahead_loop},
+    taiko::{get_and_validate_config, lookahead::start_lookahead_loop},
     utils::{init_panic_hook, init_tracing_log},
 };
 use pc_proposer::start_proposer;
@@ -63,7 +63,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     let beacon_handle = init_beacon(config.l1.beacon_url.clone()).await?;
     let l1_number = Arc::new(AtomicU64::new(0));
 
-    let lookahead = start_looahead_loop(
+    let lookahead = start_lookahead_loop(
         config.l1.rpc_url.clone(),
         config.l2.whitelist_contract,
         beacon_handle,
