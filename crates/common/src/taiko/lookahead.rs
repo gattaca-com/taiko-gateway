@@ -22,7 +22,7 @@ use crate::{
 };
 
 #[tracing::instrument(skip_all, name = "lookahead")]
-pub async fn start_looahead_loop(
+pub async fn start_lookahead_loop(
     l1_rpc: Url,
     whitelist_contract: Address,
     beacon_handle: BeaconHandle,
