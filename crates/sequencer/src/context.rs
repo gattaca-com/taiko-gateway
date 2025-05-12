@@ -82,7 +82,8 @@ impl SequencerContext {
 
     /// Insert a new preconfed L2 block, this could be sequenced by us or another gateway
     /// we only verify our blocks
-    pub fn new_preconf_l2_block(&mut self, new_block: &Block) {
+    /// returns whether a reorg happened
+    pub fn new_preconf_l2_block(&mut self, new_block: &Block) -> bool {
         let header = &new_block.header;
 
         let ours = header.beneficiary == self.coinbase;
@@ -94,7 +95,7 @@ impl SequencerContext {
         let Some(last_seen) = self.l2_headers.back() else {
             // first block
             self.update_parent_block_id(new_block);
-            return;
+            return false;
         };
 
         if last_seen.block_number + 1 == header.number && last_seen.hash == header.parent_hash {
@@ -109,7 +110,7 @@ impl SequencerContext {
             );
 
             self.update_parent_block_id(new_block);
-            return;
+            return false;
         }
 
         // from here: either we have already this block, we missed some blocks, or we have a reorg
@@ -137,6 +138,7 @@ impl SequencerContext {
                     );
                 }
                 self.update_parent_block_id(new_block);
+                return true;
             } else {
                 // saw this block before
             }
@@ -168,6 +170,8 @@ impl SequencerContext {
                 );
             }
         }
+
+        false
     }
 
     fn update_parent_block_id(&mut self, block: &Block) {

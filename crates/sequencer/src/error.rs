@@ -9,3 +9,9 @@ pub enum SequencerError {
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
 }
+
+impl SequencerError {
+    pub fn is_nil_block(&self) -> bool {
+        matches!(self, SequencerError::Rpc(jsonrpsee::core::ClientError::Call(err)) if err.message().contains("block is nil"))
+    }
+}

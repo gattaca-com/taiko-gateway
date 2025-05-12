@@ -465,7 +465,7 @@ fn request_from_blocks(
     };
 
     let mut i = 0;
-    loop {
+    while i < full_blocks.len() {
         let block = Arc::unwrap_or_clone(full_blocks[i].clone());
         let block_txs = block.transactions.len() - 1; // remove anchor
         total_txs += block_txs;
@@ -528,10 +528,6 @@ fn request_from_blocks(
             timeShift: time_shift,
             signalSlots: vec![], // TODO
         });
-
-        if i == full_blocks.len() - 1 {
-            break;
-        }
 
         i += 1;
     }
