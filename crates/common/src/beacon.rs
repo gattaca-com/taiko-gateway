@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use eyre::ensure;
 use serde::Deserialize;
 use url::Url;
 
@@ -60,19 +59,6 @@ pub async fn init_beacon(beacon_url: Url) -> eyre::Result<BeaconHandle> {
     let beacon_handle =
         BeaconHandle::new(spec.slots_per_epoch, genesis_time_sec, spec.seconds_per_slot);
 
-    // fetch current slot
-    let headers_url = beacon_url.join("eth/v1/beacon/headers/head")?;
-    let header =
-        client.get(headers_url).send().await?.json::<BeaconApiResponse<Header>>().await?.data;
-    let head_slot = header.header.message.slot;
-
-    // head slot is within 2 of beacon handle slot
-    ensure!(
-        (head_slot as i64 - beacon_handle.current_slot() as i64).abs() <= 4,
-        "head slot is too far from current slot, head_slot={head_slot}, current_slot={}",
-        beacon_handle.current_slot()
-    );
-
     Ok(beacon_handle)
 }
 
@@ -94,20 +80,4 @@ struct Spec {
     seconds_per_slot: u64,
     #[serde(with = "alloy_serde::displayfromstr")]
     slots_per_epoch: u64,
-}
-
-#[derive(Deserialize)]
-struct Header {
-    header: HeaderInner,
-}
-
-#[derive(Deserialize)]
-struct HeaderInner {
-    message: Message,
-}
-
-#[derive(Deserialize)]
-struct Message {
-    #[serde(with = "alloy_serde::displayfromstr")]
-    slot: u64,
 }

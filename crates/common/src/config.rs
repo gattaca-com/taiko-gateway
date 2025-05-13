@@ -27,9 +27,7 @@ pub struct L1ChainConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct L2ChainConfig {
     pub name: String,
-    /// non-preconf RPC
     pub rpc_url: Url,
-    /// non-preconf WS
     pub ws_url: Url,
     pub taiko_token: Address,
     pub l1_contract: Address,
