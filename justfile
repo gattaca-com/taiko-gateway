@@ -1,5 +1,5 @@
-# Makes sure the nightly-2024-10-01 toolchain is installed
-toolchain := "nightly-2024-10-01"
+# Makes sure the nightly-2025-02-26 toolchain is installed
+toolchain := "nightly-2025-02-26"
 set shell := ["bash", "-cu"]
 
 fmt:
