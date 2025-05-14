@@ -6,6 +6,7 @@ use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Block, Header};
 use jsonrpsee::core::Serialize;
 use pc_common::taiko::pacaya::encode_and_compress_tx_list;
+use serde::Deserialize;
 use tracing::debug;
 
 #[derive(Debug, Default, Serialize, RlpEncodable)]
@@ -53,5 +54,35 @@ impl BuildPreconfBlockRequestBody {
             base_fee_per_gas: block.header.base_fee_per_gas.unwrap(),
         };
         BuildPreconfBlockRequestBody { executable_data }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StatusResponse {
+    #[serde(rename = "highestUnsafeL2PayloadBlockID")] // not camel case..
+    pub highest_unsafe_l2_payload_block_id: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_preconf_block_request_body() {
+        let raw = r#"{
+            "lookahead": {
+                "currOperator": "0x591317b806b96262c07105cc06cb4831008afdf2",
+                "nextOperator": "0x591317b806b96262c07105cc06cb4831008afdf2",
+                "currRanges": null,
+                "nextRanges": null,
+                "updatedAt": "2025-05-14T20:39:12.089999015Z"
+            },
+            "totalCached": 0,
+            "highestUnsafeL2PayloadBlockID": 306988,
+            "endOfSequencingBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }"#;
+
+        let deser = serde_json::from_str::<StatusResponse>(raw).unwrap();
+        assert_eq!(deser.highest_unsafe_l2_payload_block_id, 306988);
     }
 }

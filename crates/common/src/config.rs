@@ -1,6 +1,6 @@
 use std::{fs, ops::Deref, path::PathBuf, time::Duration};
 
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{Address, Bytes, U256};
 use alloy_signer_local::PrivateKeySigner;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -54,6 +54,8 @@ pub struct GatewayConfig {
     pub anchor_batch_lag: u64,
     /// Url to post soft blocks to
     pub soft_block_url: Url,
+    /// Url to get status from
+    pub status_url: Url,
     #[serde(flatten)]
     pub lookahead: LookaheadConfig,
     pub jwt_secret_path: PathBuf,
@@ -134,8 +136,9 @@ pub struct SequencerConfig {
     pub l1_safe_lag: u64,
     pub anchor_batch_lag: u64,
     pub soft_block_url: Url,
+    pub status_url: Url,
     pub max_sims_per_loop: usize,
-    pub jwt_secret: Vec<u8>,
+    pub jwt_secret: Bytes,
 }
 
 impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
@@ -147,8 +150,9 @@ impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
             l1_safe_lag: config.gateway.l1_safe_lag,
             anchor_batch_lag: config.gateway.anchor_batch_lag,
             soft_block_url: config.gateway.soft_block_url.clone(),
+            status_url: config.gateway.status_url.clone(),
             max_sims_per_loop: config.gateway.max_sims_per_loop,
-            jwt_secret,
+            jwt_secret: jwt_secret.into(),
             coinbase_address: config.gateway.coinbase,
             operator_address,
         }
