@@ -11,6 +11,9 @@ pub enum SequencerError {
 
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
+
+    #[error("serde_json error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
 }
 
 impl SequencerError {

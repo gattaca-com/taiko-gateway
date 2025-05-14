@@ -33,7 +33,7 @@ use crate::{
     error::SequencerError,
     jwt::generate_jwt,
     simulator::SimulatorClient,
-    soft_block::BuildPreconfBlockRequestBody,
+    soft_block::{BuildPreconfBlockRequestBody, StatusResponse},
     sorting::SortData,
     tx_pool::TxPool,
     types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
@@ -71,7 +71,10 @@ pub struct Sequencer {
     proposer_request: Option<ProposeBatchParams>,
     last_anchor_error: Instant,
     anchor_error_count: u64,
-    last_status: Instant,
+    /// whether we need to call status and check highest unsafe block id
+    needs_status_check: bool,
+    /// last time we checked status
+    last_status_check: Instant,
 }
 
 impl Sequencer {
@@ -105,7 +108,8 @@ impl Sequencer {
             proposer_request: None,
             last_anchor_error: Instant::now(),
             anchor_error_count: 0,
-            last_status: Instant::now(),
+            needs_status_check: true,
+            last_status_check: Instant::now(),
         }
     }
 
@@ -160,13 +164,6 @@ impl Sequencer {
         if self.check_time_shift() {
             self.send_batch_to_proposer("time shift too long", true);
         }
-
-        if self.last_status.elapsed() > Duration::from_secs(10) {
-            if let Err(err) = self.get_status() {
-                error!(%err, "failed to get status");
-            }
-            self.last_status = Instant::now();
-        }
     }
 
     fn state_transition(&mut self, state: SequencerState) -> SequencerState {
@@ -209,6 +206,32 @@ impl Sequencer {
 
                 if self.last_anchor_error.elapsed() < ANCHOR_RETRY_INTERVAL {
                     return SequencerState::default();
+                }
+
+                if self.needs_status_check {
+                    if self.last_status_check.elapsed() > Duration::from_secs(2) {
+                        self.last_status_check = Instant::now();
+
+                        match self.get_status_block() {
+                            Ok(status_block) => {
+                                let last_local_block = self.ctx.l2_parent().block_number;
+                                if status_block > last_local_block {
+                                    warn!(status_block, last_local_block, "highest unsafe block id is greater than local block, waiting 2s");
+                                    return SequencerState::default();
+                                } else {
+                                    // cover both status is 0 and equal to geth block
+                                    // should never be <
+                                    debug!(status_block, last_local_block, "status check passed");
+                                    self.needs_status_check = false;
+                                }
+                            }
+
+                            Err(err) => {
+                                error!(%err, "failed to get status block");
+                                return SequencerState::default();
+                            }
+                        }
+                    }
                 }
 
                 match self.anchor_block() {
@@ -337,6 +360,8 @@ impl Sequencer {
     /// - L1 block fetch is not delayed
     /// - it's our turn to sequence based on the lookahead
     fn check_can_sequence(&mut self) {
+        let sequence_start = self.flags.can_sequence;
+
         let is_propose_delayed = is_propose_delayed();
         if is_propose_delayed != self.flags.proposing_delayed {
             if is_propose_delayed {
@@ -370,6 +395,11 @@ impl Sequencer {
         self.flags.can_sequence = !self.flags.proposing_delayed &&
             !self.flags.l1_delayed &&
             self.flags.lookahead_sequence;
+
+        // only when we start sequencing
+        if self.flags.can_sequence && !sequence_start {
+            self.needs_status_check = true;
+        }
     }
 
     fn check_can_propose(&mut self) {
@@ -572,11 +602,12 @@ impl Sequencer {
         let start = Instant::now();
         match self.simulator.simulate_anchor(tx, block_env, extra_data) {
             Ok(res) => {
-                let ExecutionResult::Success { state_id, gas_used, builder_payment } = res else {
+                let ExecutionResult::Success { state_id, gas_used, builder_payment: _ } = res
+                else {
                     bail!("failed simulate anchor, res={res:?}");
                 };
 
-                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, ?parent, gas_used, builder_payment, "simulated anchor");
+                debug!(sim_time =? start.elapsed(), anchor = ?self.ctx.anchor, ?parent, gas_used, "simulated anchor");
                 Ok((state_id, block_info))
             }
             Err(err) => {
@@ -729,7 +760,7 @@ impl Sequencer {
         )
     }
 
-    fn get_status(&self) -> Result<(), SequencerError> {
+    fn get_status_block(&self) -> Result<u64, SequencerError> {
         let url = self.config.status_url.clone();
         let jwt_secret = self.config.jwt_secret.clone();
 
@@ -748,8 +779,8 @@ impl Sequencer {
                 let body = res.text().await?;
 
                 if status.is_success() {
-                    info!(body, "fetched status");
-                    Ok(())
+                    let status = serde_json::from_str::<StatusResponse>(&body)?;
+                    Ok(status.highest_unsafe_l2_payload_block_id)
                 } else {
                     Err(SequencerError::Status(status.as_u16(), body))
                 }
