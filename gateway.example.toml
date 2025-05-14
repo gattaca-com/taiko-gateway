@@ -31,6 +31,7 @@ coinbase = "0x591317B806B96262C07105CC06CB4831008AfDf2"
 # This should be higher than delay_sequence_slots, so we avoid reorging the previous gateway
 anchor_batch_lag = 16
 soft_block_url = ""
+status_block_url = ""
 handover_window_slots = 4
 handover_start_buffer_ms = 6_000
 jwt_secret_path = "~/taiko-geth-gattaca/geth/jwtsecret"

@@ -71,6 +71,7 @@ pub struct Sequencer {
     proposer_request: Option<ProposeBatchParams>,
     last_anchor_error: Instant,
     anchor_error_count: u64,
+    last_status: Instant,
 }
 
 impl Sequencer {
@@ -104,6 +105,7 @@ impl Sequencer {
             proposer_request: None,
             last_anchor_error: Instant::now(),
             anchor_error_count: 0,
+            last_status: Instant::now(),
         }
     }
 
@@ -157,6 +159,13 @@ impl Sequencer {
         // clear proposal if time shift is too long
         if self.check_time_shift() {
             self.send_batch_to_proposer("time shift too long", true);
+        }
+
+        if self.last_status.elapsed() > Duration::from_secs(10) {
+            if let Err(err) = self.get_status() {
+                error!(%err, "failed to get status");
+            }
+            self.last_status = Instant::now();
         }
     }
 
@@ -690,7 +699,6 @@ impl Sequencer {
     fn gossip_soft_block(&self, block: &Block) -> Result<(), SequencerError> {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
         let url = self.config.soft_block_url.clone();
-
         let jwt_secret = self.config.jwt_secret.clone();
 
         self.simulator.block_on(
@@ -701,7 +709,7 @@ impl Sequencer {
                 let mut req_builder = Client::new().post(url).json(&request);
 
                 if !jwt_secret.is_empty() {
-                    let jwt = generate_jwt(jwt_secret).unwrap();
+                    let jwt = generate_jwt(&jwt_secret).unwrap();
                     req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
                 }
 
@@ -715,6 +723,35 @@ impl Sequencer {
                     Ok(())
                 } else {
                     Err(SequencerError::SoftBlock(status.as_u16(), body))
+                }
+            }
+            .in_current_span(),
+        )
+    }
+
+    fn get_status(&self) -> Result<(), SequencerError> {
+        let url = self.config.status_url.clone();
+        let jwt_secret = self.config.jwt_secret.clone();
+
+        self.simulator.block_on(
+            async move {
+                let mut req_builder = Client::new().get(url);
+
+                if !jwt_secret.is_empty() {
+                    let jwt = generate_jwt(&jwt_secret).unwrap();
+                    req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
+                }
+
+                let res = req_builder.send().await?;
+
+                let status = res.status();
+                let body = res.text().await?;
+
+                if status.is_success() {
+                    info!(body, "fetched status");
+                    Ok(())
+                } else {
+                    Err(SequencerError::Status(status.as_u16(), body))
                 }
             }
             .in_current_span(),

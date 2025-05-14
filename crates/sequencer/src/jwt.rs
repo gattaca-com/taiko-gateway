@@ -14,7 +14,7 @@ struct Claims {
     iss: String,
 }
 
-pub fn generate_jwt(secret: Vec<u8>) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn generate_jwt(secret: &[u8]) -> Result<String, jsonwebtoken::errors::Error> {
     let now = utcnow_sec();
     let claims = Claims {
         sub: "soft-block".to_string(),
@@ -23,7 +23,7 @@ pub fn generate_jwt(secret: Vec<u8>) -> Result<String, jsonwebtoken::errors::Err
         iss: "taiko-gateway".to_string(),
     };
 
-    let key = EncodingKey::from_secret(&secret);
+    let key = EncodingKey::from_secret(secret);
     encode(&Header::default(), &claims, &key)
 }
 

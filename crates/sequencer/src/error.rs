@@ -6,6 +6,9 @@ pub enum SequencerError {
     #[error("soft block failed: code {0}, err: {1:?}")]
     SoftBlock(u16, String),
 
+    #[error("status failed: code {0}, err: {1:?}")]
+    Status(u16, String),
+
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
 }
