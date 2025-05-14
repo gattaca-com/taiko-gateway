@@ -208,28 +208,28 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if self.needs_status_check {
-                    if self.last_status_check.elapsed() > Duration::from_secs(2) {
-                        self.last_status_check = Instant::now();
+                if self.needs_status_check &&
+                    self.last_status_check.elapsed() > Duration::from_secs(2)
+                {
+                    self.last_status_check = Instant::now();
 
-                        match self.get_status_block() {
-                            Ok(status_block) => {
-                                let last_local_block = self.ctx.l2_parent().block_number;
-                                if status_block > last_local_block {
-                                    warn!(status_block, last_local_block, "highest unsafe block id is greater than local block, waiting 2s");
-                                    return SequencerState::default();
-                                } else {
-                                    // cover both status is 0 and equal to geth block
-                                    // should never be <
-                                    debug!(status_block, last_local_block, "status check passed");
-                                    self.needs_status_check = false;
-                                }
-                            }
-
-                            Err(err) => {
-                                error!(%err, "failed to get status block");
+                    match self.get_status_block() {
+                        Ok(status_block) => {
+                            let last_local_block = self.ctx.l2_parent().block_number;
+                            if status_block > last_local_block {
+                                warn!(status_block, last_local_block, "highest unsafe block id is greater than local block, waiting 2s");
                                 return SequencerState::default();
+                            } else {
+                                // cover both status is 0 and equal to geth block
+                                // should never be <
+                                debug!(status_block, last_local_block, "status check passed");
+                                self.needs_status_check = false;
                             }
+                        }
+
+                        Err(err) => {
+                            error!(%err, "failed to get status block");
+                            return SequencerState::default();
                         }
                     }
                 }
