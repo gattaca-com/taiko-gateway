@@ -14,6 +14,7 @@ use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
+    beacon::BeaconHandle,
     config::{ProposerConfig, TaikoChainParams, TaikoConfig},
     metrics::ProposerMetrics,
     proposer::{
@@ -44,6 +45,7 @@ pub struct ProposerManager {
     taiko_config: TaikoConfig,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
     safe_l1_lag: u64,
+    beacon_handle: BeaconHandle,
 }
 
 impl ProposerManager {
@@ -54,8 +56,17 @@ impl ProposerManager {
         l2_provider: AlloyProvider,
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
+        beacon_handle: BeaconHandle,
     ) -> Self {
-        Self { config, client, new_blocks_rx, l2_provider, taiko_config, safe_l1_lag }
+        Self {
+            config,
+            client,
+            new_blocks_rx,
+            l2_provider,
+            taiko_config,
+            safe_l1_lag,
+            beacon_handle,
+        }
     }
 
     #[tracing::instrument(skip_all, name = "proposer")]
@@ -120,7 +131,6 @@ impl ProposerManager {
             .ok_or_eyre("missing last block")?;
 
         let l1_head = l1_block.header.number;
-        let l1_timestamp = l1_block.header.timestamp;
 
         // the parent of the first block in the first batch
         let l2_parent = self
@@ -151,11 +161,13 @@ impl ProposerManager {
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
 
+            let l1_timestamp =
+                self.beacon_handle.timestamp_of_slot(self.beacon_handle.current_slot() + 1);
             if let Err(err) = validate_batch_params(
                 l2_parent_anchor_block_id,
                 l2_parent_timestamp,
                 l1_head + 1, // assume we land next block
-                l1_timestamp + 12,
+                l1_timestamp,
                 *anchor_block_id,
                 blocks,
                 &self.taiko_config.params,
@@ -175,7 +187,7 @@ impl ProposerManager {
             // if any batch reorgs, re-anchor all batches and try to propose in as few txs as
             // possible
             let all_blocks = to_propose.into_values().flatten().collect::<Vec<_>>();
-            self.propose_reorged_batch(l1_head, all_blocks, l2_parent.header.timestamp).await?;
+            self.propose_reorged_batch(l1_head, all_blocks).await?;
         } else {
             // otherwise propose one batch at a time
             let mut to_verify = BTreeMap::new();
@@ -225,7 +237,6 @@ impl ProposerManager {
         &self,
         l1_head: u64,
         blocks: Vec<Arc<Block>>,
-        l2_parent_timestamp: u64,
     ) -> eyre::Result<()> {
         let safe_l1_head = l1_head.saturating_sub(self.safe_l1_lag);
 
@@ -236,11 +247,15 @@ impl ProposerManager {
             .await?
             .ok_or_eyre("missing last block")?;
 
+        // as recent as possible
+        let override_timestamp =
+            self.beacon_handle.timestamp_of_slot(self.beacon_handle.current_slot() - 1);
+
         // create a batch proposal with as few txs as possible
         let requests = request_from_blocks(
             l1_block.header.number,
             blocks,
-            Some(l2_parent_timestamp),
+            Some(override_timestamp),
             Some(0),
             self.taiko_config.params.max_blocks_per_batch,
         );
@@ -557,7 +572,7 @@ fn request_from_blocks(
 fn validate_batch_params(
     l2_parent_anchor_block_id: u64,
     l2_parent_timestamp: u64,
-    l1_head: u64,
+    l1_block: u64, // where it will land
     l1_timestamp: u64,
     anchor_block_id: u64,
     blocks: &[Arc<Block>],
@@ -567,7 +582,7 @@ fn validate_batch_params(
         anchor_block_id,
         l2_parent_anchor_block_id,
         l2_parent_timestamp,
-        l1_head,
+        l1_block,
         l1_timestamp,
         "validating batch params"
     );
@@ -576,10 +591,10 @@ fn validate_batch_params(
     ensure!(blocks.len() <= config.max_blocks_per_batch, "too many blocks to propose");
 
     ensure!(
-        anchor_block_id + config.safe_anchor_height_offset() >= l1_head,
+        anchor_block_id + config.safe_anchor_height_offset() >= l1_block,
         "anchor block id too small"
     );
-    ensure!(anchor_block_id < l1_head, "anchor block id too large");
+    ensure!(anchor_block_id < l1_block, "anchor block id too large");
     ensure!(anchor_block_id >= l2_parent_anchor_block_id, "anchor block id smaller than parent");
 
     let first_timestamp = blocks[0].header.timestamp;
