@@ -145,7 +145,7 @@ impl TxPool {
         }
 
         let random = utcnow_sec() as usize % self.tx_lists.len();
-        let (address, tx_list) = self.tx_lists.iter().skip(random).next().unwrap();
+        let (address, tx_list) = self.tx_lists.iter().nth(random).unwrap();
 
         let cache_nonce =
             if self.nonces.is_valid_parent(parent_block) { self.nonces.get(address) } else { None };

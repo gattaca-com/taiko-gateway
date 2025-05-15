@@ -27,8 +27,8 @@ pub struct L1ChainConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct L2ChainConfig {
     pub name: String,
-    pub rpc_url: Url,
-    pub ws_url: Url,
+    pub rpc_url: Urls,
+    pub ws_url: Urls,
     pub taiko_token: Address,
     pub l1_contract: Address,
     pub l2_contract: Address,
@@ -111,9 +111,9 @@ pub struct RpcConfig {
     /// Port to open the RPC server on
     pub port: u16,
     /// Address of RPC node with txpool on
-    pub rpc_url: Url,
+    pub rpc_url: Urls,
     /// Address of RPC node to subscribe to mempool
-    pub ws_url: Url,
+    pub ws_url: Urls,
 }
 
 impl From<&StaticConfig> for RpcConfig {
@@ -274,5 +274,72 @@ impl TaikoChainParams {
             U256::ZERO,
             MAX_BLOCKS_PER_BATCH,
         )
+    }
+}
+
+#[derive(Clone)]
+pub struct Urls(pub Vec<Url>);
+
+impl std::fmt::Debug for Urls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.len() == 1 {
+            write!(f, "{}", self.0[0])
+        } else {
+            write!(f, "{:?}", self.0)
+        }
+    }
+}
+
+impl Deref for Urls {
+    type Target = Vec<Url>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Url> for Urls {
+    fn from(url: Url) -> Self {
+        Self(vec![url])
+    }
+}
+
+impl<'de> Deserialize<'de> for Urls {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            One(Url),
+            Many(Vec<Url>),
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+
+        match helper {
+            Helper::One(url) => Ok(Self(vec![url])),
+            Helper::Many(urls) => {
+                if urls.is_empty() {
+                    Err(serde::de::Error::custom("cannot be an empty vector"))
+                } else {
+                    Ok(Self(urls))
+                }
+            }
+        }
+    }
+}
+
+impl Serialize for Urls {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if self.0.len() == 1 {
+            self.0[0].serialize(serializer)
+        } else {
+            self.0.serialize(serializer)
+        }
     }
 }

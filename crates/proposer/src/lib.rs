@@ -31,8 +31,9 @@ pub async fn start_proposer(
     )
     .await?;
 
-    let l2_provider =
-        ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
+    let l2_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .on_http(taiko_config.rpc_url[0].clone());
 
     let proposer = ProposerManager::new(
         proposer_config,

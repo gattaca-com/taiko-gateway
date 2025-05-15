@@ -77,6 +77,7 @@ mod tests {
     use alloy_provider::{Provider, ProviderBuilder};
     use alloy_rpc_types::Block;
     use alloy_sol_types::{SolInterface, SolType};
+    use url::Url;
 
     use super::*;
     use crate::{
@@ -189,8 +190,8 @@ mod tests {
             preconf_url: "http://abc.xyz".parse().unwrap(),
             config: L2ChainConfig {
                 name: "".to_string(),
-                rpc_url: "http://abc.xyz".parse().unwrap(),
-                ws_url: "http://abc.xyz".parse().unwrap(),
+                rpc_url: Url::parse("http://abc.xyz").unwrap().into(),
+                ws_url: Url::parse("http://abc.xyz").unwrap().into(),
                 taiko_token: Address::ZERO,
                 l1_contract: Address::ZERO,
                 l2_contract: block_anchor.inner.to().unwrap(),
