@@ -75,6 +75,7 @@ pub struct Sequencer {
     needs_status_check: bool,
     /// last time we checked status
     last_status_check: Instant,
+    last_produced_block: Instant,
 }
 
 impl Sequencer {
@@ -110,6 +111,7 @@ impl Sequencer {
             anchor_error_count: 0,
             needs_status_check: true,
             last_status_check: Instant::now(),
+            last_produced_block: Instant::now(),
         }
     }
 
@@ -153,6 +155,11 @@ impl Sequencer {
         // refresh anchor if needed
         if self.flags.can_sequence {
             self.maybe_refresh_anchor();
+
+            if self.last_produced_block.elapsed() > Duration::from_secs(30) {
+                self.tx_pool.report(self.ctx.l2_parent().block_number);
+                self.last_produced_block = Instant::now();
+            }
         }
 
         // clear proposal if it's late
@@ -200,7 +207,7 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if !self.tx_pool.new_orders() {
+                if !self.tx_pool.has_valid_orders() {
                     return SequencerState::default();
                 }
 
@@ -238,11 +245,12 @@ impl Sequencer {
                     Ok((state_id, block_info)) => {
                         self.anchor_error_count = 0;
                         debug!(?block_info, %state_id, "anchored");
+
                         let Some(active) = self
                             .tx_pool
                             .active_orders(block_info.block_number, block_info.base_fee)
                         else {
-                            self.tx_pool.set_no_orders();
+                            self.tx_pool.set_no_valid_orders();
                             return SequencerState::default();
                         };
 
@@ -315,6 +323,7 @@ impl Sequencer {
                         }
                     } else {
                         // reset state for next block
+                        self.last_produced_block = Instant::now();
                         SequencerState::default()
                     }
                 } else {
@@ -642,8 +651,12 @@ impl Sequencer {
             "sealed block"
         );
 
+        // we set this to true when we think we wont be sequencing any more blocks
+        // ideally this is not part of the new
+        let end_of_sequencing = false;
+
         // fail if gossiping fails
-        self.gossip_soft_block(&block)?;
+        self.gossip_soft_block(&block, end_of_sequencing)?;
 
         BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
@@ -727,7 +740,11 @@ impl Sequencer {
         }
     }
 
-    fn gossip_soft_block(&self, block: &Block) -> Result<(), SequencerError> {
+    fn gossip_soft_block(
+        &self,
+        block: &Block,
+        end_of_sequencing: bool,
+    ) -> Result<(), SequencerError> {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
         let url = self.config.soft_block_url.clone();
         let jwt_secret = self.config.jwt_secret.clone();
@@ -735,7 +752,7 @@ impl Sequencer {
         self.simulator.block_on(
             async move {
                 let block_number = block.header.number;
-                let request = BuildPreconfBlockRequestBody::new(block);
+                let request = BuildPreconfBlockRequestBody::new(block, end_of_sequencing);
 
                 let mut req_builder = Client::new().post(url).json(&request);
 

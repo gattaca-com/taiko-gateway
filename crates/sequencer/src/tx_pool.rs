@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use alloy_consensus::Transaction;
 use alloy_primitives::Address;
-use pc_common::sequencer::Order;
-use tracing::debug;
+use pc_common::{sequencer::Order, utils::utcnow_sec};
+use tracing::{debug, info};
 
 use crate::{sorting::ActiveOrders, types::StateNonces};
 
@@ -12,13 +12,20 @@ pub struct TxPool {
     tx_lists: HashMap<Address, TxList>,
     // address -> state_nonce valid at block `parent_block` + 1
     nonces: StateNonces,
-    new_orders: bool,
+    valid_orders: bool,
+    // this includes duplicates and invalid nonces
+    discarded_orders: u64,
 }
 
 impl TxPool {
     pub fn new() -> Self {
         // this should be big enough for all the users in a single block
-        Self { tx_lists: HashMap::new(), nonces: StateNonces::default(), new_orders: false }
+        Self {
+            tx_lists: HashMap::new(),
+            nonces: StateNonces::default(),
+            valid_orders: false,
+            discarded_orders: 0,
+        }
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
@@ -33,17 +40,20 @@ impl TxPool {
             }
         } else if let Some(state_nonce) = self.nonces.get(&sender) {
             if tx.nonce() < *state_nonce {
+                self.discarded_orders += 1;
                 return;
             }
         }
 
-        self.new_orders = true;
+        self.valid_orders = true;
         self.tx_lists.entry(sender).or_insert(TxList::new(sender)).put(tx);
     }
 
     /// Return the active orders, checking the nonces cache for the block number being built
     pub fn active_orders(&mut self, block_number: u64, base_fee: u128) -> Option<ActiveOrders> {
         if !self.nonces.is_valid_block(block_number) {
+            debug!("invalid nonce cache, looking for valid orders");
+
             // nonces are stale, clear the cache and re-sim
             self.nonces.clear();
             (!self.tx_lists.is_empty()).then(|| {
@@ -57,6 +67,8 @@ impl TxPool {
                 ActiveOrders::new(tx_lists)
             })
         } else {
+            debug!("valid nonce cache, getting active orders");
+
             // nonces are valid, get the active orders from those
             self.get_active_for_nonces(&self.nonces, base_fee)
         }
@@ -108,6 +120,7 @@ impl TxPool {
         mined_block: u64,
         mined_txs: impl Iterator<Item = (Address, u64)>,
     ) {
+        self.discarded_orders = 0;
         let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
         self.update_nonces(nonces);
     }
@@ -117,12 +130,35 @@ impl TxPool {
         self.nonces.clear();
     }
 
-    pub fn set_no_orders(&mut self) {
-        self.new_orders = false;
+    pub fn set_no_valid_orders(&mut self) {
+        self.valid_orders = false;
     }
 
-    pub fn new_orders(&self) -> bool {
-        self.new_orders
+    pub fn has_valid_orders(&self) -> bool {
+        self.valid_orders
+    }
+
+    pub fn report(&self, parent_block: u64) {
+        if self.tx_lists.is_empty() {
+            info!(discarded_orders = self.discarded_orders, "expty tx pool");
+            return;
+        }
+
+        let random = utcnow_sec() as usize % self.tx_lists.len();
+        let (address, tx_list) = self.tx_lists.iter().skip(random).next().unwrap();
+
+        let cache_nonce =
+            if self.nonces.is_valid_parent(parent_block) { self.nonces.get(address) } else { None };
+
+        info!(
+            discarded_orders = self.discarded_orders,
+            senders = self.tx_lists.len(),
+            ex_address =% address,
+            ex_txs = tx_list.txs.len(),
+            ex_next_nonce = tx_list.txs.first_key_value().map(|(nonce, _)| nonce).unwrap_or(&0),
+            ex_cache_nonce = ?cache_nonce,
+            "tx pool status"
+        );
     }
 }
 
