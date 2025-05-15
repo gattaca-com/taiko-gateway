@@ -8,7 +8,7 @@ use pc_common::{
     metrics::start_metrics_server,
     runtime::init_runtime,
     taiko::{get_and_validate_config, lookahead::start_lookahead_loop},
-    utils::{init_panic_hook, init_tracing_log},
+    utils::{init_panic_hook, init_statics, init_tracing_log},
 };
 use pc_proposer::start_proposer;
 use pc_rpc::start_rpc;
@@ -18,11 +18,11 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
-    init_panic_hook();
-
     let config = load_static_config();
     let envs = load_env_vars();
 
+    init_statics(config.app_id.clone());
+    init_panic_hook();
     let _guards = init_tracing_log();
     init_runtime();
     start_metrics_server();

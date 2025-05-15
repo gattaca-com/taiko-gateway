@@ -53,36 +53,13 @@ pub fn verify_and_log_block(preconf_header: &Header, new_header: &Header, panic_
 }
 
 // Alerts
+static APP_ID: OnceLock<String> = OnceLock::new();
 static DISCORD_WEBHOOK_URL: OnceLock<Url> = OnceLock::new();
 static DISCORD_USER: OnceLock<String> = OnceLock::new();
 
-pub fn alert_discord(message: &str) {
-    if is_test_env() {
-        return;
-    }
+pub fn init_statics(app_id: String) {
+    APP_ID.set(app_id).unwrap();
 
-    if let Some(webhook_url) = DISCORD_WEBHOOK_URL.get() {
-        let user_tag = DISCORD_USER.get().map(String::as_str).unwrap_or("");
-
-        let max_len = 1850.min(message.len());
-        let msg = format!("{user_tag}\n{}", &message[..max_len]);
-
-        let content = HashMap::from([("content", msg.clone())]);
-
-        if let Err(err) =
-            reqwest::blocking::Client::new().post(webhook_url.clone()).json(&content).send()
-        {
-            error!("failed to send discord alert: {err}");
-            eprintln!("failed to send discord alert: {err}");
-        }
-    }
-}
-
-const fn is_test_env() -> bool {
-    cfg!(test) || cfg!(debug_assertions)
-}
-
-pub fn init_panic_hook() {
     if let Ok(webhook_url) = std::env::var("DISCORD_WEBHOOK_URL") {
         DISCORD_WEBHOOK_URL
             .set(Url::parse(&webhook_url).expect("invalid DISCORD_WEBHOOK_URL"))
@@ -91,10 +68,39 @@ pub fn init_panic_hook() {
     if let Ok(user_tag) = std::env::var("DISCORD_USER") {
         DISCORD_USER.set(user_tag).unwrap();
     }
+}
 
+pub fn alert_discord(message: &str) {
+    if is_test_env() {
+        return;
+    }
+
+    let Some(webhook_url) = DISCORD_WEBHOOK_URL.get() else { return };
+    let user_tag = DISCORD_USER.get().map(String::as_str).unwrap_or("");
+
+    let max_len = 1850.min(message.len());
+    let msg = format!("{user_tag}\n{}", &message[..max_len]);
+
+    let content = HashMap::from([("content", msg.clone())]);
+
+    if let Err(err) =
+        reqwest::blocking::Client::new().post(webhook_url.clone()).json(&content).send()
+    {
+        error!("failed to send discord alert: {err}");
+        eprintln!("failed to send discord alert: {err}");
+    }
+}
+
+const fn is_test_env() -> bool {
+    cfg!(test) || cfg!(debug_assertions)
+}
+
+pub fn init_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
+        let app_id = APP_ID.get().map(String::as_str).unwrap_or("unknown");
         let backtrace = Backtrace::new();
-        let crash_log = format!("panic: {info}\nfull backtrace:\n{backtrace:?}\n");
+        let crash_log =
+            format!("panic: APP_ID: `{app_id}`\n{info}\nfull backtrace:\n{backtrace:?}\n");
         error!("{crash_log}");
         eprintln!("{crash_log}");
         alert_discord(&crash_log);
