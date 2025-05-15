@@ -157,7 +157,8 @@ impl Sequencer {
             self.maybe_refresh_anchor();
 
             if self.last_produced_block.elapsed() > Duration::from_secs(30) {
-                self.tx_pool.report(self.ctx.l2_parent().block_number);
+                self.tx_pool
+                    .report_and_sanity_check(self.ctx.l2_parent().block_number, &self.simulator);
                 self.last_produced_block = Instant::now();
             }
         }
@@ -331,6 +332,10 @@ impl Sequencer {
                     // all for the actual state db (as opposed to ones we applied in the block),
                     // use those to clear the txpool and restart the loop
                     self.tx_pool.update_nonces(sort_data.state_nonces);
+                    self.tx_pool.report_and_sanity_check(
+                        sort_data.block_info.block_number - 1,
+                        &self.simulator,
+                    );
                     debug!("exhausted active orders past target seal, resetting");
                     if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
                         self.send_batch_to_proposer(

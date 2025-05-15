@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, HashMap};
 use alloy_consensus::Transaction;
 use alloy_primitives::Address;
 use pc_common::{sequencer::Order, utils::utcnow_sec};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
-use crate::{sorting::ActiveOrders, types::StateNonces};
+use crate::{simulator::SimulatorClient, sorting::ActiveOrders, types::StateNonces};
 
 pub struct TxPool {
     // sender -> tx list
@@ -138,7 +138,7 @@ impl TxPool {
         self.valid_orders
     }
 
-    pub fn report(&self, parent_block: u64) {
+    pub fn report_and_sanity_check(&mut self, parent_block: u64, simulator: &SimulatorClient) {
         if self.tx_lists.is_empty() {
             info!(discarded_orders = self.discarded_orders, "expty tx pool");
             return;
@@ -150,6 +150,14 @@ impl TxPool {
         let cache_nonce =
             if self.nonces.is_valid_parent(parent_block) { self.nonces.get(address) } else { None };
 
+        let simulator_nonce = match simulator.get_nonce(*address) {
+            Ok(nonce) => nonce,
+            Err(err) => {
+                error!(%err, "failed to get simulator nonce");
+                return;
+            }
+        };
+
         info!(
             discarded_orders = self.discarded_orders,
             senders = self.tx_lists.len(),
@@ -157,8 +165,16 @@ impl TxPool {
             ex_txs = tx_list.txs.len(),
             ex_next_nonce = tx_list.txs.first_key_value().map(|(nonce, _)| nonce).unwrap_or(&0),
             ex_cache_nonce = ?cache_nonce,
+            simulator_nonce,
             "tx pool status"
         );
+
+        if let Some(cache_nonce) = cache_nonce {
+            if *cache_nonce != simulator_nonce {
+                error!(cache_nonce, simulator_nonce, "cache nonce mismatch! resetting");
+                self.nonces.clear();
+            }
+        }
     }
 }
 

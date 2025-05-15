@@ -1,7 +1,7 @@
 use std::{future::Future, time::Instant};
 
-use alloy_primitives::Bytes;
-use alloy_provider::ProviderBuilder;
+use alloy_primitives::{Address, Bytes};
+use alloy_provider::{Provider, ProviderBuilder};
 use crossbeam_channel::Sender;
 use eyre::eyre;
 use jsonrpsee::{
@@ -145,5 +145,12 @@ impl SimulatorClient {
 
     pub fn block_on<T>(&self, future: impl Future<Output = T>) -> T {
         self.runtime.block_on(future)
+    }
+
+    pub fn get_nonce(&self, address: Address) -> eyre::Result<u64> {
+        self.block_on(async move {
+            let nonce = self.taiko_l2.provider().get_transaction_count(address).await?;
+            Ok(nonce)
+        })
     }
 }
