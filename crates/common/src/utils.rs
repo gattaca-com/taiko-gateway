@@ -75,11 +75,12 @@ pub fn alert_discord(message: &str) {
         return;
     }
 
+    let app_id = APP_ID.get().map(String::as_str).unwrap_or("unknown");
     let Some(webhook_url) = DISCORD_WEBHOOK_URL.get() else { return };
     let user_tag = DISCORD_USER.get().map(String::as_str).unwrap_or("");
 
     let max_len = 1850.min(message.len());
-    let msg = format!("{user_tag}\n{}", &message[..max_len]);
+    let msg = format!("{user_tag}\nAPP_ID: `{app_id}`\n{}", &message[..max_len]);
 
     let content = HashMap::from([("content", msg.clone())]);
 
@@ -97,10 +98,8 @@ const fn is_test_env() -> bool {
 
 pub fn init_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
-        let app_id = APP_ID.get().map(String::as_str).unwrap_or("unknown");
         let backtrace = Backtrace::new();
-        let crash_log =
-            format!("panic: APP_ID: `{app_id}`\n{info}\nfull backtrace:\n{backtrace:?}\n");
+        let crash_log = format!("panic: {info}\nfull backtrace:\n{backtrace:?}\n");
         error!("{crash_log}");
         eprintln!("{crash_log}");
         alert_discord(&crash_log);

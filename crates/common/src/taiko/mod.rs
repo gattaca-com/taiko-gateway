@@ -59,7 +59,7 @@ pub struct BaseFeeConfig {
 pub struct AnchorParams {
     pub block_id: u64,
     pub state_root: B256,
-    pub timestamp: u64,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -550,9 +550,14 @@ impl Sequencer {
             return;
         };
 
+        if safe_l1_header.number <= ctx_anchor.block_id {
+            // no point in checking
+            return;
+        }
+
         // if current anchor has been used for enough blocks, refresh it
         let is_anchor_old =
-            ctx_anchor.block_id + self.config.anchor_batch_lag < safe_l1_header.number;
+            (utcnow_sec() - ctx_anchor.created_at) > self.config.anchor_batch_lag * 12;
 
         if is_anchor_old {
             self.update_anchor(&safe_l1_header, "anchor too old");
@@ -575,7 +580,7 @@ impl Sequencer {
         let new = AnchorParams {
             block_id: safe_l1_header.number,
             state_root: safe_l1_header.state_root,
-            timestamp: self.ctx.l2_parent().timestamp.max(safe_l1_header.timestamp),
+            created_at: utcnow_sec(),
         };
 
         debug!(reason, anchor =? new, "refresh anchor");
@@ -653,6 +658,7 @@ impl Sequencer {
             block_hash = %block.header.hash,
             payment = format_ether(res.cumulative_builder_payment),
             gas_used = res.cumulative_gas_used,
+            timestamp = block.header.timestamp,
             "sealed block"
         );
 

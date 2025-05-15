@@ -176,7 +176,7 @@ mod tests {
         let anchor_params = AnchorParams {
             block_id: anchor_block_id,
             state_root: anchor_state_root,
-            timestamp: parent_block.header.timestamp,
+            created_at: 0,
         };
 
         let parent_params = ParentParams {

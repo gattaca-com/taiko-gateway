@@ -132,7 +132,7 @@ pub struct SequencerConfig {
     pub coinbase_address: Address,
     pub operator_address: Address,
     pub l1_delay: Duration,
-    /// blocks
+    /// slots
     pub l1_safe_lag: u64,
     pub anchor_batch_lag: u64,
     pub soft_block_url: Url,
