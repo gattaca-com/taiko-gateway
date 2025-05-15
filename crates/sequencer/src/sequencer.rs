@@ -328,6 +328,7 @@ impl Sequencer {
                         SequencerState::default()
                     }
                 } else {
+                    debug!("exhausted active orders past target seal, resetting");
                     // if we're here, all the orders were invalid, so the state nonces are
                     // all for the actual state db (as opposed to ones we applied in the block),
                     // use those to clear the txpool and restart the loop
@@ -336,7 +337,6 @@ impl Sequencer {
                         sort_data.block_info.block_number - 1,
                         &self.simulator,
                     );
-                    debug!("exhausted active orders past target seal, resetting");
                     if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
                         self.send_batch_to_proposer(
                             "sealed last for this anchor (no active orders)",

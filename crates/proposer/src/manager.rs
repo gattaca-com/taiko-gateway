@@ -154,8 +154,8 @@ impl ProposerManager {
             if let Err(err) = validate_batch_params(
                 l2_parent_anchor_block_id,
                 l2_parent_timestamp,
-                l1_head,
-                l1_timestamp,
+                l1_head + 1, // assume we land next block
+                l1_timestamp + 12,
                 *anchor_block_id,
                 blocks,
                 &self.taiko_config.params,
@@ -175,7 +175,7 @@ impl ProposerManager {
             // if any batch reorgs, re-anchor all batches and try to propose in as few txs as
             // possible
             let all_blocks = to_propose.into_values().flatten().collect::<Vec<_>>();
-            self.propose_reorged_batch(l1_head, all_blocks).await?;
+            self.propose_reorged_batch(l1_head, all_blocks, l2_parent.header.timestamp).await?;
         } else {
             // otherwise propose one batch at a time
             let mut to_verify = BTreeMap::new();
@@ -225,6 +225,7 @@ impl ProposerManager {
         &self,
         l1_head: u64,
         blocks: Vec<Arc<Block>>,
+        l2_parent_timestamp: u64,
     ) -> eyre::Result<()> {
         let safe_l1_head = l1_head.saturating_sub(self.safe_l1_lag);
 
@@ -239,7 +240,7 @@ impl ProposerManager {
         let requests = request_from_blocks(
             l1_block.header.number,
             blocks,
-            Some(l1_block.header.timestamp),
+            Some(l2_parent_timestamp),
             Some(0),
             self.taiko_config.params.max_blocks_per_batch,
         );
@@ -584,7 +585,12 @@ fn validate_batch_params(
     let first_timestamp = blocks[0].header.timestamp;
     let last_timestamp = blocks[blocks.len() - 1].header.timestamp;
 
-    ensure!(last_timestamp <= l1_timestamp, "timestamp too large");
+    ensure!(
+        last_timestamp <= l1_timestamp,
+        "timestamp too large {} {}",
+        last_timestamp,
+        l1_timestamp
+    );
     // skip first timeshift == 0
 
     ensure!(last_timestamp >= first_timestamp, "block timestamps should increase");
