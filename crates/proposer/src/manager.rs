@@ -326,7 +326,7 @@ impl ProposerManager {
                     },
 
                     RevertReason::PreconfRouter(err) => match err {
-                        PreconfRouterErrors::NotPreconfer(_) => {
+                        PreconfRouterErrors::NotTheOperator(_) => {
                             warn!("failed proposing before change in preconfer, stop retrying");
                             break;
                         }

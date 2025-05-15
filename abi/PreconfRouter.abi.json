@@ -3,17 +3,12 @@
         "type": "constructor",
         "inputs": [
             {
-                "name": "_proposeBatchEntrypoint",
+                "name": "_proposeBlockEntrypoint",
                 "type": "address",
                 "internalType": "address"
             },
             {
                 "name": "_preconfWhitelist",
-                "type": "address",
-                "internalType": "address"
-            },
-            {
-                "name": "_fallbackPreconfer",
                 "type": "address",
                 "internalType": "address"
             }
@@ -26,19 +21,6 @@
         "inputs": [],
         "outputs": [],
         "stateMutability": "nonpayable"
-    },
-    {
-        "type": "function",
-        "name": "fallbackPreconfer",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
-        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -133,7 +115,7 @@
             {
                 "name": "",
                 "type": "address",
-                "internalType": "contract IPreconfWhitelist"
+                "internalType": "address"
             }
         ],
         "stateMutability": "view"
@@ -312,13 +294,13 @@
     },
     {
         "type": "function",
-        "name": "proposeBatchEntrypoint",
+        "name": "proposeBlockEntrypoint",
         "inputs": [],
         "outputs": [
             {
                 "name": "",
                 "type": "address",
-                "internalType": "contract IProposeBatch"
+                "internalType": "address"
             }
         ],
         "stateMutability": "view"
@@ -551,17 +533,12 @@
     },
     {
         "type": "error",
-        "name": "NotFallbackPreconfer",
+        "name": "NotTheOperator",
         "inputs": []
     },
     {
         "type": "error",
-        "name": "NotPreconfer",
-        "inputs": []
-    },
-    {
-        "type": "error",
-        "name": "ProposerIsNotPreconfer",
+        "name": "ProposerIsNotTheSender",
         "inputs": []
     },
     {
