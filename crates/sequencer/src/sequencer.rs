@@ -39,11 +39,11 @@ use crate::{
     types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
 };
 
-// because block time is >> 100ms we dont need to reset this if anchor succeeds (ie
-// we never need to anchor more frequently than every 100ms)
-const ANCHOR_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+// because block time is >> 500ms we dont need to reset this if anchor succeeds (ie
+// we never need to anchor more frequently than every 500ms)
+const ANCHOR_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 // 10S
-const MAX_ANCHOR_ERRORS: u64 = 1000;
+const MAX_ANCHOR_ERRORS: u64 = 20;
 
 #[derive(Debug, Default)]
 struct SequencerFlags {
@@ -657,7 +657,7 @@ impl Sequencer {
             ?block_time,
             block_hash = %block.header.hash,
             payment = format_ether(res.cumulative_builder_payment),
-            gas_used = res.cumulative_gas_used,
+            gas_used = block.header.gas_used,
             timestamp = block.header.timestamp,
             "sealed block"
         );
