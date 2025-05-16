@@ -5,6 +5,7 @@ use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
 use manager::ProposerManager;
 use pc_common::{
+    beacon::BeaconHandle,
     config::{ProposerConfig, StaticConfig, TaikoConfig},
     proposer::ProposalRequest,
     runtime::spawn,
@@ -19,6 +20,7 @@ pub async fn start_proposer(
     taiko_config: TaikoConfig,
     proposer_signer: PrivateKeySigner,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
+    beacon_handle: BeaconHandle,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 
@@ -31,8 +33,9 @@ pub async fn start_proposer(
     )
     .await?;
 
-    let l2_provider =
-        ProviderBuilder::new().disable_recommended_fillers().on_http(taiko_config.rpc_url.clone());
+    let l2_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .on_http(taiko_config.rpc_url[0].clone());
 
     let proposer = ProposerManager::new(
         proposer_config,
@@ -41,6 +44,7 @@ pub async fn start_proposer(
         l2_provider,
         taiko_config,
         config.gateway.l1_safe_lag,
+        beacon_handle,
     );
 
     // start proposer

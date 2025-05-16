@@ -6,7 +6,7 @@ use alloy_rpc_types_txpool::TxpoolContent;
 use crossbeam_channel::Sender;
 use eyre::{bail, eyre};
 use pc_common::{
-    config::{RpcConfig, StaticConfig},
+    config::{RpcConfig, StaticConfig, Urls},
     metrics::MempoolMetrics,
     runtime::spawn,
     sequencer::Order,
@@ -36,34 +36,46 @@ pub fn start_rpc(config: &StaticConfig, sequence_tx: Sender<Order>, mempool_tx: 
 
 // TODO: tidy up
 #[tracing::instrument(skip_all, name = "mempool")]
-async fn start_mempool_subscription(rpc_url: Url, ws_url: Url, mempool_tx: Sender<Order>) {
-    info!(%rpc_url, "starting mempool subscription fetch");
+async fn start_mempool_subscription(rpc_url: Urls, ws_url: Urls, mempool_tx: Sender<Order>) {
+    info!(?rpc_url, ?ws_url, "starting mempool subscription fetch");
 
     let backoff = 4;
 
-    let tx_clone = mempool_tx.clone();
-    spawn(
-        async move {
-            loop {
-                // refetch full txpool every 30 seconds
-                if let Err(err) = fetch_txpool(rpc_url.clone(), tx_clone.clone()).await {
-                    error!(%err, backoff, "txpool fetch failed. Retrying..");
+    for rpc_url in rpc_url.0 {
+        let mempool_tx = mempool_tx.clone();
+        spawn(
+            async move {
+                loop {
+                    // refetch full txpool every 30 seconds
+                    if let Err(err) = fetch_txpool(rpc_url.clone(), mempool_tx.clone()).await {
+                        error!(%err, backoff, "txpool fetch failed. Retrying..");
+                    }
+
+                    sleep(Duration::from_secs(30)).await;
                 }
-
-                sleep(Duration::from_secs(30)).await;
             }
-        }
-        .in_current_span(),
-    );
-
-    loop {
-        if let Err(err) = subscribe_mempool(ws_url.clone(), mempool_tx.clone()).await {
-            error!(%err, backoff, "mempool sub failed. Retrying..");
-        }
-
-        MempoolMetrics::ws_reconnect();
-        sleep(Duration::from_secs(backoff)).await;
+            .in_current_span(),
+        );
     }
+
+    for ws_url in ws_url.0 {
+        let mempool_tx = mempool_tx.clone();
+        spawn(
+            async move {
+                loop {
+                    if let Err(err) = subscribe_mempool(ws_url.clone(), mempool_tx.clone()).await {
+                        error!(%err, backoff, "mempool sub failed. Retrying..");
+                    }
+
+                    MempoolMetrics::ws_reconnect();
+                    sleep(Duration::from_secs(backoff)).await;
+                }
+            }
+            .in_current_span(),
+        );
+    }
+
+    tokio::time::sleep(Duration::MAX).await;
 }
 
 async fn subscribe_mempool(ws_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {

@@ -25,7 +25,7 @@ pub async fn get_and_validate_config(
     let taiko_l1 = TaikoL1::new(l2_config.l1_contract, l1_provider.clone());
     let whitelist = PreconfWhitelist::new(l2_config.whitelist_contract, l1_provider);
 
-    let l2_provider = ProviderBuilder::new().on_http(l2_config.rpc_url.clone());
+    let l2_provider = ProviderBuilder::new().on_http(l2_config.rpc_url[0].clone());
     let taiko_l2 = TaikoL2::new(l2_config.l2_contract, l2_provider);
 
     let l1_chain_id = taiko_l1.provider().get_chain_id().await?;

@@ -14,6 +14,7 @@ use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
+    beacon::BeaconHandle,
     config::{ProposerConfig, TaikoChainParams, TaikoConfig},
     metrics::ProposerMetrics,
     proposer::{
@@ -44,6 +45,7 @@ pub struct ProposerManager {
     taiko_config: TaikoConfig,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
     safe_l1_lag: u64,
+    beacon_handle: BeaconHandle,
 }
 
 impl ProposerManager {
@@ -54,8 +56,17 @@ impl ProposerManager {
         l2_provider: AlloyProvider,
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
+        beacon_handle: BeaconHandle,
     ) -> Self {
-        Self { config, client, new_blocks_rx, l2_provider, taiko_config, safe_l1_lag }
+        Self {
+            config,
+            client,
+            new_blocks_rx,
+            l2_provider,
+            taiko_config,
+            safe_l1_lag,
+            beacon_handle,
+        }
     }
 
     #[tracing::instrument(skip_all, name = "proposer")]
@@ -120,7 +131,6 @@ impl ProposerManager {
             .ok_or_eyre("missing last block")?;
 
         let l1_head = l1_block.header.number;
-        let l1_timestamp = l1_block.header.timestamp;
 
         // the parent of the first block in the first batch
         let l2_parent = self
@@ -151,10 +161,12 @@ impl ProposerManager {
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
 
+            let l1_timestamp =
+                self.beacon_handle.timestamp_of_slot(self.beacon_handle.current_slot() + 1);
             if let Err(err) = validate_batch_params(
                 l2_parent_anchor_block_id,
                 l2_parent_timestamp,
-                l1_head,
+                l1_head + 1, // assume we land next block
                 l1_timestamp,
                 *anchor_block_id,
                 blocks,
@@ -235,11 +247,15 @@ impl ProposerManager {
             .await?
             .ok_or_eyre("missing last block")?;
 
+        // as recent as possible
+        let override_timestamp =
+            self.beacon_handle.timestamp_of_slot(self.beacon_handle.current_slot() - 1);
+
         // create a batch proposal with as few txs as possible
         let requests = request_from_blocks(
             l1_block.header.number,
             blocks,
-            Some(l1_block.header.timestamp),
+            Some(override_timestamp),
             Some(0),
             self.taiko_config.params.max_blocks_per_batch,
         );
@@ -327,7 +343,7 @@ impl ProposerManager {
 
                     RevertReason::PreconfRouter(err) => match err {
                         PreconfRouterErrors::NotTheOperator(_) => {
-                            warn!("failed proposing before change in preconfer, stop retrying");
+                            warn!("failed proposing before change in operator, stop retrying");
                             break;
                         }
                         _ => {
@@ -412,8 +428,9 @@ impl ProposerManager {
         }
     }
 
+    // TODO: use gas cost instead of size
     fn should_use_blobs(&self, compressed_size: usize) -> bool {
-        const CALLDATA_SIZE: usize = 100_000; // max calldata with some buffer
+        const CALLDATA_SIZE: usize = 50_000; // max calldata with some buffer
         compressed_size > CALLDATA_SIZE
     }
 }
@@ -555,7 +572,7 @@ fn request_from_blocks(
 fn validate_batch_params(
     l2_parent_anchor_block_id: u64,
     l2_parent_timestamp: u64,
-    l1_head: u64,
+    l1_block: u64, // where it will land
     l1_timestamp: u64,
     anchor_block_id: u64,
     blocks: &[Arc<Block>],
@@ -565,7 +582,7 @@ fn validate_batch_params(
         anchor_block_id,
         l2_parent_anchor_block_id,
         l2_parent_timestamp,
-        l1_head,
+        l1_block,
         l1_timestamp,
         "validating batch params"
     );
@@ -574,16 +591,21 @@ fn validate_batch_params(
     ensure!(blocks.len() <= config.max_blocks_per_batch, "too many blocks to propose");
 
     ensure!(
-        anchor_block_id + config.safe_anchor_height_offset() >= l1_head,
+        anchor_block_id + config.safe_anchor_height_offset() >= l1_block,
         "anchor block id too small"
     );
-    ensure!(anchor_block_id < l1_head, "anchor block id too large");
+    ensure!(anchor_block_id < l1_block, "anchor block id too large");
     ensure!(anchor_block_id >= l2_parent_anchor_block_id, "anchor block id smaller than parent");
 
     let first_timestamp = blocks[0].header.timestamp;
     let last_timestamp = blocks[blocks.len() - 1].header.timestamp;
 
-    ensure!(last_timestamp <= l1_timestamp, "timestamp too large");
+    ensure!(
+        last_timestamp <= l1_timestamp,
+        "timestamp too large {} {}",
+        last_timestamp,
+        l1_timestamp
+    );
     // skip first timeshift == 0
 
     ensure!(last_timestamp >= first_timestamp, "block timestamps should increase");

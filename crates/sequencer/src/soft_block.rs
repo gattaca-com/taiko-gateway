@@ -26,6 +26,7 @@ pub struct ExecutableData {
 #[serde(rename_all = "camelCase")]
 pub struct BuildPreconfBlockRequestBody {
     executable_data: ExecutableData,
+    end_of_sequencing: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,7 +36,7 @@ pub struct BuildPreconfBlockResponseBody {
 }
 
 impl BuildPreconfBlockRequestBody {
-    pub fn new(block: &Block) -> Self {
+    pub fn new(block: &Block, end_of_sequencing: bool) -> Self {
         let tx_list: Vec<Arc<TxEnvelope>> =
             block.transactions.txns().map(|tx| tx.inner.clone().into()).collect();
 
@@ -53,13 +54,13 @@ impl BuildPreconfBlockRequestBody {
             extra_data: block.header.extra_data.clone(),
             base_fee_per_gas: block.header.base_fee_per_gas.unwrap(),
         };
-        BuildPreconfBlockRequestBody { executable_data }
+        BuildPreconfBlockRequestBody { executable_data, end_of_sequencing }
     }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct StatusResponse {
-    #[serde(rename = "highestUnsafeL2PayloadBlockID")] // not camel case..
+    #[serde(rename = "highestUnsafeL2PayloadBlockID")]
     pub highest_unsafe_l2_payload_block_id: u64,
 }
 

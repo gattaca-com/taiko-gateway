@@ -76,9 +76,15 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     let taiko_config = TaikoConfig::new(&config, chain_config);
 
     let (new_blocks_tx, new_blocks_rx) = mpsc::unbounded_channel();
-    start_proposer(&config, taiko_config.clone(), envs.proposer_signer_key.clone(), new_blocks_rx)
-        .await
-        .map_err(|e| eyre!("proposer init: {e}"))?;
+    start_proposer(
+        &config,
+        taiko_config.clone(),
+        envs.proposer_signer_key.clone(),
+        new_blocks_rx,
+        beacon_handle,
+    )
+    .await
+    .map_err(|e| eyre!("proposer init: {e}"))?;
 
     let (rpc_tx, rpc_rx) = crossbeam_channel::unbounded();
     let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();

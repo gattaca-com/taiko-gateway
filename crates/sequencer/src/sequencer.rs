@@ -39,11 +39,11 @@ use crate::{
     types::{BlockInfo, SequencerSpine, SequencerState, SimulatedOrder},
 };
 
-// because block time is >> 100ms we dont need to reset this if anchor succeeds (ie
-// we never need to anchor more frequently than every 100ms)
-const ANCHOR_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+// because block time is >> 500ms we dont need to reset this if anchor succeeds (ie
+// we never need to anchor more frequently than every 500ms)
+const ANCHOR_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 // 10S
-const MAX_ANCHOR_ERRORS: u64 = 1000;
+const MAX_ANCHOR_ERRORS: u64 = 20;
 
 #[derive(Debug, Default)]
 struct SequencerFlags {
@@ -75,6 +75,7 @@ pub struct Sequencer {
     needs_status_check: bool,
     /// last time we checked status
     last_status_check: Instant,
+    last_produced_block: Instant,
 }
 
 impl Sequencer {
@@ -110,6 +111,7 @@ impl Sequencer {
             anchor_error_count: 0,
             needs_status_check: true,
             last_status_check: Instant::now(),
+            last_produced_block: Instant::now(),
         }
     }
 
@@ -153,6 +155,12 @@ impl Sequencer {
         // refresh anchor if needed
         if self.flags.can_sequence {
             self.maybe_refresh_anchor();
+
+            if self.last_produced_block.elapsed() > Duration::from_secs(30) {
+                self.tx_pool
+                    .report_and_sanity_check(self.ctx.l2_parent().block_number, &self.simulator);
+                self.last_produced_block = Instant::now();
+            }
         }
 
         // clear proposal if it's late
@@ -200,7 +208,7 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if !self.tx_pool.new_orders() {
+                if !self.tx_pool.has_valid_orders() {
                     return SequencerState::default();
                 }
 
@@ -238,11 +246,12 @@ impl Sequencer {
                     Ok((state_id, block_info)) => {
                         self.anchor_error_count = 0;
                         debug!(?block_info, %state_id, "anchored");
+
                         let Some(active) = self
                             .tx_pool
                             .active_orders(block_info.block_number, block_info.base_fee)
                         else {
-                            self.tx_pool.set_no_orders();
+                            self.tx_pool.set_no_valid_orders();
                             return SequencerState::default();
                         };
 
@@ -315,14 +324,19 @@ impl Sequencer {
                         }
                     } else {
                         // reset state for next block
+                        self.last_produced_block = Instant::now();
                         SequencerState::default()
                     }
                 } else {
+                    debug!("exhausted active orders past target seal, resetting");
                     // if we're here, all the orders were invalid, so the state nonces are
                     // all for the actual state db (as opposed to ones we applied in the block),
                     // use those to clear the txpool and restart the loop
                     self.tx_pool.update_nonces(sort_data.state_nonces);
-                    debug!("exhausted active orders past target seal, resetting");
+                    self.tx_pool.report_and_sanity_check(
+                        sort_data.block_info.block_number - 1,
+                        &self.simulator,
+                    );
                     if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
                         self.send_batch_to_proposer(
                             "sealed last for this anchor (no active orders)",
@@ -536,9 +550,14 @@ impl Sequencer {
             return;
         };
 
+        if safe_l1_header.number <= ctx_anchor.block_id {
+            // no point in checking
+            return;
+        }
+
         // if current anchor has been used for enough blocks, refresh it
         let is_anchor_old =
-            ctx_anchor.block_id + self.config.anchor_batch_lag < safe_l1_header.number;
+            (utcnow_sec() - ctx_anchor.created_at) > self.config.anchor_batch_lag * 12;
 
         if is_anchor_old {
             self.update_anchor(&safe_l1_header, "anchor too old");
@@ -561,7 +580,7 @@ impl Sequencer {
         let new = AnchorParams {
             block_id: safe_l1_header.number,
             state_root: safe_l1_header.state_root,
-            timestamp: self.ctx.l2_parent().timestamp.max(safe_l1_header.timestamp),
+            created_at: utcnow_sec(),
         };
 
         debug!(reason, anchor =? new, "refresh anchor");
@@ -638,12 +657,17 @@ impl Sequencer {
             ?block_time,
             block_hash = %block.header.hash,
             payment = format_ether(res.cumulative_builder_payment),
-            gas_used = res.cumulative_gas_used,
+            gas_used = block.header.gas_used,
+            timestamp = block.header.timestamp,
             "sealed block"
         );
 
+        // we set this to true when we think we wont be sequencing any more blocks
+        // ideally this is not part of the new
+        let end_of_sequencing = false;
+
         // fail if gossiping fails
-        self.gossip_soft_block(&block)?;
+        self.gossip_soft_block(&block, end_of_sequencing)?;
 
         BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
@@ -727,7 +751,11 @@ impl Sequencer {
         }
     }
 
-    fn gossip_soft_block(&self, block: &Block) -> Result<(), SequencerError> {
+    fn gossip_soft_block(
+        &self,
+        block: &Block,
+        end_of_sequencing: bool,
+    ) -> Result<(), SequencerError> {
         debug!(block_hash = %block.header.hash, "gossiping soft block");
         let url = self.config.soft_block_url.clone();
         let jwt_secret = self.config.jwt_secret.clone();
@@ -735,7 +763,7 @@ impl Sequencer {
         self.simulator.block_on(
             async move {
                 let block_number = block.header.number;
-                let request = BuildPreconfBlockRequestBody::new(block);
+                let request = BuildPreconfBlockRequestBody::new(block, end_of_sequencing);
 
                 let mut req_builder = Client::new().post(url).json(&request);
 
