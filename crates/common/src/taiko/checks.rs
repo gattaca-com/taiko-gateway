@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use tracing::{info, warn};
@@ -44,25 +42,19 @@ pub async fn get_and_validate_config(
     let chain_id = taiko_l2.l1ChainId().call().await?._0;
     assert_eq!(chain_id, l1_chain_id, "l1 chain id in l2 contract");
 
-    // fetch forever till we are in the whitelist
-    loop {
-        let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
-        let mut operators = Vec::with_capacity(operator_count);
+    let operator_count: usize = whitelist.operatorCount().call().await?._0.try_into()?;
+    let mut operators = Vec::with_capacity(operator_count);
 
-        for i in 0..operator_count {
-            let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
-            operators.push(operator);
-        }
-
-        if let Some(this_index) = operators.iter().position(|&op| op == operator) {
-            info!(this_index, ?operators, "fetched operators");
-            break;
-        } else {
-            warn!(operator= %operator, whitelist=? operators, "provided address is not in whitelist! sleeping for 60s");
-        };
-
-        tokio::time::sleep(Duration::from_secs(60)).await;
+    for i in 0..operator_count {
+        let operator = whitelist.operatorIndexToOperator(U256::from(i)).call().await?.operator;
+        operators.push(operator);
     }
+
+    if let Some(this_index) = operators.iter().position(|&op| op == operator) {
+        info!(this_index, ?operators, "fetched operators");
+    } else {
+        warn!(operator= %operator, ?operators, "provided address is not in whitelist");
+    };
 
     let chain_config = TaikoChainParams::new(
         l2_chain_id,
