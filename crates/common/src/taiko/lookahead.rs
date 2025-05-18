@@ -33,6 +33,7 @@ pub async fn start_lookahead_loop(
     let whitelist = PreconfWhitelist::new(whitelist_contract, l1_provider);
 
     let curr = whitelist.getOperatorForCurrentEpoch().call().await?._0;
+    // if we're in the beginning of the epoch this might fail and will be updated next, so just use default
     let next_operator =
         whitelist.getOperatorForNextEpoch().call().await.map(|res| res._0).unwrap_or_default();
 
@@ -44,38 +45,29 @@ pub async fn start_lookahead_loop(
 
     let lookahead_rw = lookahead.clone();
 
-    spawn(
-        async move {
-            let mut seen_block_number = 0;
-            let mut last_slot = 0;
+    spawn(async move {
+        let mut last_log_slot = 0;
 
-            loop {
-                tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 3)).await;
+        let mut last_updated_epoch = 0;
+        let mut last_updated_block = 0;
+        let mut last_updated_slot = 0;
 
-                let block_number = last_block_number.load(Ordering::Relaxed);
-                let current_slot = beacon_handle.current_slot();
+        loop {
+            tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 3)).await;
 
-                // avoid fetching on missed slots, otherwise the previous "current" can get tagged
-                // as the new "current" for this epoch
-                if block_number == seen_block_number {
-                    // leave some grace period for the block to arrive
-                    if last_slot != current_slot &&
-                        utcnow_sec() - beacon_handle.timestamp_of_slot(current_slot) > 6
-                    {
-                        debug!(
-                            slot = current_slot,
-                            block = block_number,
-                            "possible missed slot detected"
-                        );
-                        last_slot = current_slot;
-                    }
+            let block_number = last_block_number.load(Ordering::Relaxed);
+            let current_slot = beacon_handle.current_slot();
+            let current_epoch = current_slot / beacon_handle.slots_per_epoch;
+            let slot_in_epoch = current_slot % beacon_handle.slots_per_epoch;
 
-                    continue;
-                }
+            // only update once per epoch, late enough, and check there has been at least a block in
+            // this epoch
 
-                seen_block_number = block_number;
-                last_slot = current_slot;
-
+            let last_lookahead = if last_updated_epoch != current_epoch &&
+                slot_in_epoch > beacon_handle.slots_per_epoch / 2 &&
+                block_number != last_updated_block
+            {
+                debug!(slot_in_epoch, current_slot, current_epoch, last_updated_epoch, block_number, "updating lookahead");
                 let current_operator = match whitelist.getOperatorForCurrentEpoch().call().await {
                     Ok(res) => res._0,
                     Err(err) => {
@@ -109,40 +101,46 @@ pub async fn start_lookahead_loop(
                             extract_revert_reason::<PreconfWhitelistErrors>(&err.to_string())
                         {
                             match err {
-                                PreconfWhitelistErrors::OperatorNotAvailableYet(_)
-                                | PreconfWhitelistErrors::InvalidOperatorCount(_) => {
+                                PreconfWhitelistErrors::InvalidOperatorCount(_) => {
+                                    warn!("whitelist is empty (next)");
                                     Address::ZERO
                                 }
 
                                 _ => {
-                                    let msg = format!("unhandled whitelist error: {err:?}");
+                                    let msg = format!("unhandled whitelist error (next): {err:?}");
                                     error!("{msg:?}");
                                     panic!("{msg}");
                                 }
                             }
                         } else {
-                            let msg = format!("failed to fetch current operator: {}", err);
+                            let msg = format!("failed to fetch next operator: {}", err);
                             error!("{msg:?}");
                             panic!("{msg}");
                         }
-
                     }
                 };
-
-                let current_epoch = beacon_handle.current_epoch();
-                let remaining_slots = beacon_handle.slots_per_epoch - beacon_handle.slot_in_epoch();
-                info!(remaining_slots, current_slot, current_epoch, %current_operator, %next_operator);
+                
+                last_updated_epoch = current_epoch;
+                last_updated_block = block_number;
+                last_updated_slot = current_slot;
 
                 {
                     let mut lookahead = lookahead_rw.write();
                     lookahead.updated_epoch = current_epoch;
                     lookahead.curr = current_operator;
                     lookahead.next = next_operator;
+                    *lookahead
                 }
+            } else {
+                *lookahead_rw.read()
+            };
+
+            if current_slot != last_log_slot {
+                info!(slot_in_epoch, current_slot, last_updated_slot, current_epoch, last_updated_epoch, current_operator =% last_lookahead.curr, next_operator =% last_lookahead.next);
+                last_log_slot = current_slot;
             }
         }
-        .in_current_span(),
-    );
+    }.in_current_span());
 
     Ok(LookaheadHandle::new(lookahead, config, beacon_handle))
 }
