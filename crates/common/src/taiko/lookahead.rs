@@ -7,7 +7,7 @@ use std::{
 };
 
 use alloy_primitives::Address;
-use alloy_provider::ProviderBuilder;
+use alloy_provider::{Provider, ProviderBuilder};
 use parking_lot::RwLock;
 use tracing::{debug, error, info, warn, Instrument};
 use url::Url;
@@ -31,6 +31,21 @@ pub async fn start_lookahead_loop(
 ) -> eyre::Result<LookaheadHandle> {
     let l1_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(l1_rpc);
     let whitelist = PreconfWhitelist::new(whitelist_contract, l1_provider);
+
+    loop {
+        // make sure we have at least a block in the current epoch, otherwise initial "current" might be wrong
+        let current_epoch = beacon_handle.current_epoch();
+        let first_slot = beacon_handle.slot_epoch_start(current_epoch);
+        let last_block = whitelist.provider().get_block(alloy_eips::BlockId::latest(), false.into()).await?.expect("missing last block in lookahead!");
+        let last_slot = beacon_handle.slot_for_timestamp(last_block.header.timestamp);
+
+        if last_slot > first_slot {
+            break;
+        }
+
+        warn!(first_slot, last_slot, current_epoch, "first or only missed slots since current epoch start, wait to fetch initial lookahead");
+        tokio::time::sleep(Duration::from_secs(12)).await;
+    }
 
     let curr = whitelist.getOperatorForCurrentEpoch().call().await?._0;
     // if we're in the beginning of the epoch this might fail and will be updated next, so just use default
@@ -136,7 +151,13 @@ pub async fn start_lookahead_loop(
             };
 
             if current_slot != last_log_slot {
-                info!(slot_in_epoch, current_slot, last_updated_slot, current_epoch, last_updated_epoch, current_operator =% last_lookahead.curr, next_operator =% last_lookahead.next);
+                let (current_operator, next_operator) = if current_epoch == last_updated_epoch {
+                    (last_lookahead.curr, last_lookahead.next)
+                } else {
+                    (last_lookahead.next, Address::default())
+                };
+
+                info!(slot_in_epoch, current_slot, last_updated_slot, current_epoch, last_updated_epoch, %current_operator, %next_operator);
                 last_log_slot = current_slot;
             }
         }

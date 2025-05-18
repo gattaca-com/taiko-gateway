@@ -40,6 +40,11 @@ impl BeaconHandle {
     pub fn timestamp_of_slot(&self, slot: u64) -> u64 {
         self.genesis_time_sec + slot * self.seconds_per_slot
     }
+
+    pub fn slot_for_timestamp(&self, timestamp: u64) -> u64 {
+        assert!(timestamp > self.genesis_time_sec);
+        (timestamp - self.genesis_time_sec) / self.seconds_per_slot
+    }
 }
 
 pub async fn init_beacon(beacon_url: Url) -> eyre::Result<BeaconHandle> {
@@ -80,4 +85,22 @@ struct Spec {
     seconds_per_slot: u64,
     #[serde(with = "alloy_serde::displayfromstr")]
     slots_per_epoch: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp() {
+        let handle = BeaconHandle {
+            slots_per_epoch: 32,
+            genesis_time_sec: utcnow_sec() - 32000,
+            seconds_per_slot: 12,
+        };
+
+        let slot = 50;
+        let timestamp = handle.timestamp_of_slot(slot);
+        assert_eq!(slot, handle.slot_for_timestamp(timestamp))
+    }
 }
