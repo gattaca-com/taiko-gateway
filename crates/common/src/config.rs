@@ -277,15 +277,22 @@ impl TaikoChainParams {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Urls(pub Vec<Url>);
 
-impl std::fmt::Debug for Urls {
+impl std::fmt::Display for Urls {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.0.len() == 1 {
             write!(f, "{}", self.0[0])
         } else {
-            write!(f, "{:?}", self.0)
+            f.write_str("[")?;
+            for (i, url) in self.0.iter().enumerate() {
+                if i != 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{url}")?;
+            }
+            f.write_str("]")
         }
     }
 }

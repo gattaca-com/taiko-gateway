@@ -151,7 +151,7 @@ pub async fn start_lookahead_loop(
             };
 
             if current_slot != last_log_slot {
-                let (current_operator, next_operator) = if current_epoch == last_updated_epoch {
+                let (current_operator, next_operator) = if last_updated_epoch == 0 || current_epoch == last_updated_epoch {
                     (last_lookahead.curr, last_lookahead.next)
                 } else {
                     (last_lookahead.next, Address::default())
