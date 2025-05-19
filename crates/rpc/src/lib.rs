@@ -37,7 +37,7 @@ pub fn start_rpc(config: &StaticConfig, sequence_tx: Sender<Order>, mempool_tx: 
 // TODO: tidy up
 #[tracing::instrument(skip_all, name = "mempool")]
 async fn start_mempool_subscription(rpc_url: Urls, ws_url: Urls, mempool_tx: Sender<Order>) {
-    info!(?rpc_url, ?ws_url, "starting mempool subscription fetch");
+    info!(%rpc_url, %ws_url, "starting mempool subscription fetch");
 
     let backoff = 4;
 
