@@ -163,7 +163,7 @@ impl L1Client {
             .provider()
             .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
             .await?
-            .and_then(|block| block.header.next_block_blob_fee(BlobParams::cancun()))
+            .and_then(|block| block.header.next_block_blob_fee(BlobParams::prague()))
             .unwrap_or(DEFAULT_MAX_FEE_PER_BLOB_GAS);
 
         // add buffer

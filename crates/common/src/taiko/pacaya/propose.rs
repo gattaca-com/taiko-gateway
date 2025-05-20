@@ -2,7 +2,7 @@ use std::{io::Write, sync::Arc, time::Instant};
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
 use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
-use alloy_primitives::{Address, Bytes, B256};
+use alloy_primitives::{aliases::U96, Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
 use tracing::debug;
@@ -49,9 +49,13 @@ pub fn propose_batch_calldata(
     let encoded_params =
         (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: compressed }
-        .abi_encode()
-        .into()
+    PreconfRouter::proposeBatchWithExpectedLastBlockIdCall {
+        _params: encoded_params.into(),
+        _txList: compressed,
+        _expectedLastBlockId: U96::from(request.end_block_num),
+    }
+    .abi_encode()
+    .into()
 }
 
 /// Returns the calldata and blob sidecar for the proposeBatchCall
@@ -97,10 +101,13 @@ pub fn propose_batch_blobs(
     let encoded_params =
         (forced_tx_list, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    let input =
-        PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
-            .abi_encode()
-            .into();
+    let input = PreconfRouter::proposeBatchWithExpectedLastBlockIdCall {
+        _params: encoded_params.into(),
+        _txList: Bytes::new(),
+        _expectedLastBlockId: U96::from(request.end_block_num),
+    }
+    .abi_encode()
+    .into();
 
     (input, sidecar)
 }
