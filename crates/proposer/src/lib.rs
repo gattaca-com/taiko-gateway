@@ -40,7 +40,6 @@ pub async fn start_proposer(
     let proposer = ProposerManager::new(
         proposer_config,
         includer,
-        new_blocks_rx,
         l2_provider,
         taiko_config,
         config.gateway.l1_safe_lag,
@@ -48,7 +47,7 @@ pub async fn start_proposer(
     );
 
     // start proposer
-    spawn(proposer.run());
+    spawn(proposer.run(new_blocks_rx));
 
     Ok(())
 }

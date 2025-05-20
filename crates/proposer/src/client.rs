@@ -1,20 +1,26 @@
 use std::time::Duration;
 
 use alloy_consensus::{
-    BlobTransactionSidecar, SignableTransaction, TxEip1559, TxEip4844, TxEip4844WithSidecar,
-    TxEnvelope,
+    BlobTransactionSidecar, SignableTransaction, Transaction, TxEip1559, TxEip4844,
+    TxEip4844WithSidecar, TxEnvelope,
 };
 use alloy_eips::{eip7840::BlobParams, BlockNumberOrTag};
 use alloy_network::TransactionBuilder;
-use alloy_primitives::{Address, Bytes, B256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_provider::{Provider, ProviderBuilder, RootProvider};
 use alloy_rpc_types::{BlockTransactionsKind, TransactionReceipt, TransactionRequest};
+use alloy_rpc_types_txpool::TxpoolContentFrom;
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use eyre::{ensure, eyre, OptionExt};
-use pc_common::taiko::TaikoL1Client;
+use pc_common::taiko::{
+    pacaya::decode_propose_batch_with_expected_last_block_id_call, TaikoL1Client,
+};
+use serde_json::json;
 use tracing::{error, info};
 use url::Url;
+
+use crate::manager::PendingProposal;
 
 type AlloyProvider = RootProvider;
 
@@ -75,11 +81,26 @@ impl L1Client {
         B256::ZERO
     }
 
+    #[allow(dead_code)]
     pub async fn get_nonce(&self) -> eyre::Result<u64> {
         self.provider()
             .get_transaction_count(self.signer.address())
             .await
             .map_err(|err| eyre!("failed to get nonce {err}"))
+    }
+
+    pub async fn get_pending_nonce(&self) -> eyre::Result<u64> {
+        let params = json!([self.signer.address(), "pending"]);
+
+        let response: U256 = self
+            .provider()
+            .raw_request("eth_getTransactionCount".into(), params)
+            .await
+            .map_err(|err| eyre!("failed to get pending nonce {err}"))?;
+
+        let nonce = response.try_into().unwrap();
+
+        Ok(nonce)
     }
 
     pub async fn build_eip1559(&self, input: Bytes) -> eyre::Result<TxEnvelope> {
@@ -110,7 +131,7 @@ impl L1Client {
         let max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
 
-        let nonce = self.get_nonce().await?;
+        let nonce = self.get_pending_nonce().await?;
         let tx = TxEip1559 {
             chain_id: self.chain_id,
             nonce,
@@ -172,7 +193,7 @@ impl L1Client {
         let max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
 
-        let nonce = self.get_nonce().await?;
+        let nonce = self.get_pending_nonce().await?;
         let tx = TxEip4844 {
             chain_id: self.chain_id,
             nonce,
@@ -221,6 +242,31 @@ impl L1Client {
         info!("check successful");
 
         Ok(())
+    }
+
+    pub async fn get_pending_proposals(&self) -> eyre::Result<Vec<PendingProposal>> {
+        // fetch pending txpool
+        let txpool: TxpoolContentFrom = self
+            .provider()
+            .raw_request("txpool_contentFrom".into(), [self.signer.address()])
+            .await?;
+
+        // decode proposals
+        let mut pending = Vec::new();
+        for tx in txpool.pending.into_values().chain(txpool.queued.into_values()) {
+            if tx.to() == Some(self.router_address) {
+                let (start_block_num, end_block_num) =
+                    decode_propose_batch_with_expected_last_block_id_call(tx.input())?;
+                pending.push(PendingProposal {
+                    start_block_num,
+                    end_block_num,
+                    nonce: tx.nonce(),
+                    tx_hash: *tx.inner.tx_hash(),
+                });
+            }
+        }
+
+        Ok(pending)
     }
 }
 

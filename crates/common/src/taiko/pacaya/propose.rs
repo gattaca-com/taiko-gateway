@@ -7,7 +7,10 @@ use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
 use tracing::debug;
 
-use super::{preconf::PreconfRouter, BatchParams};
+use super::{
+    preconf::PreconfRouter::{self, proposeBatchWithExpectedLastBlockIdCall},
+    BatchParams,
+};
 use crate::{
     proposer::ProposeBatchParams,
     sequencer::Order,
@@ -112,6 +115,20 @@ pub fn propose_batch_blobs(
     (input, sidecar)
 }
 
+pub fn decode_propose_batch_with_expected_last_block_id_call(
+    data: &[u8],
+) -> eyre::Result<(u64, u64)> {
+    let call = proposeBatchWithExpectedLastBlockIdCall::abi_decode(data, true)?;
+    let (_, params) = <(Bytes, Bytes)>::abi_decode_params(&call._params, true)?;
+    let batch_params = BatchParams::abi_decode(&params, true)?;
+
+    let n_blocks = batch_params.blocks.len();
+    let last_block: u64 = call._expectedLastBlockId.try_into().unwrap();
+    let start_block = last_block - n_blocks as u64 + 1;
+
+    Ok((start_block, last_block))
+}
+
 // /// ref: utils.Compress(txListBytes)
 // /// raiko: utils::zlib_compress_data
 // fn compress_bytes(bytes: &[u8]) -> Vec<u8> {
@@ -174,4 +191,33 @@ const COMPRESS_RATIO: f64 = 0.625;
 
 pub fn estimate_compressed_size(uncompressed_size: usize) -> usize {
     (COMPRESS_RATIO * uncompressed_size as f64).round() as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::taiko::pacaya::BlockParams;
+
+    #[test]
+    fn test_encode_decode() {
+        let request = ProposeBatchParams {
+            anchor_block_id: 1,
+            coinbase: Address::ZERO,
+            last_timestamp: 1,
+            start_block_num: 1,
+            end_block_num: 2,
+            block_params: vec![
+                BlockParams { numTransactions: 10, timeShift: 1, signalSlots: vec![] },
+                BlockParams { numTransactions: 10, timeShift: 1, signalSlots: vec![] },
+            ],
+            all_tx_list: vec![],
+            compressed_est: 0,
+        };
+
+        let data = propose_batch_calldata(request, B256::ZERO, Address::ZERO, Bytes::new());
+        let (start_block, last_block) =
+            decode_propose_batch_with_expected_last_block_id_call(&data).unwrap();
+        assert_eq!(start_block, 1);
+        assert_eq!(last_block, 2);
+    }
 }
