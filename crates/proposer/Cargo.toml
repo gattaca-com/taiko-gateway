@@ -18,7 +18,6 @@ alloy-signer-local.workspace = true
 alloy-sol-types.workspace = true
 alloy-transport-http.workspace = true
 eyre.workspace = true
-parking_lot.workspace = true
 pc-common.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true

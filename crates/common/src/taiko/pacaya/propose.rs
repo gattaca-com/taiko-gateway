@@ -117,7 +117,7 @@ pub fn propose_batch_blobs(
 
 pub fn decode_propose_batch_with_expected_last_block_id_call(
     data: &[u8],
-) -> eyre::Result<(u64, u64)> {
+) -> eyre::Result<(u64, u64, u64)> {
     let call = proposeBatchWithExpectedLastBlockIdCall::abi_decode(data, true)?;
     let (_, params) = <(Bytes, Bytes)>::abi_decode_params(&call._params, true)?;
     let batch_params = BatchParams::abi_decode(&params, true)?;
@@ -126,7 +126,7 @@ pub fn decode_propose_batch_with_expected_last_block_id_call(
     let last_block: u64 = call._expectedLastBlockId.try_into().unwrap();
     let start_block = last_block - n_blocks as u64 + 1;
 
-    Ok((start_block, last_block))
+    Ok((start_block, last_block, batch_params.anchorBlockId))
 }
 
 // /// ref: utils.Compress(txListBytes)
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn test_encode_decode() {
         let request = ProposeBatchParams {
-            anchor_block_id: 1,
+            anchor_block_id: 99,
             coinbase: Address::ZERO,
             last_timestamp: 1,
             start_block_num: 1,
@@ -215,9 +215,10 @@ mod tests {
         };
 
         let data = propose_batch_calldata(request, B256::ZERO, Address::ZERO, Bytes::new());
-        let (start_block, last_block) =
+        let (start_block, last_block, anchor_block_id) =
             decode_propose_batch_with_expected_last_block_id_call(&data).unwrap();
         assert_eq!(start_block, 1);
         assert_eq!(last_block, 2);
+        assert_eq!(anchor_block_id, 99);
     }
 }

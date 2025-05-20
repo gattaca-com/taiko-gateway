@@ -255,11 +255,12 @@ impl L1Client {
         let mut pending = Vec::new();
         for tx in txpool.pending.into_values().chain(txpool.queued.into_values()) {
             if tx.to() == Some(self.router_address) {
-                let (start_block_num, end_block_num) =
+                let (start_block_num, end_block_num, anchor_block_id) =
                     decode_propose_batch_with_expected_last_block_id_call(tx.input())?;
                 pending.push(PendingProposal {
                     start_block_num,
                     end_block_num,
+                    anchor_block_id,
                     nonce: tx.nonce(),
                     tx_hash: *tx.inner.tx_hash(),
                 });

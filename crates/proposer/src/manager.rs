@@ -13,7 +13,6 @@ use alloy_provider::Provider;
 use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
-use parking_lot::RwLock;
 use pc_common::{
     beacon::BeaconHandle,
     config::{ProposerConfig, TaikoChainParams, TaikoConfig},
@@ -40,10 +39,12 @@ use super::L1Client;
 
 type AlloyProvider = alloy_provider::RootProvider;
 
+#[derive(Copy, Clone)]
 pub struct PendingProposal {
     // both inclusive
     pub start_block_num: u64,
     pub end_block_num: u64,
+    pub anchor_block_id: u64,
     pub nonce: u64,
     pub tx_hash: B256,
 }
@@ -52,8 +53,12 @@ impl std::fmt::Debug for PendingProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PendingProposal(blocks: {}-{}, nonce: {}, tx_hash: {})",
-            self.start_block_num, self.end_block_num, self.nonce, self.tx_hash
+            "PendingProposal(blocks: {}-{}, anchor: {}, nonce: {}, tx_hash: {})",
+            self.start_block_num,
+            self.end_block_num,
+            self.anchor_block_id,
+            self.nonce,
+            self.tx_hash
         )
     }
 }
@@ -66,7 +71,6 @@ pub struct ProposerManager {
     taiko_config: Arc<TaikoConfig>,
     safe_l1_lag: u64,
     beacon_handle: BeaconHandle,
-    pending_proposals: Arc<RwLock<Vec<PendingProposal>>>,
 }
 
 impl ProposerManager {
@@ -85,7 +89,6 @@ impl ProposerManager {
             taiko_config: taiko_config.into(),
             safe_l1_lag,
             beacon_handle,
-            pending_proposals: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -93,17 +96,14 @@ impl ProposerManager {
     pub async fn run(self, mut new_blocks_rx: UnboundedReceiver<ProposalRequest>) {
         info!(proposer_address = %self.client.address(), "starting l1 proposer");
 
-        let mut pending = match self.client.get_pending_proposals().await {
+        match self.client.get_pending_proposals().await {
             Ok(pending) => {
                 info!(n_pending = pending.len(), ?pending, "fetched pending proposals");
-                pending
             }
             Err(err) => {
                 error!(%err, "failed to fetch pending proposals");
-                vec![]
             }
         };
-        self.pending_proposals.write().append(&mut pending);
 
         while let Some(request) = new_blocks_rx.recv().await {
             match request {
@@ -132,6 +132,16 @@ impl ProposerManager {
     #[tracing::instrument(skip_all, name = "resync")]
     pub async fn resync(&self, origin: u64, end: u64) -> eyre::Result<()> {
         info!(origin, end, "resync");
+        let all_pending = match self.client.get_pending_proposals().await {
+            Ok(pending) => {
+                info!(n_pending = pending.len(), ?pending, "fetched pending proposals");
+                pending
+            }
+            Err(err) => {
+                error!(%err, "failed to fetch pending proposals");
+                vec![]
+            }
+        };
 
         let blocks = fetch_n_blocks(&self.l2_provider, origin + 1, end).await?;
 
@@ -193,6 +203,21 @@ impl ProposerManager {
         for (anchor_block_id, blocks) in to_propose.iter() {
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
+
+            // TODO: we could do something more here, eg check batches overlaps. For now dont make
+            // it too complex and only check for the exact same batch
+            if let Some(pending) = all_pending.iter().find(|p| {
+                p.anchor_block_id == *anchor_block_id &&
+                    p.start_block_num == start_block &&
+                    p.end_block_num == end_block
+            }) {
+                warn!(
+                    nonce = pending.nonce,
+                    hash =% pending.tx_hash,
+                    "batch already pending, skipping resync"
+                );
+                continue;
+            }
 
             let l1_timestamp =
                 self.beacon_handle.timestamp_of_slot(self.beacon_handle.current_slot() + 1);
