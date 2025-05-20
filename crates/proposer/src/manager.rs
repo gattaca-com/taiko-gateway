@@ -2,7 +2,10 @@
 
 use std::{
     collections::BTreeMap,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, LazyLock,
+    },
     time::{Duration, Instant},
 };
 
@@ -47,6 +50,27 @@ pub struct PendingProposal {
     pub anchor_block_id: u64,
     pub nonce: u64,
     pub tx_hash: B256,
+}
+
+static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
+
+struct LivePending;
+
+impl LivePending {
+    pub fn new() -> Self {
+        CURRENT_PROPOSALS.fetch_add(1, Ordering::Relaxed);
+        Self
+    }
+
+    pub fn current() -> usize {
+        CURRENT_PROPOSALS.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for LivePending {
+    fn drop(&mut self) {
+        CURRENT_PROPOSALS.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl std::fmt::Debug for PendingProposal {
@@ -366,6 +390,14 @@ impl ProposerManager {
 
     async fn spawn_propose_batch_with_retry(&self, request: ProposeBatchParams) {
         let proposer = self.clone();
+        let _live_pending = LivePending::new();
+        info!(
+            live_pending = LivePending::current(),
+            start_bn = request.start_block_num,
+            end_bn = request.end_block_num,
+            blocks = request.block_params.len(),
+            "spawning propose batch"
+        );
         spawn(async move { proposer.propose_batch(request).await });
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
