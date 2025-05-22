@@ -188,10 +188,12 @@ pub fn extract_revert_reason<T: SolInterface>(input: &str) -> Option<T> {
 
     let start = input.find(MARKER)?;
     let code_start = start + MARKER.len();
-    let code_end = code_start + 8; // 4 bytes in hex
-    let hex_str = input.get(code_start..code_end)?;
-    let bytes = hex::decode(hex_str).ok()?;
 
+    // Find the end of the hex data by looking for the next quote
+    let code_end = input[code_start..].find('\"')? + code_start;
+    let hex_str = input.get(code_start..code_end)?;
+
+    let bytes = hex::decode(hex_str).ok()?;
     let err = T::abi_decode(&bytes, true).ok()?;
 
     Some(err)
@@ -199,9 +201,12 @@ pub fn extract_revert_reason<T: SolInterface>(input: &str) -> Option<T> {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::aliases::U96;
+
     use super::*;
-    use crate::taiko::pacaya::preconf::PreconfWhitelist::{
-        InvalidOperatorCount, PreconfWhitelistErrors,
+    use crate::taiko::pacaya::preconf::{
+        PreconfRouter::{InvalidLastBlockId, PreconfRouterErrors},
+        PreconfWhitelist::{InvalidOperatorCount, PreconfWhitelistErrors},
     };
 
     #[test]
@@ -209,5 +214,18 @@ mod tests {
         let input = r#"server returned an error response: error code 3: execution reverted, data: "0x7d943b8f""#;
         let result: PreconfWhitelistErrors = extract_revert_reason(input).unwrap();
         assert_eq!(PreconfWhitelistErrors::InvalidOperatorCount(InvalidOperatorCount {}), result);
+    }
+
+    #[test]
+    fn test_extract_revert_with_data() {
+        let input = r#"server returned an error response: error code 3: execution reverted, data: "0x0580a537000000000000000000000000000000000000000000000000000000000001e274000000000000000000000000000000000000000000000000000000000001e2c6""#;
+        let result: PreconfRouterErrors = extract_revert_reason(input).unwrap();
+        assert_eq!(
+            PreconfRouterErrors::InvalidLastBlockId(InvalidLastBlockId {
+                _actual: U96::from(123508),
+                _expected: U96::from(123590),
+            }),
+            result
+        );
     }
 }

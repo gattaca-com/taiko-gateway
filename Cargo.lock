@@ -2839,6 +2839,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",
+ "alloy-rpc-types-txpool",
  "alloy-signer",
  "alloy-signer-local",
  "alloy-sol-types",

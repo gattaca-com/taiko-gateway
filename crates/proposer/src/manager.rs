@@ -2,13 +2,16 @@
 
 use std::{
     collections::BTreeMap,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, LazyLock,
+    },
     time::{Duration, Instant},
 };
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
 use alloy_eips::BlockId;
-use alloy_primitives::Bytes;
+use alloy_primitives::{Bytes, B256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
@@ -20,6 +23,7 @@ use pc_common::{
     proposer::{
         set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
     },
+    runtime::spawn,
     sequencer::Order,
     taiko::{
         pacaya::{
@@ -38,12 +42,57 @@ use super::L1Client;
 
 type AlloyProvider = alloy_provider::RootProvider;
 
+#[derive(Copy, Clone)]
+pub struct PendingProposal {
+    // both inclusive
+    pub start_block_num: u64,
+    pub end_block_num: u64,
+    pub anchor_block_id: u64,
+    pub nonce: u64,
+    pub tx_hash: B256,
+}
+
+static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
+
+struct LivePending;
+
+impl LivePending {
+    pub fn new() -> Self {
+        CURRENT_PROPOSALS.fetch_add(1, Ordering::Relaxed);
+        Self
+    }
+
+    pub fn current() -> usize {
+        CURRENT_PROPOSALS.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for LivePending {
+    fn drop(&mut self) {
+        CURRENT_PROPOSALS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl std::fmt::Debug for PendingProposal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PendingProposal(blocks: {}-{}, anchor: {}, nonce: {}, tx_hash: {})",
+            self.start_block_num,
+            self.end_block_num,
+            self.anchor_block_id,
+            self.nonce,
+            self.tx_hash
+        )
+    }
+}
+
+#[derive(Clone)]
 pub struct ProposerManager {
-    config: ProposerConfig,
-    client: L1Client,
-    l2_provider: AlloyProvider,
-    taiko_config: TaikoConfig,
-    new_blocks_rx: UnboundedReceiver<ProposalRequest>,
+    config: Arc<ProposerConfig>,
+    client: Arc<L1Client>,
+    l2_provider: Arc<AlloyProvider>,
+    taiko_config: Arc<TaikoConfig>,
     safe_l1_lag: u64,
     beacon_handle: BeaconHandle,
 }
@@ -52,28 +101,35 @@ impl ProposerManager {
     pub fn new(
         config: ProposerConfig,
         client: L1Client,
-        new_blocks_rx: UnboundedReceiver<ProposalRequest>,
         l2_provider: AlloyProvider,
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
         beacon_handle: BeaconHandle,
     ) -> Self {
         Self {
-            config,
-            client,
-            new_blocks_rx,
-            l2_provider,
-            taiko_config,
+            config: config.into(),
+            client: client.into(),
+            l2_provider: l2_provider.into(),
+            taiko_config: taiko_config.into(),
             safe_l1_lag,
             beacon_handle,
         }
     }
 
     #[tracing::instrument(skip_all, name = "proposer")]
-    pub async fn run(mut self) {
+    pub async fn run(self, mut new_blocks_rx: UnboundedReceiver<ProposalRequest>) {
         info!(proposer_address = %self.client.address(), "starting l1 proposer");
 
-        while let Some(request) = self.new_blocks_rx.recv().await {
+        match self.client.get_pending_proposals().await {
+            Ok(pending) => {
+                info!(n_pending = pending.len(), ?pending, "fetched pending proposals");
+            }
+            Err(err) => {
+                error!(%err, "failed to fetch pending proposals");
+            }
+        };
+
+        while let Some(request) = new_blocks_rx.recv().await {
             match request {
                 ProposalRequest::Batch(request) => {
                     info!(
@@ -84,8 +140,9 @@ impl ProposerManager {
                         request.start_block_num,
                         request.end_block_num
                     );
-                    self.propose_batch_with_retry(request).await;
+                    self.spawn_propose_batch_with_retry(request).await;
                 }
+
                 ProposalRequest::Resync { origin, end } => {
                     while let Err(err) = self.resync(origin, end).await {
                         error!("failed to resync: {err}");
@@ -99,6 +156,16 @@ impl ProposerManager {
     #[tracing::instrument(skip_all, name = "resync")]
     pub async fn resync(&self, origin: u64, end: u64) -> eyre::Result<()> {
         info!(origin, end, "resync");
+        let all_pending = match self.client.get_pending_proposals().await {
+            Ok(pending) => {
+                info!(n_pending = pending.len(), ?pending, "fetched pending proposals");
+                pending
+            }
+            Err(err) => {
+                error!(%err, "failed to fetch pending proposals");
+                vec![]
+            }
+        };
 
         let blocks = fetch_n_blocks(&self.l2_provider, origin + 1, end).await?;
 
@@ -161,6 +228,21 @@ impl ProposerManager {
             let start_block = blocks[0].header.number;
             let end_block = blocks[blocks.len() - 1].header.number;
 
+            // TODO: we could do something more here, eg check batches overlaps. For now dont make
+            // it too complex and only check for the exact same batch
+            if let Some(pending) = all_pending.iter().find(|p| {
+                p.anchor_block_id == *anchor_block_id &&
+                    p.start_block_num == start_block &&
+                    p.end_block_num == end_block
+            }) {
+                warn!(
+                    nonce = pending.nonce,
+                    hash =% pending.tx_hash,
+                    "batch already pending, skipping resync"
+                );
+                continue;
+            }
+
             let l1_timestamp =
                 self.beacon_handle.timestamp_of_slot(self.beacon_handle.current_slot() + 1);
             if let Err(err) = validate_batch_params(
@@ -213,7 +295,7 @@ impl ProposerManager {
 
                 for request in requests {
                     let is_our_coinbase = request.coinbase == self.config.coinbase;
-                    self.propose_batch_with_retry(request).await;
+                    self.spawn_propose_batch_with_retry(request).await;
                     ProposerMetrics::resync(is_our_coinbase);
                 }
             }
@@ -262,7 +344,7 @@ impl ProposerManager {
 
         for request in requests {
             let is_our_coinbase = request.coinbase == self.config.coinbase;
-            self.propose_batch_with_retry(request).await;
+            self.spawn_propose_batch_with_retry(request).await;
             ProposerMetrics::resync(is_our_coinbase);
         }
 
@@ -306,8 +388,22 @@ impl ProposerManager {
         (input, maybe_sidecar)
     }
 
+    async fn spawn_propose_batch_with_retry(&self, request: ProposeBatchParams) {
+        let proposer = self.clone();
+        let _live_pending = LivePending::new();
+        info!(
+            live_pending = LivePending::current(),
+            start_bn = request.start_block_num,
+            end_bn = request.end_block_num,
+            blocks = request.block_params.len(),
+            "spawning propose batch"
+        );
+        spawn(async move { proposer.propose_batch(request).await });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
     #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
-    async fn propose_batch_with_retry(&self, request: ProposeBatchParams) {
+    async fn propose_batch(&self, request: ProposeBatchParams) {
         let start_bn = request.start_block_num;
         let end_bn = request.end_block_num;
 
@@ -328,33 +424,51 @@ impl ProposerManager {
 
             let err_str = err.to_string();
             let err = match RevertReason::try_from(err_str.as_str()) {
-                Ok(reason) => match reason {
-                    RevertReason::TaikoL1(err) => match err {
-                        TaikoL1Errors::TimestampTooLarge(err) => {
-                            warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
-                            tokio::time::sleep(Duration::from_secs(12)).await;
-                            continue;
-                        }
+                Ok(reason) => {
+                    match reason {
+                        RevertReason::TaikoL1(err) => match err {
+                            TaikoL1Errors::TimestampTooLarge(err) => {
+                                warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
+                                tokio::time::sleep(Duration::from_secs(12)).await;
+                                continue;
+                            }
 
-                        _ => {
-                            format!("unhandled TaikoInbox revert: {err:?}")
-                        }
-                    },
+                            _ => {
+                                format!("unhandled TaikoInbox revert: {err:?}")
+                            }
+                        },
 
-                    RevertReason::PreconfRouter(err) => match err {
-                        PreconfRouterErrors::NotTheOperator(_) => {
-                            warn!("failed proposing before change in operator, stop retrying");
-                            break;
-                        }
-                        _ => {
-                            format!("unhandled PreconfRouter revert: {err:?}")
-                        }
-                    },
+                        RevertReason::PreconfRouter(err) => match err {
+                            PreconfRouterErrors::NotTheOperator(_) => {
+                                warn!("failed proposing before change in operator, stop retrying");
+                                break;
+                            }
+                            PreconfRouterErrors::InvalidLastBlockId(invalid) => {
+                                let actual = invalid._actual;
+                                let expected = invalid._expected;
 
-                    RevertReason::PreconfWhitelist(err) => {
-                        format!("unhandled PreconfWhitelist revert: {err:?}")
+                                if actual > expected {
+                                    // this batch was most likely already proposed, skip
+                                    warn!(%actual, %expected, "invalid expected block id, was this batch already proposed?");
+                                    break;
+                                } else {
+                                    format!(
+                                        "invalid last block id: actual={}, expected={}",
+                                        actual, expected
+                                    )
+                                }
+                            }
+
+                            _ => {
+                                format!("unhandled PreconfRouter revert: {err:?}")
+                            }
+                        },
+
+                        RevertReason::PreconfWhitelist(err) => {
+                            format!("unhandled PreconfWhitelist revert: {err:?}")
+                        }
                     }
-                },
+                }
                 Err(_) => err_str,
             };
 
