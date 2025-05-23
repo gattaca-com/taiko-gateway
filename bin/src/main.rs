@@ -65,7 +65,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
 
     let lookahead = start_lookahead_loop(
         config.l1.rpc_url.clone(),
-        config.l2.whitelist_contract,
+        &config.l2,
         beacon_handle,
         config.gateway.lookahead,
         l1_number.clone(),
