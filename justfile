@@ -11,7 +11,7 @@ fmt-check:
   cargo +{{toolchain}} fmt --check
 
 clippy:
-  cargo clippy --all-features --no-deps -- -D warnings
+  cargo +{{toolchain}} clippy --all-features --no-deps -- -D warnings
 
 test-tx:
   source .env && \
