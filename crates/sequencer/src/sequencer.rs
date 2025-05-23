@@ -216,8 +216,8 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if self.needs_status_check &&
-                    self.last_status_check.elapsed() > Duration::from_secs(2)
+                if self.needs_status_check
+                    && self.last_status_check.elapsed() > Duration::from_secs(2)
                 {
                     self.last_status_check = Instant::now();
 
@@ -406,9 +406,9 @@ impl Sequencer {
             self.flags.lookahead_sequence = can_sequence;
         }
 
-        self.flags.can_sequence = !self.flags.proposing_delayed &&
-            !self.flags.l1_delayed &&
-            self.flags.lookahead_sequence;
+        self.flags.can_sequence = !self.flags.proposing_delayed
+            && !self.flags.l1_delayed
+            && self.flags.lookahead_sequence;
 
         // only when we start sequencing
         if self.flags.can_sequence && !sequence_start {
@@ -535,8 +535,8 @@ impl Sequencer {
     }
 
     fn is_ready(&self) -> bool {
-        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag &&
-            self.ctx.l2_headers.back().is_some()
+        self.ctx.l1_headers.len() as u64 >= self.config.l1_safe_lag
+            && self.ctx.l2_headers.back().is_some()
     }
 
     fn maybe_refresh_anchor(&mut self) {
@@ -853,11 +853,7 @@ fn receive_for<T, F>(duration: Duration, mut handler: F, rx: &Receiver<T>)
 where
     F: FnMut(T),
 {
-    let start = Instant::now();
-    while let Ok(item) = rx.try_recv() {
+    while let Ok(item) = rx.recv_timeout(duration) {
         handler(item);
-        if start.elapsed() > duration {
-            break;
-        }
     }
 }
