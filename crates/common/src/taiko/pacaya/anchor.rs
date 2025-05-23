@@ -197,6 +197,7 @@ mod tests {
                 l2_contract: block_anchor.inner.to().unwrap(),
                 router_contract: Address::ZERO,
                 whitelist_contract: Address::ZERO,
+                wrapper_contract: Address::ZERO,
             },
             params: TaikoChainParams::new_helder(),
         };

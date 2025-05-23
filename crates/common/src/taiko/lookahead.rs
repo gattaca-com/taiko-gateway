@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -12,10 +12,10 @@ use parking_lot::RwLock;
 use tracing::{debug, error, info, warn, Instrument};
 use url::Url;
 
-use super::PreconfWhitelist;
+use super::{pacaya::wrapper::TaikoWrapper, PreconfWhitelist};
 use crate::{
     beacon::BeaconHandle,
-    config::LookaheadConfig,
+    config::{L2ChainConfig, LookaheadConfig},
     runtime::spawn,
     taiko::pacaya::preconf::PreconfWhitelist::PreconfWhitelistErrors,
     utils::{extract_revert_reason, utcnow_sec},
@@ -24,13 +24,43 @@ use crate::{
 #[tracing::instrument(skip_all, name = "lookahead")]
 pub async fn start_lookahead_loop(
     l1_rpc: Url,
-    whitelist_contract: Address,
+    l2_chain_config: &L2ChainConfig,
     beacon_handle: BeaconHandle,
     config: LookaheadConfig,
     last_block_number: Arc<AtomicU64>,
 ) -> eyre::Result<LookaheadHandle> {
     let l1_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(l1_rpc);
-    let whitelist = PreconfWhitelist::new(whitelist_contract, l1_provider);
+    let whitelist = PreconfWhitelist::new(l2_chain_config.whitelist_contract, l1_provider.clone());
+    let wrapper = TaikoWrapper::new(l2_chain_config.wrapper_contract, l1_provider);
+
+    let preconfs_enabled = Arc::new(AtomicBool::new(false));
+
+    let preconfs_enabled_clone = preconfs_enabled.clone();
+    tokio::spawn(async move {
+        let mut current_router = Address::ZERO;
+        loop {
+            match wrapper.preconfRouter().call().await {
+                Ok(address) => {
+                    if address._0 != current_router {
+                        if address._0 == Address::ZERO {
+                            warn!("preconfs are now disabled in the wrapper");
+                        } else {
+                            warn!(router = %address._0, "preconfs are now enabled in the wrapper");
+                        }
+
+                        current_router = address._0;
+                        preconfs_enabled.store(address._0 != Address::ZERO, Ordering::Relaxed);
+                    }
+                }
+                Err(err) => {
+                    error!(%err, "failed to fetch preconf router");
+                    preconfs_enabled.store(false, Ordering::Relaxed);
+                }
+            }
+
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
 
     loop {
         // make sure we have at least a block in the current epoch, otherwise initial "current"
@@ -174,7 +204,7 @@ pub async fn start_lookahead_loop(
         }
     }.in_current_span());
 
-    Ok(LookaheadHandle::new(lookahead, config, beacon_handle))
+    Ok(LookaheadHandle::new(lookahead, preconfs_enabled_clone, config, beacon_handle))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -187,6 +217,7 @@ pub struct Lookahead {
 #[derive(Debug, Clone)]
 pub struct LookaheadHandle {
     lookahead: Arc<RwLock<Lookahead>>,
+    preconfs_enabled: Arc<AtomicBool>,
     checked: Instant,
     last: Lookahead,
     config: LookaheadConfig,
@@ -196,11 +227,12 @@ pub struct LookaheadHandle {
 impl LookaheadHandle {
     fn new(
         lookahead: Arc<RwLock<Lookahead>>,
+        preconfs_enabled: Arc<AtomicBool>,
         config: LookaheadConfig,
         beacon: BeaconHandle,
     ) -> Self {
         let last = *lookahead.read();
-        Self { lookahead, checked: Instant::now(), last, config, beacon }
+        Self { lookahead, preconfs_enabled, checked: Instant::now(), last, config, beacon }
     }
 
     fn maybe_refresh(&mut self) {
@@ -213,6 +245,10 @@ impl LookaheadHandle {
     // Returns true if the operator can sequence based on the lookahead, the lookahead is only
     // updated 1 slot after the epoch starts, so we make an additional check
     pub fn can_sequence(&mut self, operator: &Address) -> (bool, &str) {
+        if !self.preconfs_enabled.load(Ordering::Relaxed) {
+            return (false, "preconfs are disabled");
+        }
+
         self.maybe_refresh();
         let lookahead = &self.last;
 
@@ -257,6 +293,10 @@ impl LookaheadHandle {
     }
 
     pub fn can_propose(&mut self, operator: &Address) -> (bool, &str) {
+        if !self.preconfs_enabled.load(Ordering::Relaxed) {
+            return (false, "preconfs are disabled");
+        }
+
         self.maybe_refresh();
         let lookahead = &self.last;
 
@@ -278,6 +318,10 @@ impl LookaheadHandle {
 
     // Clear all remaining batches if we're approaching a different operator turn
     pub fn should_clear_proposal(&mut self, operator: &Address) -> (bool, &str) {
+        if !self.preconfs_enabled.load(Ordering::Relaxed) {
+            return (false, "preconfs are disabled");
+        }
+
         self.maybe_refresh();
         let lookahead = &self.last;
 

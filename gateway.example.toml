@@ -15,6 +15,7 @@ l1_contract = "0xA15933252102952D923197C26F144227097988B9"          # taikoInbox
 l2_contract = "0x1670100000000000000000000000000000010001"          # taikoAnchorAddress
 router_contract = "0x2dD160d1791fbC5824b10c54A38CF2E11c8EdBd8"      # preconfRouterAddress
 whitelist_contract = "0x9D2E8FFC93027D682485B3955737d9d56cbd7Bf6"   # preconfWhitelistAddress
+wrapper_contract = "0x0000000000000000000000000000000000000000"     # taikoWrapperAddress
 
 [gateway]
 rpc_port = 10001

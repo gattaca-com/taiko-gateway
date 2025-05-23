@@ -41,6 +41,18 @@ pub mod preconf {
     );
 }
 
+pub mod wrapper {
+    use alloy_sol_types::sol;
+
+    sol!(
+        #[derive(Debug, Eq, PartialEq)]
+        #[sol(rpc)]
+        #[allow(missing_docs)]
+        TaikoWrapper,
+        "../../abi/TaikoWrapper.abi.json"
+    );
+}
+
 pub mod l2 {
     use alloy_sol_types::sol;
     sol!(
