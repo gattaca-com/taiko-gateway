@@ -218,8 +218,9 @@ impl SortData {
                         self.state_nonces.insert(sender, sim.order.nonce());
                         debug_assert!(false)
                     }
-                    InvalidReason::InsufficientFunds { have, want } => {
-                        warn!(have, want, sender = ?sim.order.sender(), "insufficient funds, removing sender for this block");
+                    InvalidReason::InsufficientFunds { .. } => {
+                        // warn!(have, want, sender = ?sim.order.sender(), "insufficient funds,
+                        // removing sender for this block
                         let sender = *sim.order.sender();
                         self.state_nonces.insert(sender, sim.order.nonce());
                         self.active_orders.remove_sender(&sender);
@@ -318,12 +319,26 @@ impl SortData {
                 SequencerMetrics::record_sim_revert();
             }
             ExecutionResult::Invalid { reason } => {
-                self.telemetry.n_sims_invalid += 1;
-
                 if matches!(reason, InvalidReason::Uknown(_)) {
                     SequencerMetrics::record_sim_unknown();
                 } else {
                     SequencerMetrics::record_sim_invalid();
+                }
+
+                match reason {
+                    InvalidReason::NonceTooLow { .. } => {
+                        self.telemetry.n_sims_invalid_nonce_too_low += 1;
+                    }
+                    InvalidReason::NonceTooHigh { .. } => {
+                        self.telemetry.n_sims_invalid_nonce_too_high += 1;
+                    }
+                    InvalidReason::InsufficientFunds { .. } => {
+                        self.telemetry.n_sims_invalid_insufficient_funds += 1;
+                    }
+
+                    _ => {
+                        self.telemetry.n_sims_invalid_other += 1;
+                    }
                 }
             }
         }
@@ -339,7 +354,10 @@ pub struct SortingTelemetry {
     n_sims_sent: usize,
     n_sims_success: usize,
     n_sims_revert: usize,
-    n_sims_invalid: usize,
+    n_sims_invalid_nonce_too_low: usize,
+    n_sims_invalid_nonce_too_high: usize,
+    n_sims_invalid_insufficient_funds: usize,
+    n_sims_invalid_other: usize,
     tot_sim_time: Duration,
 }
 
@@ -356,8 +374,21 @@ impl SortingTelemetry {
         // if the telemetry was created, we sent at least one sim
         let success_rate = get_rate(self.n_sims_success, self.n_sims_sent);
         let revert_rate = get_rate(self.n_sims_revert, self.n_sims_sent);
-        let invalid_rate = get_rate(self.n_sims_invalid, self.n_sims_sent);
-        let received_rate = success_rate + revert_rate + invalid_rate;
+
+        let invalid_rate_nonce_too_low =
+            get_rate(self.n_sims_invalid_nonce_too_low, self.n_sims_sent);
+        let invalid_rate_nonce_too_high =
+            get_rate(self.n_sims_invalid_nonce_too_high, self.n_sims_sent);
+        let invalid_rate_insufficient_funds =
+            get_rate(self.n_sims_invalid_insufficient_funds, self.n_sims_sent);
+        let invalid_rate_other = get_rate(self.n_sims_invalid_other, self.n_sims_sent);
+        let received_rate = success_rate +
+            revert_rate +
+            invalid_rate_nonce_too_low +
+            invalid_rate_nonce_too_high +
+            invalid_rate_insufficient_funds +
+            invalid_rate_other;
+
         let stale_rate = 100.0 - received_rate; // we didnt get these back
         let stale_rate = (stale_rate * 100.0).round() / 100.0;
 
@@ -372,7 +403,10 @@ impl SortingTelemetry {
             n_sims_sent = self.n_sims_sent,
             success_rate,
             revert_rate,
-            invalid_rate,
+            invalid_rate_nonce_too_low,
+            invalid_rate_nonce_too_high,
+            invalid_rate_insufficient_funds,
+            invalid_rate_other,
             stale_rate,
             avg_sim_time =? avg_sim_time,
             tot_sim_time =? self.tot_sim_time,
