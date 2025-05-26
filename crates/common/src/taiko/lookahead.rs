@@ -225,18 +225,14 @@ impl LookaheadHandle {
         let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) +
             self.config.handover_start_buffer_ms / 1_000;
 
-        if current_epoch != lookahead.updated_epoch {
-            if operator == &lookahead.next && utcnow_sec() > cutoff_time {
-                return (true, "next operator after buffer_secs (waiting for lookahead update)");
+        let (current_operator, next_operator) =
+            if lookahead.updated_epoch == 0 || current_epoch == lookahead.updated_epoch {
+                (lookahead.curr, lookahead.next)
             } else {
-                return (
-                    false,
-                    "next operator either wrong or too early (waiting for lookahead update)",
-                );
-            }
-        }
+                (lookahead.next, Address::default())
+            };
 
-        match (operator == &lookahead.curr, operator == &lookahead.next) {
+        match (operator == &current_operator, operator == &next_operator) {
             (true, true) => (true, "operator is both current and next"),
             (true, false) => {
                 // either current operator before delay slots
