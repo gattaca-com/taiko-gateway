@@ -552,7 +552,7 @@ impl ProposerManager {
         // const CALLDATA_SIZE: usize = 50_000; // max calldata with some buffer
         // compressed_size > CALLDATA_SIZE
         // avoid address_already_in_use error
-        false
+        true
     }
 }
 
