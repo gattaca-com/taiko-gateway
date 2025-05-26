@@ -59,6 +59,44 @@ struct SequencerFlags {
     lookahead_sequence: bool,
 }
 
+struct Timings {
+    /// last time we had an anchor error
+    last_anchor_error: Instant,
+    /// last time we checked status
+    last_status_check: Instant,
+    /// last time we logged the tx pool report
+    last_tx_pool_check: Instant,
+    /// last time we produced a block
+    start_produce_block: Instant,
+}
+
+impl Timings {
+    fn new() -> Self {
+        Self {
+            last_anchor_error: Instant::now(),
+            last_status_check: Instant::now(),
+            last_tx_pool_check: Instant::now(),
+            start_produce_block: Instant::now(),
+        }
+    }
+
+    fn should_log_tx_pool(&self) -> bool {
+        self.last_tx_pool_check.elapsed() > Duration::from_secs(30)
+    }
+
+    fn can_retry_anchor(&self) -> bool {
+        self.last_anchor_error.elapsed() > ANCHOR_RETRY_INTERVAL
+    }
+
+    fn should_check_status(&self) -> bool {
+        self.last_status_check.elapsed() > Duration::from_secs(2)
+    }
+
+    fn can_produce_block(&self) -> bool {
+        Instant::now() > self.start_produce_block
+    }
+}
+
 pub struct Sequencer {
     config: SequencerConfig,
     chain_config: TaikoChainParams,
@@ -69,13 +107,10 @@ pub struct Sequencer {
     lookahead: LookaheadHandle,
     flags: SequencerFlags,
     proposer_request: Option<ProposeBatchParams>,
-    last_anchor_error: Instant,
     anchor_error_count: u64,
     /// whether we need to call status and check highest unsafe block id
     needs_status_check: bool,
-    /// last time we checked status
-    last_status_check: Instant,
-    last_produced_block: Instant,
+    timings: Timings,
 }
 
 impl Sequencer {
@@ -107,11 +142,9 @@ impl Sequencer {
             lookahead,
             flags: SequencerFlags::default(),
             proposer_request: None,
-            last_anchor_error: Instant::now(),
             anchor_error_count: 0,
             needs_status_check: true,
-            last_status_check: Instant::now(),
-            last_produced_block: Instant::now(),
+            timings: Timings::new(),
         }
     }
 
@@ -156,10 +189,10 @@ impl Sequencer {
         if self.flags.can_sequence {
             self.maybe_refresh_anchor();
 
-            if self.last_produced_block.elapsed() > Duration::from_secs(30) {
+            if self.timings.should_log_tx_pool() {
                 self.tx_pool
                     .report_and_sanity_check(self.ctx.l2_parent().block_number, &self.simulator);
-                self.last_produced_block = Instant::now();
+                self.timings.last_tx_pool_check = Instant::now();
             }
         }
 
@@ -212,14 +245,16 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if self.last_anchor_error.elapsed() < ANCHOR_RETRY_INTERVAL {
+                if !self.timings.can_retry_anchor() {
                     return SequencerState::default();
                 }
 
-                if self.needs_status_check &&
-                    self.last_status_check.elapsed() > Duration::from_secs(2)
-                {
-                    self.last_status_check = Instant::now();
+                if !self.timings.can_produce_block() {
+                    return SequencerState::default();
+                }
+
+                if self.needs_status_check && self.timings.should_check_status() {
+                    self.timings.last_status_check = Instant::now();
 
                     match self.get_status_block() {
                         Ok(status_block) => {
@@ -276,12 +311,16 @@ impl Sequencer {
                             max_block_size,
                         );
 
+                        // even if we finish early, dont produce blocks too frequently
+                        self.timings.start_produce_block =
+                            Instant::now() + self.config.target_block_time;
+
                         SequencerState::Sorting(sort_data)
                     }
 
                     Err(err) => {
                         error!(%err, "failed anchoring");
-                        self.last_anchor_error = Instant::now();
+                        self.timings.last_anchor_error = Instant::now();
                         self.anchor_error_count += 1;
 
                         if self.anchor_error_count > MAX_ANCHOR_ERRORS {
@@ -324,7 +363,7 @@ impl Sequencer {
                         }
                     } else {
                         // reset state for next block
-                        self.last_produced_block = Instant::now();
+                        self.timings.last_tx_pool_check = Instant::now();
                         SequencerState::default()
                     }
                 } else {
