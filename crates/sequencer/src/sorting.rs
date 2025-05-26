@@ -55,6 +55,8 @@ pub struct SortData {
     should_discard: bool,
     /// When we last logged info about current block
     last_logged: Instant,
+    /// waiting for new txs
+    waiting_for_new_txs: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +145,7 @@ impl SortData {
             should_discard: false,
             last_logged: Instant::now(),
             uncompressed_size: 0,
+            waiting_for_new_txs: false,
         }
     }
 
@@ -164,6 +167,8 @@ impl SortData {
                 return;
             }
         }
+
+        self.waiting_for_new_txs = false;
         self.active_orders.put(order.clone());
     }
 
@@ -306,6 +311,10 @@ impl SortData {
         // Apply the next best order if there is one
         self.maybe_apply_next();
 
+        if self.waiting_for_new_txs {
+            return;
+        }
+
         for order in self.active_orders.get_next_best(
             max_sims_per_loop,
             &self.nonces,
@@ -314,6 +323,10 @@ impl SortData {
             self.in_flight_sims += 1;
             self.telemetry.n_sims_sent += 1;
             simulator.spawn_sim_tx(order, self.state_id);
+        }
+
+        if self.in_flight_sims == 0 {
+            self.waiting_for_new_txs = true;
         }
     }
 
