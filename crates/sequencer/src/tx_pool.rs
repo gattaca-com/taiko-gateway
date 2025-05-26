@@ -5,7 +5,11 @@ use alloy_primitives::Address;
 use pc_common::{sequencer::Order, utils::utcnow_sec};
 use tracing::{debug, error, info};
 
-use crate::{simulator::SimulatorClient, sorting::ActiveOrders, types::StateNonces};
+use crate::{
+    simulator::SimulatorClient,
+    sorting::ActiveOrders,
+    types::{SortingNonces, StateNonces},
+};
 
 pub struct TxPool {
     // sender -> tx list
@@ -52,7 +56,7 @@ impl TxPool {
     /// Return the active orders, checking the nonces cache for the block number being built
     pub fn active_orders(&mut self, block_number: u64, base_fee: u128) -> Option<ActiveOrders> {
         if !self.nonces.is_valid_block(block_number) {
-            debug!("invalid nonce cache, looking for valid orders");
+            debug!(block_number, "invalid nonce cache, looking for valid orders");
 
             // nonces are stale, clear the cache and re-sim
             self.nonces.clear();
@@ -68,22 +72,17 @@ impl TxPool {
             })
         } else {
             debug!("valid nonce cache, getting active orders");
-
             // nonces are valid, get the active orders from those
-            self.get_active_for_nonces(&self.nonces, base_fee)
+            self.get_active_for_nonces(base_fee)
         }
     }
 
     /// Return active orders: either we have these nonces or we have new senders
-    pub fn get_active_for_nonces(
-        &self,
-        state_nonces: &StateNonces,
-        base_fee: u128,
-    ) -> Option<ActiveOrders> {
+    fn get_active_for_nonces(&self, base_fee: u128) -> Option<ActiveOrders> {
         let mut active = HashMap::with_capacity(self.tx_lists.len());
 
         for (sender, tx_list) in self.tx_lists.iter() {
-            if let Some(state_nonce) = state_nonces.get(sender) {
+            if let Some(state_nonce) = self.nonces.get(sender) {
                 if tx_list.has_tx_by_nonce(state_nonce, base_fee) {
                     // we have this nonce and fee is high enough
                     let mut tx_list = tx_list.clone();
@@ -102,16 +101,64 @@ impl TxPool {
         (!active.is_empty()).then(|| ActiveOrders::new(active))
     }
 
-    pub fn update_nonces(&mut self, state_nonces: StateNonces) {
-        self.nonces.valid_block = state_nonces.valid_block + 1;
-        for (sender, state_nonce) in state_nonces.nonces.into_iter() {
-            self.nonces.insert(sender, state_nonce);
-            if let Some(tx_list) = self.tx_lists.get_mut(&sender) {
-                if tx_list.forward(&state_nonce) {
-                    self.tx_lists.remove(&sender);
+    // update only state nonces
+    pub fn update_reset(&mut self, state_nonces: SortingNonces) {
+        if self.nonces.valid_block == state_nonces.valid_block() {
+            // usual case while sorting, merge the caches
+            for (sender, state_nonce) in state_nonces.state.nonces.into_iter() {
+                self.nonces.insert(sender, state_nonce);
+                if let Some(tx_list) = self.tx_lists.get_mut(&sender) {
+                    if tx_list.forward(&state_nonce) {
+                        self.tx_lists.remove(&sender);
+                    }
+                }
+            }
+        } else {
+            debug!(
+                state = state_nonces.valid_block(),
+                curr = self.nonces.valid_block,
+                "resetting nonces on update"
+            );
+            self.nonces = state_nonces.state;
+            for (sender, state_nonce) in self.nonces.iter() {
+                if let Some(tx_list) = self.tx_lists.get_mut(sender) {
+                    if tx_list.forward(&state_nonce) {
+                        self.tx_lists.remove(sender);
+                    }
                 }
             }
         }
+    }
+
+    // update from both state and sorting
+    pub fn update_new_block(&mut self, state_nonces: SortingNonces) {
+        if self.nonces.valid_block == state_nonces.valid_block() {
+            // usual case while sorting, merge the caches
+            for (sender, state_nonce) in state_nonces.all_iter() {
+                self.nonces.insert(sender, state_nonce);
+                if let Some(tx_list) = self.tx_lists.get_mut(&sender) {
+                    if tx_list.forward(&state_nonce) {
+                        self.tx_lists.remove(&sender);
+                    }
+                }
+            }
+        } else {
+            debug!(
+                state = state_nonces.valid_block(),
+                curr = self.nonces.valid_block,
+                "resetting nonces on update"
+            );
+            self.nonces = state_nonces.all_merged();
+            for (sender, state_nonce) in self.nonces.iter() {
+                if let Some(tx_list) = self.tx_lists.get_mut(sender) {
+                    if tx_list.forward(&state_nonce) {
+                        self.tx_lists.remove(sender);
+                    }
+                }
+            }
+        }
+
+        self.nonces.valid_block += 1;
     }
 
     pub fn clear_nonces(&mut self) {
@@ -188,11 +235,11 @@ impl TxList {
     }
 
     pub fn has_tx_by_nonce(&self, nonce: &u64, base_fee: u128) -> bool {
-        self.txs.get(nonce).map(|tx| tx.max_fee_per_gas() >= base_fee).unwrap_or(false)
+        self.txs.get(nonce).map(|tx| tx.valid_for_base_fee(base_fee)).unwrap_or(false)
     }
 
     pub fn has_tx_by_fee(&self, base_fee: u128) -> bool {
-        self.txs.first_key_value().map(|(_, tx)| tx.max_fee_per_gas() >= base_fee).unwrap_or(false)
+        self.txs.first_key_value().map(|(_, tx)| tx.valid_for_base_fee(base_fee)).unwrap_or(false)
     }
 
     /// Removes all transactions with nonce lower than the state_nonce.
@@ -214,7 +261,7 @@ impl TxList {
     pub fn first_ready(&mut self, state_nonce: Option<&u64>, base_fee: u128) -> Option<Order> {
         if let Some(state_nonce) = state_nonce {
             if let Some(tx) = self.txs.get(state_nonce) {
-                if tx.max_fee_per_gas() >= base_fee {
+                if tx.valid_for_base_fee(base_fee) {
                     return self.txs.remove(state_nonce);
                 }
             }

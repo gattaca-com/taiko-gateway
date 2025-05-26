@@ -113,8 +113,7 @@ pub struct ValidOrder {
     pub order: Order,
 }
 
-/// A map from a sender address to a state nonce. Note that the nonce could be either the one from
-/// the parent block or a different one while sorting
+/// A map from a sender address to a state nonce
 #[derive(Debug, Default, Clone)]
 pub struct StateNonces {
     pub nonces: HashMap<Address, u64>,
@@ -147,5 +146,42 @@ impl Deref for StateNonces {
 impl DerefMut for StateNonces {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.nonces
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SortingNonces {
+    pub state: StateNonces,
+    pub sorting: StateNonces,
+}
+
+impl SortingNonces {
+    pub fn new(valid_block: u64) -> Self {
+        Self { state: StateNonces::new(valid_block), sorting: StateNonces::new(valid_block) }
+    }
+
+    pub fn get_nonce(&self, sender: &Address) -> Option<&u64> {
+        self.sorting.get(sender).or_else(|| self.state.get(sender))
+    }
+
+    pub fn insert_state(&mut self, sender: Address, nonce: u64) {
+        self.state.insert(sender, nonce);
+    }
+
+    pub fn insert_sorting(&mut self, sender: Address, nonce: u64) {
+        self.sorting.insert(sender, nonce);
+    }
+
+    pub fn valid_block(&self) -> u64 {
+        self.state.valid_block
+    }
+
+    pub fn all_iter(self) -> impl Iterator<Item = (Address, u64)> {
+        self.state.nonces.into_iter().chain(self.sorting.nonces.into_iter())
+    }
+
+    pub fn all_merged(mut self) -> StateNonces {
+        self.state.nonces.extend(self.sorting.nonces);
+        self.state
     }
 }

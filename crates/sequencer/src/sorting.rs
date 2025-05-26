@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 use crate::{
     simulator::SimulatorClient,
     tx_pool::TxList,
-    types::{BlockInfo, SimulatedOrder, StateNonces, ValidOrder},
+    types::{BlockInfo, SimulatedOrder, SortingNonces, ValidOrder},
 };
 
 #[derive(Debug, Clone)]
@@ -29,7 +29,7 @@ pub struct SortData {
     /// Mempool snapshot when the started building the block
     pub active_orders: ActiveOrders,
     /// Simulated nonces, sender -> state nonce
-    pub state_nonces: StateNonces,
+    pub nonces: SortingNonces,
     /// All orders in the current block (excluding the anchor)
     pub orders: Vec<Order>,
     /// Cumulative size of the sequenced txs, rlp encoded
@@ -103,13 +103,13 @@ impl ActiveOrders {
     fn get_next_best<'a>(
         &'a mut self,
         max: usize,
-        state_nonces: &'a HashMap<Address, u64>,
+        state_nonces: &'a SortingNonces,
         base_fee: u128,
     ) -> impl Iterator<Item = Order> + 'a {
         self.tx_lists
             .iter_mut()
             .filter_map(move |tx| {
-                let state_nonce = state_nonces.get(tx.sender());
+                let state_nonce = state_nonces.get_nonce(tx.sender());
                 tx.first_ready(state_nonce, base_fee)
             })
             .take(max)
@@ -138,7 +138,7 @@ impl SortData {
             in_flight_sims: 0,
             active_orders,
             telemetry: SortingTelemetry::default(),
-            state_nonces: StateNonces::new(block_info.block_number),
+            nonces: SortingNonces::new(block_info.block_number),
             should_seal: false,
             should_discard: false,
             last_logged: Instant::now(),
@@ -152,7 +152,7 @@ impl SortData {
             assert!(self.is_valid(next_best.origin_state_id));
             assert!(self.gas_remaining >= next_best.gas_used);
 
-            self.state_nonces.insert(*next_best.order.sender(), next_best.order.nonce() + 1);
+            self.nonces.insert_sorting(*next_best.order.sender(), next_best.order.nonce() + 1);
             self.state_id = next_best.new_state_id;
             self.builder_payment += next_best.builder_payment;
             self.gas_remaining -= next_best.gas_used;
@@ -200,13 +200,13 @@ impl SortData {
                         // warn!(tx, state, sender = ?sim.order.sender(), "nonce too low, updating
                         // nonce cache");
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, state);
+                        self.nonces.insert_state(sender, state);
                     }
                     InvalidReason::NonceTooHigh { tx: _, state } => {
                         // warn!(tx, state, sender = ?sim.order.sender(), "nonce too high, updating
                         // nonce cache");
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, state);
+                        self.nonces.insert_state(sender, state);
                     }
                     InvalidReason::NotEnoughGas => {
                         warn!("not enough gas, sealing early (this should be very rare)");
@@ -215,14 +215,15 @@ impl SortData {
                     InvalidReason::CapLessThanBaseFee => {
                         warn!("max fee per gas less than block base fee, this should not happen!");
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, sim.order.nonce());
+                        self.nonces.insert_state(sender, sim.order.nonce());
                         debug_assert!(false)
                     }
                     InvalidReason::InsufficientFunds { .. } => {
                         // warn!(have, want, sender = ?sim.order.sender(), "insufficient funds,
                         // removing sender for this block
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, sim.order.nonce());
+                        self.nonces.insert_state(sender, sim.order.nonce()); // TODO: this updates the cache with the wrong nonce, better to store the
+                                                                             // balance
                         self.active_orders.remove_sender(&sender);
                     }
                     InvalidReason::StateIdNotFound { state } => {
@@ -271,7 +272,7 @@ impl SortData {
 
         for order in self.active_orders.get_next_best(
             max_sims_per_loop,
-            &self.state_nonces,
+            &self.nonces,
             self.block_info.base_fee,
         ) {
             self.in_flight_sims += 1;

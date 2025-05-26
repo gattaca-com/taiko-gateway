@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use alloy_consensus::TxEnvelope;
+use alloy_consensus::{Transaction, TxEnvelope};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, Bytes};
 use alloy_rlp::Decodable;
@@ -48,6 +48,10 @@ impl Order {
 
     pub fn sender(&self) -> &Address {
         &self.sender
+    }
+
+    pub fn valid_for_base_fee(&self, base_fee: u128) -> bool {
+        self.max_fee_per_gas() >= base_fee
     }
 }
 
