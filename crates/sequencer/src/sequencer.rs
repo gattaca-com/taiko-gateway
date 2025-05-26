@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
 use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::{Receiver, Sender};
@@ -710,8 +709,10 @@ impl Sequencer {
 
         BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
-        let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
-        self.tx_pool.clear_mined(block_number, txs);
+        // sort data has both the mined nonces and the invalid nonces
+        // let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
+        // self.tx_pool.clear_mined(block_number, txs);
+        self.tx_pool.update_nonces(sort_data.state_nonces);
 
         self.ctx.new_preconf_l2_block(&block);
 
