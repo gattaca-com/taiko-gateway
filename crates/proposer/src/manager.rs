@@ -398,8 +398,7 @@ impl ProposerManager {
             blocks = request.block_params.len(),
             "spawning propose batch"
         );
-        spawn(async move { proposer.propose_batch(request).await });
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        proposer.propose_batch(request).await
     }
 
     #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
@@ -531,9 +530,15 @@ impl ProposerManager {
                 "proposed batch"
             );
 
-            self.client.reorg_check(tx_hash).await.inspect_err(|_| {
-                ProposerMetrics::proposal_reorg();
-            })?;
+            let client = self.client.clone();
+            spawn(async move {
+                if let Err(err) = client.reorg_check(tx_hash).await {
+                    ProposerMetrics::proposal_reorg();
+                    let msg = format!("reorg check failed: {err}");
+                    error!("{msg}");
+                    panic!("{}", msg);
+                };
+            });
 
             Ok(())
         } else {
