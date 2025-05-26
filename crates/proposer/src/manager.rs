@@ -548,9 +548,11 @@ impl ProposerManager {
     }
 
     // TODO: use gas cost instead of size
-    fn should_use_blobs(&self, compressed_size: usize) -> bool {
-        const CALLDATA_SIZE: usize = 50_000; // max calldata with some buffer
-        compressed_size > CALLDATA_SIZE
+    fn should_use_blobs(&self, _compressed_size: usize) -> bool {
+        // const CALLDATA_SIZE: usize = 50_000; // max calldata with some buffer
+        // compressed_size > CALLDATA_SIZE
+        // avoid address_already_in_use error
+        false
     }
 }
 
