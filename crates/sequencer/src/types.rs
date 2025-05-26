@@ -177,7 +177,7 @@ impl SortingNonces {
     }
 
     pub fn all_iter(self) -> impl Iterator<Item = (Address, u64)> {
-        self.state.nonces.into_iter().chain(self.sorting.nonces.into_iter())
+        self.state.nonces.into_iter().chain(self.sorting.nonces)
     }
 
     pub fn all_merged(mut self) -> StateNonces {

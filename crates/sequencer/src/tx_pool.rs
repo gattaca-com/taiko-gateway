@@ -122,7 +122,7 @@ impl TxPool {
             self.nonces = state_nonces.state;
             for (sender, state_nonce) in self.nonces.iter() {
                 if let Some(tx_list) = self.tx_lists.get_mut(sender) {
-                    if tx_list.forward(&state_nonce) {
+                    if tx_list.forward(state_nonce) {
                         self.tx_lists.remove(sender);
                     }
                 }
@@ -151,7 +151,7 @@ impl TxPool {
             self.nonces = state_nonces.all_merged();
             for (sender, state_nonce) in self.nonces.iter() {
                 if let Some(tx_list) = self.tx_lists.get_mut(sender) {
-                    if tx_list.forward(&state_nonce) {
+                    if tx_list.forward(state_nonce) {
                         self.tx_lists.remove(sender);
                     }
                 }

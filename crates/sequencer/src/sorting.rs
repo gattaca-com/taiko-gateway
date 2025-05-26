@@ -146,8 +146,21 @@ impl SortData {
         }
     }
 
+    pub fn handle_new_tx(&mut self, order: &Order) {
+        if !order.valid_for_base_fee(self.block_info.base_fee) {
+            return;
+        }
+
+        if let Some(state_nonce) = self.nonces.get_nonce(order.sender()) {
+            if order.nonce() < *state_nonce {
+                return;
+            }
+        }
+        self.active_orders.put(order.clone());
+    }
+
     /// Apply the next best order
-    pub fn maybe_apply_next(&mut self) {
+    fn maybe_apply_next(&mut self) {
         if let Some(next_best) = std::mem::take(&mut self.next_best) {
             assert!(self.is_valid(next_best.origin_state_id));
             assert!(self.gas_remaining >= next_best.gas_used);
@@ -279,10 +292,6 @@ impl SortData {
             self.telemetry.n_sims_sent += 1;
             simulator.spawn_sim_tx(order, self.state_id);
         }
-    }
-
-    pub fn is_simulating(&self) -> bool {
-        self.in_flight_sims > 0
     }
 
     pub fn is_valid(&self, state_id: StateId) -> bool {
