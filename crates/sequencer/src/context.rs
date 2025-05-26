@@ -111,6 +111,7 @@ impl SequencerContext {
             );
 
             self.update_parent_block_id(new_block);
+            self.last_l2_receive = Instant::now();
             return false;
         }
 
@@ -140,6 +141,7 @@ impl SequencerContext {
                     );
                 }
                 self.update_parent_block_id(new_block);
+                self.last_l2_receive = Instant::now();
                 return true;
             } else {
                 // saw this block before
@@ -158,6 +160,7 @@ impl SequencerContext {
                     "new l2 preconf block (missed blocks)"
                 );
 
+                self.last_l2_receive = Instant::now();
                 self.update_parent_block_id(new_block);
             } else {
                 // missed some previous blocks, the parent is now potentially on
@@ -172,6 +175,8 @@ impl SequencerContext {
                     coinbase = %header.beneficiary,
                     "new l2 preconf block may cause an unhandled reorg"
                 );
+
+                self.last_l2_receive = Instant::now();
             }
         }
 
