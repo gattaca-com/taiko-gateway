@@ -147,6 +147,14 @@ impl SortData {
     }
 
     pub fn handle_new_tx(&mut self, order: &Order) {
+        let start = Instant::now();
+        self._handle_new_tx(order);
+        let elapsed = start.elapsed();
+        self.telemetry.new_txs_processed += 1;
+        self.telemetry.tot_new_tx_time += elapsed;
+    }
+
+    fn _handle_new_tx(&mut self, order: &Order) {
         if !order.valid_for_base_fee(self.block_info.base_fee) {
             return;
         }
@@ -192,6 +200,14 @@ impl SortData {
 
     /// Handle a new simulation result
     pub fn handle_sim(&mut self, sim: SimulatedOrder) {
+        let start = Instant::now();
+        self._handle_sim(sim);
+        let elapsed = start.elapsed();
+        self.telemetry.tot_handle_sim_time += elapsed;
+    }
+
+    /// Handle a new simulation result
+    fn _handle_sim(&mut self, sim: SimulatedOrder) {
         if !self.is_valid(sim.origin_state_id) {
             return;
         }
@@ -276,6 +292,13 @@ impl SortData {
     }
 
     pub fn maybe_sim_next_batch(&mut self, simulator: &SimulatorClient, max_sims_per_loop: usize) {
+        let start = Instant::now();
+        self._maybe_sim_next_batch(simulator, max_sims_per_loop);
+        let elapsed = start.elapsed();
+        self.telemetry.tot_maybe_sim_next += elapsed;
+    }
+
+    fn _maybe_sim_next_batch(&mut self, simulator: &SimulatorClient, max_sims_per_loop: usize) {
         if self.in_flight_sims > 0 || self.should_seal() {
             return;
         }
@@ -369,6 +392,10 @@ pub struct SortingTelemetry {
     n_sims_invalid_insufficient_funds: usize,
     n_sims_invalid_other: usize,
     tot_sim_time: Duration,
+    new_txs_processed: usize,
+    tot_new_tx_time: Duration,
+    tot_handle_sim_time: Duration,
+    tot_maybe_sim_next: Duration,
 }
 
 impl SortingTelemetry {
@@ -420,6 +447,10 @@ impl SortingTelemetry {
             stale_rate,
             avg_sim_time =? avg_sim_time,
             tot_sim_time =? self.tot_sim_time,
+            new_txs_processed = self.new_txs_processed,
+            tot_new_tx_time =? self.tot_new_tx_time,
+            tot_handle_sim_time =? self.tot_handle_sim_time,
+            tot_maybe_sim_next =? self.tot_maybe_sim_next,
             "sorting telemetry",
         );
     }

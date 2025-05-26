@@ -521,10 +521,9 @@ impl Sequencer {
     fn fetch_txs(&mut self) {
         let parent_block = self.ctx.l2_parent().block_number;
         let mut handle_tx = |tx| {
-            let SequencerState::Sorting(sort_data) = &mut self.ctx.state else {
-                return;
+            if let SequencerState::Sorting(sort_data) = &mut self.ctx.state {
+                sort_data.handle_new_tx(&tx);
             };
-            sort_data.handle_new_tx(&tx);
             self.tx_pool.put(tx, parent_block);
         };
 
