@@ -127,14 +127,6 @@ impl StateNonces {
         Self { nonces: HashMap::new(), valid_block }
     }
 
-    pub fn new_from_mined(
-        mined_block: u64,
-        mined_txs: impl Iterator<Item = (Address, u64)>,
-    ) -> Self {
-        let nonces = mined_txs.map(|(sender, mined_nonce)| (sender, mined_nonce + 1)).collect();
-        Self { nonces, valid_block: mined_block + 1 }
-    }
-
     pub fn is_valid_parent(&self, parent_block: u64) -> bool {
         self.valid_block == parent_block + 1
     }

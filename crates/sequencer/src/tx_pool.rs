@@ -10,7 +10,7 @@ use crate::{simulator::SimulatorClient, sorting::ActiveOrders, types::StateNonce
 pub struct TxPool {
     // sender -> tx list
     tx_lists: HashMap<Address, TxList>,
-    // address -> state_nonce valid at block `parent_block` + 1
+    // nonce cache
     nonces: StateNonces,
     valid_orders: bool,
     // this includes duplicates and invalid nonces
@@ -103,7 +103,7 @@ impl TxPool {
     }
 
     pub fn update_nonces(&mut self, state_nonces: StateNonces) {
-        self.nonces.valid_block = state_nonces.valid_block;
+        self.nonces.valid_block = state_nonces.valid_block + 1;
         for (sender, state_nonce) in state_nonces.nonces.into_iter() {
             self.nonces.insert(sender, state_nonce);
             if let Some(tx_list) = self.tx_lists.get_mut(&sender) {
@@ -112,17 +112,6 @@ impl TxPool {
                 }
             }
         }
-    }
-
-    /// Clear all mined nonces for each address (built block is now the parent)
-    pub fn clear_mined(
-        &mut self,
-        mined_block: u64,
-        mined_txs: impl Iterator<Item = (Address, u64)>,
-    ) {
-        self.discarded_orders = 0;
-        let nonces = StateNonces::new_from_mined(mined_block, mined_txs);
-        self.update_nonces(nonces);
     }
 
     pub fn clear_nonces(&mut self) {
