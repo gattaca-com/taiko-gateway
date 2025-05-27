@@ -58,7 +58,7 @@ pub async fn start_lookahead_loop(
                 }
             }
 
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_secs(12)).await;
         }
     });
 
