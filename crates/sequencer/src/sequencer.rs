@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address, U256};
 use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::{Receiver, Sender};
@@ -371,7 +370,7 @@ impl Sequencer {
                     // if we're here, all the orders were invalid, so the state nonces are
                     // all for the actual state db (as opposed to ones we applied in the block),
                     // use those to clear the txpool and restart the loop
-                    self.tx_pool.update_nonces(sort_data.state_nonces);
+                    self.tx_pool.update_reset(sort_data.nonces);
                     self.tx_pool.report_and_sanity_check(
                         sort_data.block_info.block_number - 1,
                         &self.simulator,
@@ -388,22 +387,7 @@ impl Sequencer {
 
             SequencerState::Sorting(mut sort_data) => {
                 sort_data.maybe_sim_next_batch(&self.simulator, self.config.max_sims_per_loop);
-
-                if sort_data.is_simulating() {
-                    return SequencerState::Sorting(sort_data);
-                }
-
-                // if we're not simulating here then we have run out of active orders
-                // try to get new orders from the txpool considering the state nonces we have
-                if let Some(new_active) = self
-                    .tx_pool
-                    .get_active_for_nonces(&sort_data.state_nonces, sort_data.block_info.base_fee)
-                {
-                    sort_data.active_orders = new_active;
-                    SequencerState::Sorting(sort_data)
-                } else {
-                    SequencerState::Sorting(sort_data)
-                }
+                SequencerState::Sorting(sort_data)
             }
         }
     }
@@ -535,21 +519,16 @@ impl Sequencer {
     }
 
     fn fetch_txs(&mut self) {
-        receive_for(
-            Duration::from_millis(10),
-            |tx| {
-                self.tx_pool.put(tx, self.ctx.l2_parent().block_number);
-            },
-            &self.spine.rpc_rx,
-        );
+        let parent_block = self.ctx.l2_parent().block_number;
+        let mut handle_tx = |tx| {
+            if let SequencerState::Sorting(sort_data) = &mut self.ctx.state {
+                sort_data.handle_new_tx(&tx);
+            };
+            self.tx_pool.put(tx, parent_block);
+        };
 
-        receive_for(
-            Duration::from_millis(10),
-            |tx| {
-                self.tx_pool.put(tx, self.ctx.l2_parent().block_number);
-            },
-            &self.spine.mempool_rx,
-        );
+        receive_for(Duration::from_millis(10), &mut handle_tx, &self.spine.rpc_rx);
+        receive_for(Duration::from_millis(10), &mut handle_tx, &self.spine.mempool_rx);
     }
 
     fn handle_sims(&mut self) {
@@ -710,8 +689,10 @@ impl Sequencer {
 
         BlocksMetrics::built_block(block_time, res.cumulative_builder_payment);
 
-        let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
-        self.tx_pool.clear_mined(block_number, txs);
+        // sort data has both the mined nonces and the invalid nonces
+        // let txs = block.transactions.txns().map(|tx| (tx.from, tx.nonce()));
+        // self.tx_pool.clear_mined(block_number, txs);
+        self.tx_pool.update_new_block(sort_data.nonces);
 
         self.ctx.new_preconf_l2_block(&block);
 

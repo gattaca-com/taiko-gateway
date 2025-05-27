@@ -26,6 +26,7 @@ pub struct SequencerContext {
     pub coinbase: Address,
     pub l1_safe_lag: u64,
     pub last_l1_receive: Instant,
+    pub last_l2_receive: Instant,
     /// Current state
     pub state: SequencerState,
     /// Anchor data to use for next batches
@@ -55,6 +56,7 @@ impl SequencerContext {
         Self {
             l1_safe_lag,
             last_l1_receive: Instant::now(),
+            last_l2_receive: Instant::now(),
             state: SequencerState::default(),
             anchor: None,
             l1_headers: BTreeMap::new(),
@@ -86,9 +88,7 @@ impl SequencerContext {
     pub fn new_preconf_l2_block(&mut self, new_block: &Block) -> bool {
         let header = &new_block.header;
 
-        let ours = header.beneficiary == self.coinbase;
-
-        if ours {
+        if header.beneficiary == self.coinbase {
             self.to_verify.insert(header.number, header.clone());
         }
 
@@ -103,6 +103,7 @@ impl SequencerContext {
             debug!(
                 number = header.number,
                 n_txs = new_block.transactions.len(),
+                sync_time = ?self.last_l2_receive.elapsed(),
                 hash = %header.hash,
                 coinbase = %header.beneficiary,
                 parent_hash = %last_seen.hash,
@@ -110,6 +111,7 @@ impl SequencerContext {
             );
 
             self.update_parent_block_id(new_block);
+            self.last_l2_receive = Instant::now();
             return false;
         }
 
@@ -120,6 +122,7 @@ impl SequencerContext {
 
                 debug!(
                     n_txs = new_block.transactions.len(),
+                    sync_time = ?self.last_l2_receive.elapsed(),
                     new_hash = %header.hash,
                     reorged_hash = %self.l2_headers[local].hash,
                     coinbase = %header.beneficiary,
@@ -138,6 +141,7 @@ impl SequencerContext {
                     );
                 }
                 self.update_parent_block_id(new_block);
+                self.last_l2_receive = Instant::now();
                 return true;
             } else {
                 // saw this block before
@@ -149,12 +153,14 @@ impl SequencerContext {
                     number = header.number,
                     last_seen = last_seen.block_number,
                     n_txs = new_block.transactions.len(),
+                    sync_time = ?self.last_l2_receive.elapsed(),
                     hash = %header.hash,
                     parent_hash = %last_seen.hash,
                     coinbase = %header.beneficiary,
                     "new l2 preconf block (missed blocks)"
                 );
 
+                self.last_l2_receive = Instant::now();
                 self.update_parent_block_id(new_block);
             } else {
                 // missed some previous blocks, the parent is now potentially on
@@ -163,11 +169,14 @@ impl SequencerContext {
                     number = header.number,
                     last_seen = last_seen.block_number,
                     n_txs = new_block.transactions.len(),
+                    sync_time = ?self.last_l2_receive.elapsed(),
                     hash = %header.hash,
                     parent_hash = %last_seen.hash,
                     coinbase = %header.beneficiary,
                     "new l2 preconf block may cause an unhandled reorg"
                 );
+
+                self.last_l2_receive = Instant::now();
             }
         }
 

@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 use crate::{
     simulator::SimulatorClient,
     tx_pool::TxList,
-    types::{BlockInfo, SimulatedOrder, StateNonces, ValidOrder},
+    types::{BlockInfo, SimulatedOrder, SortingNonces, ValidOrder},
 };
 
 #[derive(Debug, Clone)]
@@ -29,7 +29,7 @@ pub struct SortData {
     /// Mempool snapshot when the started building the block
     pub active_orders: ActiveOrders,
     /// Simulated nonces, sender -> state nonce
-    pub state_nonces: StateNonces,
+    pub nonces: SortingNonces,
     /// All orders in the current block (excluding the anchor)
     pub orders: Vec<Order>,
     /// Cumulative size of the sequenced txs, rlp encoded
@@ -55,6 +55,8 @@ pub struct SortData {
     should_discard: bool,
     /// When we last logged info about current block
     last_logged: Instant,
+    /// waiting for new txs
+    waiting_for_new_txs: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -103,13 +105,13 @@ impl ActiveOrders {
     fn get_next_best<'a>(
         &'a mut self,
         max: usize,
-        state_nonces: &'a HashMap<Address, u64>,
+        state_nonces: &'a SortingNonces,
         base_fee: u128,
     ) -> impl Iterator<Item = Order> + 'a {
         self.tx_lists
             .iter_mut()
             .filter_map(move |tx| {
-                let state_nonce = state_nonces.get(tx.sender());
+                let state_nonce = state_nonces.get_nonce(tx.sender());
                 tx.first_ready(state_nonce, base_fee)
             })
             .take(max)
@@ -138,21 +140,45 @@ impl SortData {
             in_flight_sims: 0,
             active_orders,
             telemetry: SortingTelemetry::default(),
-            state_nonces: StateNonces::new(block_info.block_number),
+            nonces: SortingNonces::new(block_info.block_number),
             should_seal: false,
             should_discard: false,
             last_logged: Instant::now(),
             uncompressed_size: 0,
+            waiting_for_new_txs: false,
         }
     }
 
+    pub fn handle_new_tx(&mut self, order: &Order) {
+        let start = Instant::now();
+        self._handle_new_tx(order);
+        let elapsed = start.elapsed();
+        self.telemetry.new_txs_processed += 1;
+        self.telemetry.tot_new_tx_time += elapsed;
+    }
+
+    fn _handle_new_tx(&mut self, order: &Order) {
+        if !order.valid_for_base_fee(self.block_info.base_fee) {
+            return;
+        }
+
+        if let Some(state_nonce) = self.nonces.get_nonce(order.sender()) {
+            if order.nonce() < *state_nonce {
+                return;
+            }
+        }
+
+        self.waiting_for_new_txs = false;
+        self.active_orders.put(order.clone());
+    }
+
     /// Apply the next best order
-    pub fn maybe_apply_next(&mut self) {
+    fn maybe_apply_next(&mut self) {
         if let Some(next_best) = std::mem::take(&mut self.next_best) {
             assert!(self.is_valid(next_best.origin_state_id));
             assert!(self.gas_remaining >= next_best.gas_used);
 
-            self.state_nonces.insert(*next_best.order.sender(), next_best.order.nonce() + 1);
+            self.nonces.insert_sorting(*next_best.order.sender(), next_best.order.nonce() + 1);
             self.state_id = next_best.new_state_id;
             self.builder_payment += next_best.builder_payment;
             self.gas_remaining -= next_best.gas_used;
@@ -179,6 +205,14 @@ impl SortData {
 
     /// Handle a new simulation result
     pub fn handle_sim(&mut self, sim: SimulatedOrder) {
+        let start = Instant::now();
+        self._handle_sim(sim);
+        let elapsed = start.elapsed();
+        self.telemetry.tot_handle_sim_time += elapsed;
+    }
+
+    /// Handle a new simulation result
+    fn _handle_sim(&mut self, sim: SimulatedOrder) {
         if !self.is_valid(sim.origin_state_id) {
             return;
         }
@@ -200,13 +234,13 @@ impl SortData {
                         // warn!(tx, state, sender = ?sim.order.sender(), "nonce too low, updating
                         // nonce cache");
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, state);
+                        self.nonces.insert_state(sender, state);
                     }
                     InvalidReason::NonceTooHigh { tx: _, state } => {
                         // warn!(tx, state, sender = ?sim.order.sender(), "nonce too high, updating
                         // nonce cache");
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, state);
+                        self.nonces.insert_state(sender, state);
                     }
                     InvalidReason::NotEnoughGas => {
                         warn!("not enough gas, sealing early (this should be very rare)");
@@ -215,14 +249,15 @@ impl SortData {
                     InvalidReason::CapLessThanBaseFee => {
                         warn!("max fee per gas less than block base fee, this should not happen!");
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, sim.order.nonce());
+                        self.nonces.insert_state(sender, sim.order.nonce());
                         debug_assert!(false)
                     }
                     InvalidReason::InsufficientFunds { .. } => {
                         // warn!(have, want, sender = ?sim.order.sender(), "insufficient funds,
                         // removing sender for this block
                         let sender = *sim.order.sender();
-                        self.state_nonces.insert(sender, sim.order.nonce());
+                        self.nonces.insert_state(sender, sim.order.nonce()); // TODO: this updates the cache with the wrong nonce, better to store the
+                                                                             // balance
                         self.active_orders.remove_sender(&sender);
                     }
                     InvalidReason::StateIdNotFound { state } => {
@@ -262,6 +297,13 @@ impl SortData {
     }
 
     pub fn maybe_sim_next_batch(&mut self, simulator: &SimulatorClient, max_sims_per_loop: usize) {
+        let start = Instant::now();
+        self._maybe_sim_next_batch(simulator, max_sims_per_loop);
+        let elapsed = start.elapsed();
+        self.telemetry.tot_maybe_sim_next += elapsed;
+    }
+
+    fn _maybe_sim_next_batch(&mut self, simulator: &SimulatorClient, max_sims_per_loop: usize) {
         if self.in_flight_sims > 0 || self.should_seal() {
             return;
         }
@@ -269,19 +311,23 @@ impl SortData {
         // Apply the next best order if there is one
         self.maybe_apply_next();
 
+        if self.waiting_for_new_txs {
+            return;
+        }
+
         for order in self.active_orders.get_next_best(
             max_sims_per_loop,
-            &self.state_nonces,
+            &self.nonces,
             self.block_info.base_fee,
         ) {
             self.in_flight_sims += 1;
             self.telemetry.n_sims_sent += 1;
             simulator.spawn_sim_tx(order, self.state_id);
         }
-    }
 
-    pub fn is_simulating(&self) -> bool {
-        self.in_flight_sims > 0
+        if self.in_flight_sims == 0 {
+            self.waiting_for_new_txs = true;
+        }
     }
 
     pub fn is_valid(&self, state_id: StateId) -> bool {
@@ -359,6 +405,10 @@ pub struct SortingTelemetry {
     n_sims_invalid_insufficient_funds: usize,
     n_sims_invalid_other: usize,
     tot_sim_time: Duration,
+    new_txs_processed: usize,
+    tot_new_tx_time: Duration,
+    tot_handle_sim_time: Duration,
+    tot_maybe_sim_next: Duration,
 }
 
 impl SortingTelemetry {
@@ -410,6 +460,10 @@ impl SortingTelemetry {
             stale_rate,
             avg_sim_time =? avg_sim_time,
             tot_sim_time =? self.tot_sim_time,
+            new_txs_processed = self.new_txs_processed,
+            tot_new_tx_time =? self.tot_new_tx_time,
+            tot_handle_sim_time =? self.tot_handle_sim_time,
+            tot_maybe_sim_next =? self.tot_maybe_sim_next,
             "sorting telemetry",
         );
     }

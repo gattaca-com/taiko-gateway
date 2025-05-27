@@ -215,26 +215,24 @@ impl LookaheadHandle {
     pub fn can_sequence(&mut self, operator: &Address) -> (bool, &str) {
         self.maybe_refresh();
         let lookahead = &self.last;
-
-        if self.beacon.current_epoch() != lookahead.updated_epoch {
-            // we're very early in the epoch, and current operator hasnt been updated yet
-            if operator == &lookahead.next {
-                return (true, "next operator after buffer_secs (waiting for lookahead update)");
-            } else {
-                return (false, "operator is not the next (waiting for lookahead update)");
-            }
-        }
+        let current_epoch = self.beacon.current_epoch();
 
         // current operator only sequences until here
-        let cutoff_slot = self.beacon.slot_epoch_start(lookahead.updated_epoch) +
-            self.beacon.slots_per_epoch -
+        let cutoff_slot = self.beacon.slot_epoch_start(current_epoch) + self.beacon.slots_per_epoch -
             self.config.handover_window_slots;
 
         // next operator sequences after this time
         let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) +
             self.config.handover_start_buffer_ms / 1_000;
 
-        match (operator == &lookahead.curr, operator == &lookahead.next) {
+        let (current_operator, next_operator) =
+            if lookahead.updated_epoch == 0 || current_epoch == lookahead.updated_epoch {
+                (lookahead.curr, lookahead.next)
+            } else {
+                (lookahead.next, Address::default())
+            };
+
+        match (operator == &current_operator, operator == &next_operator) {
             (true, true) => (true, "operator is both current and next"),
             (true, false) => {
                 // either current operator before delay slots
