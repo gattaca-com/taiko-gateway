@@ -1,6 +1,6 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, LazyLock,
 };
 
 use alloy_primitives::Address;
@@ -24,6 +24,33 @@ pub fn set_propose_delayed() {
 }
 pub fn is_propose_delayed() -> bool {
     IS_PROPOSE_DELAYED.load(Ordering::Relaxed)
+}
+
+static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
+
+pub struct LivePending;
+
+impl Default for LivePending {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LivePending {
+    pub fn new() -> Self {
+        CURRENT_PROPOSALS.fetch_add(1, Ordering::Relaxed);
+        Self
+    }
+
+    pub fn current() -> usize {
+        CURRENT_PROPOSALS.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for LivePending {
+    fn drop(&mut self) {
+        CURRENT_PROPOSALS.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Debug, Default, Clone)]

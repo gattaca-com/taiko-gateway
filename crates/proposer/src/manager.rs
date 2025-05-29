@@ -2,10 +2,7 @@
 
 use std::{
     collections::BTreeMap,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, LazyLock,
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -21,7 +18,8 @@ use pc_common::{
     config::{ProposerConfig, TaikoChainParams, TaikoConfig},
     metrics::ProposerMetrics,
     proposer::{
-        set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
+        set_propose_delayed, set_propose_ok, LivePending, ProposalRequest, ProposeBatchParams,
+        TARGET_BATCH_SIZE,
     },
     runtime::spawn,
     sequencer::Order,
@@ -50,27 +48,6 @@ pub struct PendingProposal {
     pub anchor_block_id: u64,
     pub nonce: u64,
     pub tx_hash: B256,
-}
-
-static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
-
-struct LivePending;
-
-impl LivePending {
-    pub fn new() -> Self {
-        CURRENT_PROPOSALS.fetch_add(1, Ordering::Relaxed);
-        Self
-    }
-
-    pub fn current() -> usize {
-        CURRENT_PROPOSALS.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for LivePending {
-    fn drop(&mut self) {
-        CURRENT_PROPOSALS.fetch_sub(1, Ordering::Relaxed);
-    }
 }
 
 impl std::fmt::Debug for PendingProposal {
@@ -539,6 +516,8 @@ impl ProposerManager {
                     panic!("{}", msg);
                 };
             });
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
 
             Ok(())
         } else {
