@@ -13,7 +13,9 @@ use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
     metrics::{BlocksMetrics, SequencerMetrics},
-    proposer::{is_propose_delayed, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE},
+    proposer::{
+        is_propose_delayed, LivePending, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
+    },
     sequencer::{ExecutionResult, StateId},
     taiko::{
         get_difficulty, get_extra_data,
@@ -236,6 +238,16 @@ impl Sequencer {
                     self.proposer_request.as_ref().map(|p| p.compressed_est).unwrap_or(0),
                 );
 
+                // throttle based on pending queue
+                let pending_proposals = LivePending::current();
+                let throttle_factor =
+                    (1.0 - self.config.throttle_factor)
+                        .powf(pending_proposals.saturating_sub(self.config.throttle_queue_target)
+                            as f64);
+
+                let throttled_block_size =
+                    (max_block_size as f64 * throttle_factor).round() as usize;
+
                 if max_block_size == 0 {
                     return SequencerState::default();
                 }
@@ -289,13 +301,23 @@ impl Sequencer {
                             return SequencerState::default();
                         };
 
+                        if throttled_block_size != max_block_size {
+                            warn!(
+                                max_block_size,
+                                throttled_block_size,
+                                throttle_factor,
+                                pending_proposals,
+                                "throttled block size"
+                            );
+                        }
+
                         // we have orders, start building a block
                         info!(
                             block = block_info.block_number,
                             txs = active.active_txs(),
                             senders = active.active_senders(),
                             target_time = ?self.config.target_block_time,
-                            max_block_size,
+                            max_block_size = throttled_block_size,
                             gas_limit = self.chain_config.block_max_gas_limit,
                             parent =% block_info.parent_hash,
                             "start block building"
@@ -307,7 +329,7 @@ impl Sequencer {
                             active,
                             self.chain_config.block_max_gas_limit,
                             self.config.target_block_time,
-                            max_block_size,
+                            throttled_block_size,
                         );
 
                         // even if we finish early, dont produce blocks too frequently
