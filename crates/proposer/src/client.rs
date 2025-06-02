@@ -89,6 +89,7 @@ impl L1Client {
             .map_err(|err| eyre!("failed to get nonce {err}"))
     }
 
+    #[allow(dead_code)]
     pub async fn get_pending_nonce(&self) -> eyre::Result<u64> {
         let params = json!([self.signer.address(), "pending"]);
 
@@ -103,7 +104,7 @@ impl L1Client {
         Ok(nonce)
     }
 
-    pub async fn build_eip1559(&self, input: Bytes) -> eyre::Result<TxEnvelope> {
+    pub async fn build_eip1559(&self, input: Bytes, bump_fees: bool) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
         let tx = TransactionRequest::default()
@@ -128,10 +129,15 @@ impl L1Client {
 
         // add buffer
         let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
-        let max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
-        let max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
 
-        let nonce = self.get_pending_nonce().await?;
+        if bump_fees {
+            max_fee_per_gas = max_fee_per_gas * 2;
+            max_priority_fee_per_gas = max_priority_fee_per_gas * 2;
+        }
+
+        let nonce = self.get_nonce().await?;
         let tx = TxEip1559 {
             chain_id: self.chain_id,
             nonce,
@@ -154,6 +160,7 @@ impl L1Client {
         &self,
         input: Bytes,
         sidecar: BlobTransactionSidecar,
+        bump_fees: bool,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -189,11 +196,17 @@ impl L1Client {
 
         // add buffer
         let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
-        let max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
-        let max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
-        let max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
+        let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
 
-        let nonce = self.get_pending_nonce().await?;
+        if bump_fees {
+            max_fee_per_gas = max_fee_per_gas * 2;
+            max_priority_fee_per_gas = max_priority_fee_per_gas * 2;
+            max_fee_per_blob_gas = max_fee_per_blob_gas * 2;
+        }
+
+        let nonce = self.get_nonce().await?;
         let tx = TxEip4844 {
             chain_id: self.chain_id,
             nonce,

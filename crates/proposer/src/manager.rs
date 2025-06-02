@@ -270,6 +270,9 @@ impl ProposerManager {
                     self.taiko_config.params.max_blocks_per_batch,
                 );
 
+                LivePending::add_n_pending(requests.len());
+                debug!("resyncing {} batches", requests.len());
+
                 for request in requests {
                     let is_our_coinbase = request.coinbase == self.config.coinbase;
                     self.spawn_propose_batch_with_retry(request).await;
@@ -319,6 +322,9 @@ impl ProposerManager {
             self.taiko_config.params.max_blocks_per_batch,
         );
 
+        LivePending::add_n_pending(requests.len());
+        debug!("reorg-resyncing {} batches", requests.len());
+
         for request in requests {
             let is_our_coinbase = request.coinbase == self.config.coinbase;
             self.spawn_propose_batch_with_retry(request).await;
@@ -366,8 +372,6 @@ impl ProposerManager {
     }
 
     async fn spawn_propose_batch_with_retry(&self, request: ProposeBatchParams) {
-        let proposer = self.clone();
-        let _live_pending = LivePending::new();
         info!(
             live_pending = LivePending::current(),
             start_bn = request.start_block_num,
@@ -375,7 +379,7 @@ impl ProposerManager {
             blocks = request.block_params.len(),
             "spawning propose batch"
         );
-        proposer.propose_batch(request).await
+        self.propose_batch(request).await
     }
 
     #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
@@ -394,8 +398,25 @@ impl ProposerManager {
 
         const MAX_RETRIES: usize = 3;
         let mut retries = 0;
+        let mut bump_fees = false;
 
-        while let Err(err) = self.propose_one_batch(input.clone(), maybe_sidecar.clone()).await {
+        loop {
+            let res = tokio::time::timeout(
+                Duration::from_secs(36),
+                self.propose_one_batch(input.clone(), maybe_sidecar.clone(), bump_fees),
+            )
+            .await;
+
+            let Ok(res) = res else {
+                warn!("propose batch timed out, retrying with higher fees");
+                bump_fees = true;
+                continue;
+            };
+
+            let Err(err) = res else {
+                break;
+            };
+
             ProposerMetrics::proposed_batches(false);
 
             let err_str = err.to_string();
@@ -469,6 +490,7 @@ impl ProposerManager {
             tokio::time::sleep(Duration::from_secs(12)).await;
         }
 
+        LivePending::remove_pending();
         ProposerMetrics::proposed_batches(true);
 
         set_propose_ok();
@@ -483,15 +505,16 @@ impl ProposerManager {
         &self,
         input: Bytes,
         sidecar: Option<BlobTransactionSidecar>,
+        bump_fees: bool,
     ) -> eyre::Result<()> {
         let tx = if let Some(sidecar) = sidecar {
             debug!(blobs = sidecar.blobs.len(), "building blob tx");
-            self.client.build_eip4844(input, sidecar).await?
+            self.client.build_eip4844(input, sidecar, bump_fees).await?
         } else {
-            self.client.build_eip1559(input).await?
+            self.client.build_eip1559(input, bump_fees).await?
         };
 
-        info!("type" = %tx.tx_type(), tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
+        info!(nonce = tx.nonce(), "type" = %tx.tx_type(), tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
 
         let start = Instant::now();
         let tx_receipt = self.client.send_tx(tx).await?;

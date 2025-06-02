@@ -789,6 +789,7 @@ impl Sequencer {
 
         if let Some(request) = std::mem::take(&mut self.proposer_request) {
             warn!(reason, "sending batch to be proposed");
+            LivePending::add_pending();
             let _ = self.spine.proposer_tx.send(ProposalRequest::Batch(request));
         }
     }

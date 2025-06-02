@@ -30,25 +30,20 @@ static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::
 
 pub struct LivePending;
 
-impl Default for LivePending {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl LivePending {
-    pub fn new() -> Self {
+    pub fn add_pending() {
         CURRENT_PROPOSALS.fetch_add(1, Ordering::Relaxed);
-        Self
+    }
+
+    pub fn add_n_pending(n: usize) {
+        CURRENT_PROPOSALS.fetch_add(n, Ordering::Relaxed);
     }
 
     pub fn current() -> usize {
         CURRENT_PROPOSALS.load(Ordering::Relaxed)
     }
-}
 
-impl Drop for LivePending {
-    fn drop(&mut self) {
+    pub fn remove_pending() {
         CURRENT_PROPOSALS.fetch_sub(1, Ordering::Relaxed);
     }
 }
