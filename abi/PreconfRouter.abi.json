@@ -3,12 +3,17 @@
         "type": "constructor",
         "inputs": [
             {
-                "name": "_proposeBlockEntrypoint",
+                "name": "_proposeBatchEntrypoint",
                 "type": "address",
                 "internalType": "address"
             },
             {
                 "name": "_preconfWhitelist",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_fallbackPreconfer",
                 "type": "address",
                 "internalType": "address"
             }
@@ -21,6 +26,19 @@
         "inputs": [],
         "outputs": [],
         "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "fallbackPreconfer",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -115,7 +133,7 @@
             {
                 "name": "",
                 "type": "address",
-                "internalType": "address"
+                "internalType": "contract IPreconfWhitelist"
             }
         ],
         "stateMutability": "view"
@@ -294,6 +312,19 @@
     },
     {
         "type": "function",
+        "name": "proposeBatchEntrypoint",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "contract IProposeBatch"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
         "name": "proposeBatchWithExpectedLastBlockId",
         "inputs": [
             {
@@ -468,19 +499,6 @@
             }
         ],
         "stateMutability": "nonpayable"
-    },
-    {
-        "type": "function",
-        "name": "proposeBlockEntrypoint",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
-        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -726,12 +744,12 @@
     },
     {
         "type": "error",
-        "name": "NotTheOperator",
+        "name": "NotPreconferOrFallback",
         "inputs": []
     },
     {
         "type": "error",
-        "name": "ProposerIsNotTheSender",
+        "name": "ProposerIsNotPreconfer",
         "inputs": []
     },
     {
