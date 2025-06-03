@@ -401,7 +401,7 @@ impl ProposerManager {
         const MAX_RETRIES: usize = 3;
         let mut retries = 0;
         let mut bump_fees = false;
-        let mut last_used_nonce = 0;
+        let mut last_used_nonce = u64::MAX;
         let mut tip_cap = None;
         let mut blob_fee_cap = None;
 
