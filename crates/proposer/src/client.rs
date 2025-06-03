@@ -107,6 +107,7 @@ impl L1Client {
     pub async fn build_eip1559(
         &self,
         input: Bytes,
+        nonce: u64,
         bump_fees: bool,
         tip_cap: Option<u128>,
     ) -> eyre::Result<TxEnvelope> {
@@ -146,7 +147,6 @@ impl L1Client {
             max_priority_fee_per_gas *= 2;
         }
 
-        let nonce = self.get_nonce().await?;
         let tx = TxEip1559 {
             chain_id: self.chain_id,
             nonce,
@@ -168,6 +168,7 @@ impl L1Client {
     pub async fn build_eip4844(
         &self,
         input: Bytes,
+        nonce: u64,
         sidecar: BlobTransactionSidecar,
         bump_fees: bool,
         tip_cap: Option<u128>,
@@ -225,7 +226,6 @@ impl L1Client {
             max_fee_per_blob_gas *= 2;
         }
 
-        let nonce = self.get_nonce().await?;
         let tx = TxEip4844 {
             chain_id: self.chain_id,
             nonce,

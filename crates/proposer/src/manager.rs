@@ -401,7 +401,7 @@ impl ProposerManager {
         const MAX_RETRIES: usize = 3;
         let mut retries = 0;
         let mut bump_fees = false;
-        let mut nonce_override = None;
+        let mut last_used_nonce = 0;
         let mut tip_cap = None;
         let mut blob_fee_cap = None;
 
@@ -412,7 +412,7 @@ impl ProposerManager {
                 bump_fees,
                 tip_cap,
                 blob_fee_cap,
-                &mut nonce_override,
+                &mut last_used_nonce,
             )
             .await
         {
@@ -530,25 +530,35 @@ impl ProposerManager {
         bump_fees: bool,
         tip_cap: Option<u128>,
         blob_fee_cap: Option<u128>,
-        nonce_override: &mut Option<u64>,
+        last_used_nonce: &mut u64,
     ) -> eyre::Result<()> {
+        let nonce = self.client.get_nonce().await?;
+
+        if nonce > *last_used_nonce {
+            warn!("nonce is higher than override, most likely tx got already confirmed. Returning");
+            return Ok(())
+        }
+
+        *last_used_nonce = nonce;
+
         let tx = if let Some(sidecar) = sidecar {
-            debug!(blobs = sidecar.blobs.len(), "building blob tx");
-            self.client.build_eip4844(input, sidecar, bump_fees, tip_cap, blob_fee_cap).await?
+            debug!(nonce, blobs = sidecar.blobs.len(), "building blob tx");
+            self.client
+                .build_eip4844(input, nonce, sidecar, bump_fees, tip_cap, blob_fee_cap)
+                .await?
         } else {
-            self.client.build_eip1559(input, bump_fees, tip_cap).await?
+            self.client.build_eip1559(input, nonce, bump_fees, tip_cap).await?
         };
 
         let current_block = self.client.get_last_block_number().await?;
         let tx_hash = *tx.tx_hash();
-        let nonce = tx.nonce();
         info!(nonce, bump_fees, "type" = %tx.tx_type(), %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
         let hash = self.client.send_tx(tx).await?;
         assert_eq!(tx_hash, hash);
 
-        // try to fetch the receipt for next 2 blocks, otherwise we assume it failed and we'll bump
+        // try to fetch the receipt for next 3 blocks, otherwise we assume it failed and we'll bump
         // fees
         let tx_receipt = loop {
             if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
@@ -557,13 +567,13 @@ impl ProposerManager {
 
             let bn = self.client.get_last_block_number().await?;
 
-            if bn > current_block + 2 {
-                *nonce_override = Some(nonce);
+            if bn > current_block + 3 {
+                *last_used_nonce = nonce;
                 bail!(ProposerError::TxNotIncludedInNextBlocks);
             }
 
             tokio::time::sleep(Duration::from_secs(6)).await;
-            warn!(%tx_hash, "waiting for receipt")
+            warn!(sent_bn = current_block, l1_bn = bn, %tx_hash, "waiting for receipt")
         };
 
         ProposerMetrics::proposal_latency(start.elapsed());
