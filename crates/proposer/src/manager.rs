@@ -37,6 +37,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
 
 use super::L1Client;
+use crate::error::ProposerError;
 
 type AlloyProvider = alloy_provider::RootProvider;
 
@@ -399,22 +400,20 @@ impl ProposerManager {
         const MAX_RETRIES: usize = 3;
         let mut retries = 0;
         let mut bump_fees = false;
+        let mut nonce_override = None;
 
-        loop {
-            let res = tokio::time::timeout(
-                Duration::from_secs(36),
-                self.propose_one_batch(input.clone(), maybe_sidecar.clone(), bump_fees),
-            )
-            .await;
-
-            let Ok(res) = res else {
-                warn!("propose batch timed out, retrying with higher fees");
-                bump_fees = true;
-                continue;
-            };
-
-            let Err(err) = res else {
-                break;
+        while let Err(err) = self
+            .propose_one_batch(input.clone(), maybe_sidecar.clone(), bump_fees, &mut nonce_override)
+            .await
+        {
+            if let Some(err) = err.downcast_ref::<ProposerError>() {
+                match err {
+                    ProposerError::TxNotIncludedInNextBlocks => {
+                        warn!("tx not included in next blocks, retrying with higher fees");
+                        bump_fees = true;
+                        continue;
+                    }
+                }
             };
 
             ProposerMetrics::proposed_batches(false);
@@ -506,6 +505,7 @@ impl ProposerManager {
         input: Bytes,
         sidecar: Option<BlobTransactionSidecar>,
         bump_fees: bool,
+        nonce_override: &mut Option<u64>,
     ) -> eyre::Result<()> {
         let tx = if let Some(sidecar) = sidecar {
             debug!(blobs = sidecar.blobs.len(), "building blob tx");
@@ -514,10 +514,33 @@ impl ProposerManager {
             self.client.build_eip1559(input, bump_fees).await?
         };
 
-        info!(nonce = tx.nonce(), "type" = %tx.tx_type(), tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
+        let current_block = self.client.get_last_block_number().await?;
+        let tx_hash = *tx.tx_hash();
+        let nonce = tx.nonce();
+        info!(nonce, bump_fees, "type" = %tx.tx_type(), %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
-        let tx_receipt = self.client.send_tx(tx).await?;
+        let hash = self.client.send_tx(tx).await?;
+        assert_eq!(tx_hash, hash);
+
+        // try to fetch the receipt for next 2 blocks, otherwise we assume it failed and we'll bump
+        // fees
+        let tx_receipt = loop {
+            if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
+                break receipt;
+            }
+
+            let bn = self.client.get_last_block_number().await?;
+
+            if bn > current_block + 2 {
+                *nonce_override = Some(nonce);
+                bail!(ProposerError::TxNotIncludedInNextBlocks);
+            }
+
+            tokio::time::sleep(Duration::from_secs(6)).await;
+            warn!(%tx_hash, "waiting for receipt")
+        };
+
         ProposerMetrics::proposal_latency(start.elapsed());
 
         let tx_hash = tx_receipt.transaction_hash;

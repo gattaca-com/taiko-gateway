@@ -229,10 +229,17 @@ impl L1Client {
         Ok(signed.into())
     }
 
-    pub async fn send_tx(&self, tx: TxEnvelope) -> eyre::Result<TransactionReceipt> {
+    pub async fn send_tx(&self, tx: TxEnvelope) -> eyre::Result<B256> {
         let pending = self.provider().send_tx_envelope(tx).await?;
-        let receipt = pending.get_receipt().await?;
-        Ok(receipt)
+        Ok(*pending.tx_hash())
+    }
+
+    pub async fn get_tx_receipt(&self, tx_hash: B256) -> eyre::Result<Option<TransactionReceipt>> {
+        Ok(self.provider().get_transaction_receipt(tx_hash).await?)
+    }
+
+    pub async fn get_last_block_number(&self) -> eyre::Result<u64> {
+        Ok(self.provider().get_block_number().await?)
     }
 
     /// Tx hash is for a tx that was just included in a block and we need to make sure it will not
