@@ -13,6 +13,7 @@ use pc_common::{
 use tokio::sync::mpsc::UnboundedReceiver;
 
 mod client;
+mod error;
 mod manager;
 
 pub async fn start_proposer(

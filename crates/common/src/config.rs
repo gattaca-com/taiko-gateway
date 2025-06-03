@@ -2,6 +2,7 @@ use std::{fs, ops::Deref, path::PathBuf, time::Duration};
 
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_signer_local::PrivateKeySigner;
+use eyre::ensure;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -14,6 +15,17 @@ pub struct StaticConfig {
     pub l1: L1ChainConfig,
     pub l2: L2ChainConfig,
     pub gateway: GatewayConfig,
+}
+
+impl StaticConfig {
+    pub fn validate(&self) -> eyre::Result<()> {
+        ensure!(
+            self.gateway.throttle_factor >= 0.0 && self.gateway.throttle_factor < 1.0,
+            "throttle_factor must be between 0.0 and 1.0"
+        );
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,6 +76,10 @@ pub struct GatewayConfig {
     /// Number of simulators to run in parallel when sorting, higher means better blocks but more
     /// overhead
     pub max_sims_per_loop: usize,
+    /// if there are more than this batches waiting to be proposed
+    pub throttle_queue_target: usize,
+    /// throttle block size, target size will be throttled by (1 - factor)^(queue_size - target)
+    pub throttle_factor: f64,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -140,6 +156,8 @@ pub struct SequencerConfig {
     pub status_url: Url,
     pub max_sims_per_loop: usize,
     pub jwt_secret: Bytes,
+    pub throttle_queue_target: usize,
+    pub throttle_factor: f64,
 }
 
 impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
@@ -156,6 +174,8 @@ impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
             jwt_secret: jwt_secret.into(),
             coinbase_address: config.gateway.coinbase,
             operator_address,
+            throttle_queue_target: config.gateway.throttle_queue_target,
+            throttle_factor: config.gateway.throttle_factor,
         }
     }
 }

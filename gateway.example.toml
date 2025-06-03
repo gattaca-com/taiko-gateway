@@ -38,3 +38,7 @@ handover_start_buffer_ms = 6_000
 jwt_secret_path = "~/taiko-geth-gattaca/geth/jwtsecret"
 # Number of simulators to run in parallel when sorting, higher means better blocks but more overhead
 max_sims_per_loop = 5
+# if there are more than this batches waiting to be proposed, throttle the block size
+throttle_queue_target = 2
+# block size will be throttled by (1 - factor)^(queue_size - target)
+throttle_factor = 0.1
