@@ -142,8 +142,8 @@ impl L1Client {
         }
 
         if bump_fees {
-            max_fee_per_gas = max_fee_per_gas * 2;
-            max_priority_fee_per_gas = max_priority_fee_per_gas * 2;
+            max_fee_per_gas *= 2;
+            max_priority_fee_per_gas *= 2;
         }
 
         let nonce = self.get_nonce().await?;
@@ -215,9 +215,9 @@ impl L1Client {
         }
 
         if bump_fees {
-            max_fee_per_gas = max_fee_per_gas * 2;
-            max_priority_fee_per_gas = max_priority_fee_per_gas * 2;
-            max_fee_per_blob_gas = max_fee_per_blob_gas * 2;
+            max_fee_per_gas *= 2;
+            max_priority_fee_per_gas *= 2;
+            max_fee_per_blob_gas *= 2;
         }
 
         let nonce = self.get_nonce().await?;
