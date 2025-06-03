@@ -52,3 +52,45 @@ pub struct BlockEnv {
     /// [EIP-4844]: https://eips.ethereum.org/EIPS/eip-4844
     pub blob_excess_gas_and_price: Option<()>,
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum FailReason {
+    ReplacementTransactionUnderpriced { sent: u128, queued: u128 },
+}
+
+impl FailReason {
+    pub fn try_extract(input: &str) -> Option<Self> {
+        let input = input.to_lowercase();
+        if input.contains("replacement transaction underpriced") {
+            let after_new_prefix = input.split("new tx gas tip cap ").nth(1)?;
+
+            let parts: Vec<&str> = after_new_prefix.split(" <= ").collect();
+            if parts.len() != 2 {
+                return None;
+            }
+
+            let new = parts[0].trim().parse::<u128>().ok()?;
+
+            let queued = parts[1].split_whitespace().next()?.parse::<u128>().ok()?;
+
+            return Some(FailReason::ReplacementTransactionUnderpriced { sent: new, queued });
+        }
+
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_fail_reason() {
+        let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx gas tip cap 120000000 <= 530716904 queued";
+        let result = FailReason::try_extract(input).unwrap();
+        assert_eq!(
+            FailReason::ReplacementTransactionUnderpriced { sent: 120000000, queued: 530716904 },
+            result
+        );
+    }
+}

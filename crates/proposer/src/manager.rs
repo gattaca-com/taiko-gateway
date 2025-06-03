@@ -31,6 +31,7 @@ use pc_common::{
         },
         GOLDEN_TOUCH_ADDRESS,
     },
+    types::FailReason,
     utils::{alert_discord, verify_and_log_block},
 };
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -401,9 +402,16 @@ impl ProposerManager {
         let mut retries = 0;
         let mut bump_fees = false;
         let mut nonce_override = None;
+        let mut tip_cap = None;
 
         while let Err(err) = self
-            .propose_one_batch(input.clone(), maybe_sidecar.clone(), bump_fees, &mut nonce_override)
+            .propose_one_batch(
+                input.clone(),
+                maybe_sidecar.clone(),
+                bump_fees,
+                tip_cap,
+                &mut nonce_override,
+            )
             .await
         {
             if let Some(err) = err.downcast_ref::<ProposerError>() {
@@ -419,53 +427,64 @@ impl ProposerManager {
             ProposerMetrics::proposed_batches(false);
 
             let err_str = err.to_string();
-            let err = match RevertReason::try_from(err_str.as_str()) {
-                Ok(reason) => {
-                    match reason {
-                        RevertReason::TaikoL1(err) => match err {
-                            TaikoL1Errors::TimestampTooLarge(err) => {
-                                warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
-                                tokio::time::sleep(Duration::from_secs(12)).await;
-                                continue;
-                            }
-
-                            _ => {
-                                format!("unhandled TaikoInbox revert: {err:?}")
-                            }
-                        },
-
-                        RevertReason::PreconfRouter(err) => match err {
-                            PreconfRouterErrors::NotPreconferOrFallback(_) => {
-                                warn!("failed proposing before change in operator, stop retrying");
-                                break;
-                            }
-                            PreconfRouterErrors::InvalidLastBlockId(invalid) => {
-                                let actual = invalid._actual;
-                                let expected = invalid._expected;
-
-                                if actual > expected {
-                                    // this batch was most likely already proposed, skip
-                                    warn!(%actual, %expected, "invalid expected block id, was this batch already proposed?");
-                                    break;
-                                } else {
-                                    format!(
-                                        "invalid last block id: actual={}, expected={}",
-                                        actual, expected
-                                    )
-                                }
-                            }
-
-                            _ => {
-                                format!("unhandled PreconfRouter revert: {err:?}")
-                            }
-                        },
-
-                        RevertReason::PreconfWhitelist(err) => {
-                            format!("unhandled PreconfWhitelist revert: {err:?}")
+            let err = if let Ok(reason) = RevertReason::try_from(err_str.as_str()) {
+                match reason {
+                    RevertReason::TaikoL1(err) => match err {
+                        TaikoL1Errors::TimestampTooLarge(err) => {
+                            warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
+                            tokio::time::sleep(Duration::from_secs(12)).await;
+                            continue;
                         }
+
+                        _ => {
+                            format!("unhandled TaikoInbox revert: {err:?}")
+                        }
+                    },
+
+                    RevertReason::PreconfRouter(err) => match err {
+                        PreconfRouterErrors::NotPreconferOrFallback(_) => {
+                            warn!("failed proposing before change in operator, stop retrying");
+                            break;
+                        }
+                        PreconfRouterErrors::InvalidLastBlockId(invalid) => {
+                            let actual = invalid._actual;
+                            let expected = invalid._expected;
+
+                            if actual > expected {
+                                // this batch was most likely already proposed, skip
+                                warn!(%actual, %expected, "invalid expected block id, was this batch already proposed?");
+                                break;
+                            } else {
+                                format!(
+                                    "invalid last block id: actual={}, expected={}",
+                                    actual, expected
+                                )
+                            }
+                        }
+
+                        _ => {
+                            format!("unhandled PreconfRouter revert: {err:?}")
+                        }
+                    },
+
+                    RevertReason::PreconfWhitelist(err) => {
+                        format!("unhandled PreconfWhitelist revert: {err:?}")
                     }
                 }
-                Err(_) => err_str,
+            } else if let Some(err) = FailReason::try_extract(&err_str) {
+                match err {
+                    FailReason::ReplacementTransactionUnderpriced { sent, queued } => {
+                        warn!(
+                            sent,
+                            queued,
+                            "replacement transaction underpriced, retrying with higher fees"
+                        );
+                        tip_cap = Some(queued);
+                        continue;
+                    }
+                }
+            } else {
+                err_str
             };
 
             set_propose_delayed();
@@ -505,13 +524,14 @@ impl ProposerManager {
         input: Bytes,
         sidecar: Option<BlobTransactionSidecar>,
         bump_fees: bool,
+        tip_cap: Option<u128>,
         nonce_override: &mut Option<u64>,
     ) -> eyre::Result<()> {
         let tx = if let Some(sidecar) = sidecar {
             debug!(blobs = sidecar.blobs.len(), "building blob tx");
-            self.client.build_eip4844(input, sidecar, bump_fees).await?
+            self.client.build_eip4844(input, sidecar, bump_fees, tip_cap).await?
         } else {
-            self.client.build_eip1559(input, bump_fees).await?
+            self.client.build_eip1559(input, bump_fees, tip_cap).await?
         };
 
         let current_block = self.client.get_last_block_number().await?;

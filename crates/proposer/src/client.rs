@@ -104,7 +104,12 @@ impl L1Client {
         Ok(nonce)
     }
 
-    pub async fn build_eip1559(&self, input: Bytes, bump_fees: bool) -> eyre::Result<TxEnvelope> {
+    pub async fn build_eip1559(
+        &self,
+        input: Bytes,
+        bump_fees: bool,
+        tip_cap: Option<u128>,
+    ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
         let tx = TransactionRequest::default()
@@ -131,6 +136,10 @@ impl L1Client {
         let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
         let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
+
+        if let Some(tip_cap) = tip_cap {
+            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100;
+        }
 
         if bump_fees {
             max_fee_per_gas = max_fee_per_gas * 2;
@@ -161,6 +170,7 @@ impl L1Client {
         input: Bytes,
         sidecar: BlobTransactionSidecar,
         bump_fees: bool,
+        tip_cap: Option<u128>,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -199,6 +209,10 @@ impl L1Client {
         let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let mut max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
+
+        if let Some(tip_cap) = tip_cap {
+            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100;
+        }
 
         if bump_fees {
             max_fee_per_gas = max_fee_per_gas * 2;
