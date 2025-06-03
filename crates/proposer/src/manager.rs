@@ -403,6 +403,7 @@ impl ProposerManager {
         let mut bump_fees = false;
         let mut nonce_override = None;
         let mut tip_cap = None;
+        let mut blob_fee_cap = None;
 
         while let Err(err) = self
             .propose_one_batch(
@@ -410,6 +411,7 @@ impl ProposerManager {
                 maybe_sidecar.clone(),
                 bump_fees,
                 tip_cap,
+                blob_fee_cap,
                 &mut nonce_override,
             )
             .await
@@ -473,13 +475,17 @@ impl ProposerManager {
                 }
             } else if let Some(err) = FailReason::try_extract(&err_str) {
                 match err {
-                    FailReason::ReplacementTransactionUnderpriced { sent, queued } => {
-                        warn!(
-                            sent,
-                            queued,
-                            "replacement transaction underpriced, retrying with higher fees"
-                        );
+                    FailReason::UnderpricedTipCap { sent, queued } => {
+                        warn!(sent, queued, "tip cap underpriced, retrying with higher fees");
                         tip_cap = Some(queued);
+
+                        continue;
+                    }
+
+                    FailReason::UnderpricedBlobFeeCap { sent, queued } => {
+                        warn!(sent, queued, "blob fee cap underpriced, retrying with higher fees");
+
+                        blob_fee_cap = Some(queued);
                         continue;
                     }
                 }
@@ -525,11 +531,12 @@ impl ProposerManager {
         sidecar: Option<BlobTransactionSidecar>,
         bump_fees: bool,
         tip_cap: Option<u128>,
+        blob_fee_cap: Option<u128>,
         nonce_override: &mut Option<u64>,
     ) -> eyre::Result<()> {
         let tx = if let Some(sidecar) = sidecar {
             debug!(blobs = sidecar.blobs.len(), "building blob tx");
-            self.client.build_eip4844(input, sidecar, bump_fees, tip_cap).await?
+            self.client.build_eip4844(input, sidecar, bump_fees, tip_cap, blob_fee_cap).await?
         } else {
             self.client.build_eip1559(input, bump_fees, tip_cap).await?
         };

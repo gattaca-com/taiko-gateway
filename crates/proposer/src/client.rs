@@ -37,7 +37,7 @@ const _DEFAULT_GAS_LIMIT: u64 = 10_000_000;
 const DEFAULT_MAX_FEE_PER_GAS: u128 = 10_000_000_000;
 const DEFAULT_MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
 const DEFAULT_MAX_FEE_PER_BLOB_GAS: u128 = 5_000_000;
-const BUFFER_PERCENTAGE: u128 = 120;
+const BUFFER_PERCENTAGE: u128 = 140;
 
 impl L1Client {
     pub async fn new(
@@ -138,7 +138,7 @@ impl L1Client {
         let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
 
         if let Some(tip_cap) = tip_cap {
-            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100;
+            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100 + 1;
         }
 
         if bump_fees {
@@ -171,6 +171,7 @@ impl L1Client {
         sidecar: BlobTransactionSidecar,
         bump_fees: bool,
         tip_cap: Option<u128>,
+        blob_fee_cap: Option<u128>,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -211,7 +212,11 @@ impl L1Client {
         let mut max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
 
         if let Some(tip_cap) = tip_cap {
-            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100;
+            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100 + 1;
+        }
+
+        if let Some(blob_fee_cap) = blob_fee_cap {
+            max_fee_per_blob_gas = blob_fee_cap * BUFFER_PERCENTAGE / 100 + 1;
         }
 
         if bump_fees {

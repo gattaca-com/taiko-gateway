@@ -55,25 +55,44 @@ pub struct BlockEnv {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FailReason {
-    ReplacementTransactionUnderpriced { sent: u128, queued: u128 },
+    UnderpricedTipCap { sent: u128, queued: u128 },
+    UnderpricedBlobFeeCap { sent: u128, queued: u128 },
 }
 
 impl FailReason {
     pub fn try_extract(input: &str) -> Option<Self> {
-        let input = input.to_lowercase();
-        if input.contains("replacement transaction underpriced") {
-            let after_new_prefix = input.split("new tx gas tip cap ").nth(1)?;
+        let lower = input.to_lowercase();
 
-            let parts: Vec<&str> = after_new_prefix.split(" <= ").collect();
+        if !lower.contains("replacement transaction underpriced") {
+            return None;
+        }
+
+        if let Some(after) = lower.split("new tx gas tip cap ").nth(1) {
+            let parts: Vec<&str> = after.split(" <= ").collect();
             if parts.len() != 2 {
                 return None;
             }
 
-            let new = parts[0].trim().parse::<u128>().ok()?;
+            let sent = parts[0].trim().parse::<u128>().ok()?;
 
-            let queued = parts[1].split_whitespace().next()?.parse::<u128>().ok()?;
+            let queued_str = parts[1].split_whitespace().next()?;
+            let queued = queued_str.parse::<u128>().ok()?;
 
-            return Some(FailReason::ReplacementTransactionUnderpriced { sent: new, queued });
+            return Some(FailReason::UnderpricedTipCap { sent, queued });
+        }
+
+        if let Some(after) = lower.split("new tx blob gas fee cap ").nth(1) {
+            let parts: Vec<&str> = after.split(" <= ").collect();
+            if parts.len() != 2 {
+                return None;
+            }
+
+            let sent = parts[0].trim().parse::<u128>().ok()?;
+
+            let queued_str = parts[1].split_whitespace().next()?;
+            let queued = queued_str.parse::<u128>().ok()?;
+
+            return Some(FailReason::UnderpricedBlobFeeCap { sent, queued });
         }
 
         None
@@ -88,9 +107,13 @@ mod tests {
     fn test_extract_fail_reason() {
         let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx gas tip cap 120000000 <= 530716904 queued";
         let result = FailReason::try_extract(input).unwrap();
-        assert_eq!(
-            FailReason::ReplacementTransactionUnderpriced { sent: 120000000, queued: 530716904 },
-            result
-        );
+        assert_eq!(FailReason::UnderpricedTipCap { sent: 120000000, queued: 530716904 }, result);
+    }
+
+    #[test]
+    fn test_extract_fail_reason_blob_fee_cap() {
+        let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx blob gas fee cap 1 <= 2 queued";
+        let result = FailReason::try_extract(input).unwrap();
+        assert_eq!(FailReason::UnderpricedBlobFeeCap { sent: 1, queued: 2 }, result);
     }
 }
