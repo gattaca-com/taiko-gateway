@@ -477,15 +477,13 @@ impl ProposerManager {
                 match err {
                     FailReason::UnderpricedTipCap { sent, queued } => {
                         warn!(sent, queued, "tip cap underpriced, retrying with higher fees");
-                        tip_cap = Some(queued);
-
+                        tip_cap = Some(2 * queued);
                         continue;
                     }
 
                     FailReason::UnderpricedBlobFeeCap { sent, queued } => {
                         warn!(sent, queued, "blob fee cap underpriced, retrying with higher fees");
-
-                        blob_fee_cap = Some(queued);
+                        blob_fee_cap = Some(2 * queued);
                         continue;
                     }
                 }
