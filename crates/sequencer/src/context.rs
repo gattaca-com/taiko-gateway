@@ -186,11 +186,15 @@ impl SequencerContext {
     fn update_parent_block_id(&mut self, block: &Block) {
         if let Err(err) = (|| -> eyre::Result<()> {
             BlocksMetrics::l2_block(&block.header);
-            self.l2_headers.push_back((&block.header).into());
             let block_transactions =
                 block.transactions.as_transactions().context("block has txs")?;
             let block_anchor = block_transactions.first().context("block has anchor tx")?;
             assert_eq!(block_anchor.from, GOLDEN_TOUCH_ADDRESS);
+
+            let anchor_nonce = block_anchor.nonce();
+            let parent_params =
+                ParentParams::from_header_and_anchor_nonce(&block.header, anchor_nonce);
+            self.l2_headers.push_back(parent_params);
 
             let anchor_call = anchorV3Call::abi_decode(block_anchor.input(), true)?;
             self.parent_anchor_block_id = anchor_call._anchorBlockId;
