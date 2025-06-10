@@ -154,6 +154,11 @@
                 "name": "_operatorChangeDelay",
                 "type": "uint8",
                 "internalType": "uint8"
+            },
+            {
+                "name": "_randomnessDelay",
+                "type": "uint8",
+                "internalType": "uint8"
             }
         ],
         "outputs": [],
@@ -312,6 +317,19 @@
                 "name": "",
                 "type": "bytes32",
                 "internalType": "bytes32"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "randomnessDelay",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint8",
+                "internalType": "uint8"
             }
         ],
         "stateMutability": "view"

@@ -37,7 +37,7 @@ const _DEFAULT_GAS_LIMIT: u64 = 10_000_000;
 const DEFAULT_MAX_FEE_PER_GAS: u128 = 10_000_000_000;
 const DEFAULT_MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
 const DEFAULT_MAX_FEE_PER_BLOB_GAS: u128 = 5_000_000;
-const BUFFER_PERCENTAGE: u128 = 120;
+const BUFFER_PERCENTAGE: u128 = 140;
 
 impl L1Client {
     pub async fn new(
@@ -89,6 +89,7 @@ impl L1Client {
             .map_err(|err| eyre!("failed to get nonce {err}"))
     }
 
+    #[allow(dead_code)]
     pub async fn get_pending_nonce(&self) -> eyre::Result<u64> {
         let params = json!([self.signer.address(), "pending"]);
 
@@ -103,7 +104,13 @@ impl L1Client {
         Ok(nonce)
     }
 
-    pub async fn build_eip1559(&self, input: Bytes) -> eyre::Result<TxEnvelope> {
+    pub async fn build_eip1559(
+        &self,
+        input: Bytes,
+        nonce: u64,
+        bump_fees: bool,
+        tip_cap: Option<u128>,
+    ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
         let tx = TransactionRequest::default()
@@ -128,10 +135,18 @@ impl L1Client {
 
         // add buffer
         let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
-        let max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
-        let max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
 
-        let nonce = self.get_pending_nonce().await?;
+        if let Some(tip_cap) = tip_cap {
+            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100 + 1;
+        }
+
+        if bump_fees {
+            max_fee_per_gas *= 2;
+            max_priority_fee_per_gas *= 2;
+        }
+
         let tx = TxEip1559 {
             chain_id: self.chain_id,
             nonce,
@@ -153,7 +168,11 @@ impl L1Client {
     pub async fn build_eip4844(
         &self,
         input: Bytes,
+        nonce: u64,
         sidecar: BlobTransactionSidecar,
+        bump_fees: bool,
+        tip_cap: Option<u128>,
+        blob_fee_cap: Option<u128>,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -189,11 +208,24 @@ impl L1Client {
 
         // add buffer
         let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
-        let max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
-        let max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
-        let max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
+        let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
+        let mut max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
 
-        let nonce = self.get_pending_nonce().await?;
+        if let Some(tip_cap) = tip_cap {
+            max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100 + 1;
+        }
+
+        if let Some(blob_fee_cap) = blob_fee_cap {
+            max_fee_per_blob_gas = blob_fee_cap * BUFFER_PERCENTAGE / 100 + 1;
+        }
+
+        if bump_fees {
+            max_fee_per_gas *= 2;
+            max_priority_fee_per_gas *= 2;
+            max_fee_per_blob_gas *= 2;
+        }
+
         let tx = TxEip4844 {
             chain_id: self.chain_id,
             nonce,
@@ -216,10 +248,17 @@ impl L1Client {
         Ok(signed.into())
     }
 
-    pub async fn send_tx(&self, tx: TxEnvelope) -> eyre::Result<TransactionReceipt> {
+    pub async fn send_tx(&self, tx: TxEnvelope) -> eyre::Result<B256> {
         let pending = self.provider().send_tx_envelope(tx).await?;
-        let receipt = pending.get_receipt().await?;
-        Ok(receipt)
+        Ok(*pending.tx_hash())
+    }
+
+    pub async fn get_tx_receipt(&self, tx_hash: B256) -> eyre::Result<Option<TransactionReceipt>> {
+        Ok(self.provider().get_transaction_receipt(tx_hash).await?)
+    }
+
+    pub async fn get_last_block_number(&self) -> eyre::Result<u64> {
+        Ok(self.provider().get_block_number().await?)
     }
 
     /// Tx hash is for a tx that was just included in a block and we need to make sure it will not

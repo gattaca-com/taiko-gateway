@@ -40,6 +40,7 @@ async fn main() {
 
 async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     info!("{}", serde_json::to_string_pretty(&config)?);
+    config.validate()?;
 
     let chain_config = get_and_validate_config(
         config.l1.clone(),

@@ -2,10 +2,7 @@
 
 use std::{
     collections::BTreeMap,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, LazyLock,
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -21,7 +18,8 @@ use pc_common::{
     config::{ProposerConfig, TaikoChainParams, TaikoConfig},
     metrics::ProposerMetrics,
     proposer::{
-        set_propose_delayed, set_propose_ok, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
+        set_propose_delayed, set_propose_ok, LivePending, ProposalRequest, ProposeBatchParams,
+        TARGET_BATCH_SIZE,
     },
     runtime::spawn,
     sequencer::Order,
@@ -33,12 +31,14 @@ use pc_common::{
         },
         GOLDEN_TOUCH_ADDRESS,
     },
+    types::FailReason,
     utils::{alert_discord, verify_and_log_block},
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
 
 use super::L1Client;
+use crate::error::ProposerError;
 
 type AlloyProvider = alloy_provider::RootProvider;
 
@@ -50,27 +50,6 @@ pub struct PendingProposal {
     pub anchor_block_id: u64,
     pub nonce: u64,
     pub tx_hash: B256,
-}
-
-static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
-
-struct LivePending;
-
-impl LivePending {
-    pub fn new() -> Self {
-        CURRENT_PROPOSALS.fetch_add(1, Ordering::Relaxed);
-        Self
-    }
-
-    pub fn current() -> usize {
-        CURRENT_PROPOSALS.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for LivePending {
-    fn drop(&mut self) {
-        CURRENT_PROPOSALS.fetch_sub(1, Ordering::Relaxed);
-    }
 }
 
 impl std::fmt::Debug for PendingProposal {
@@ -293,6 +272,9 @@ impl ProposerManager {
                     self.taiko_config.params.max_blocks_per_batch,
                 );
 
+                LivePending::add_n_pending(requests.len());
+                debug!("resyncing {} batches", requests.len());
+
                 for request in requests {
                     let is_our_coinbase = request.coinbase == self.config.coinbase;
                     self.spawn_propose_batch_with_retry(request).await;
@@ -342,6 +324,9 @@ impl ProposerManager {
             self.taiko_config.params.max_blocks_per_batch,
         );
 
+        LivePending::add_n_pending(requests.len());
+        debug!("reorg-resyncing {} batches", requests.len());
+
         for request in requests {
             let is_our_coinbase = request.coinbase == self.config.coinbase;
             self.spawn_propose_batch_with_retry(request).await;
@@ -389,8 +374,6 @@ impl ProposerManager {
     }
 
     async fn spawn_propose_batch_with_retry(&self, request: ProposeBatchParams) {
-        let proposer = self.clone();
-        let _live_pending = LivePending::new();
         info!(
             live_pending = LivePending::current(),
             start_bn = request.start_block_num,
@@ -398,7 +381,7 @@ impl ProposerManager {
             blocks = request.block_params.len(),
             "spawning propose batch"
         );
-        proposer.propose_batch(request).await
+        self.propose_batch(request).await
     }
 
     #[tracing::instrument(skip_all, name = "propose", fields(start=request.start_block_num, end=request.end_block_num))]
@@ -417,58 +400,95 @@ impl ProposerManager {
 
         const MAX_RETRIES: usize = 3;
         let mut retries = 0;
+        let mut bump_fees = false;
+        let mut last_used_nonce = u64::MAX;
+        let mut tip_cap = None;
+        let mut blob_fee_cap = None;
 
-        while let Err(err) = self.propose_one_batch(input.clone(), maybe_sidecar.clone()).await {
+        while let Err(err) = self
+            .propose_one_batch(
+                input.clone(),
+                maybe_sidecar.clone(),
+                bump_fees,
+                tip_cap,
+                blob_fee_cap,
+                &mut last_used_nonce,
+            )
+            .await
+        {
+            if let Some(err) = err.downcast_ref::<ProposerError>() {
+                match err {
+                    ProposerError::TxNotIncludedInNextBlocks => {
+                        warn!("tx not included in next blocks, retrying with higher fees");
+                        bump_fees = true;
+                        continue;
+                    }
+                }
+            };
+
             ProposerMetrics::proposed_batches(false);
 
             let err_str = err.to_string();
-            let err = match RevertReason::try_from(err_str.as_str()) {
-                Ok(reason) => {
-                    match reason {
-                        RevertReason::TaikoL1(err) => match err {
-                            TaikoL1Errors::TimestampTooLarge(err) => {
-                                warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
-                                tokio::time::sleep(Duration::from_secs(12)).await;
-                                continue;
-                            }
-
-                            _ => {
-                                format!("unhandled TaikoInbox revert: {err:?}")
-                            }
-                        },
-
-                        RevertReason::PreconfRouter(err) => match err {
-                            PreconfRouterErrors::NotTheOperator(_) => {
-                                warn!("failed proposing before change in operator, stop retrying");
-                                break;
-                            }
-                            PreconfRouterErrors::InvalidLastBlockId(invalid) => {
-                                let actual = invalid._actual;
-                                let expected = invalid._expected;
-
-                                if actual > expected {
-                                    // this batch was most likely already proposed, skip
-                                    warn!(%actual, %expected, "invalid expected block id, was this batch already proposed?");
-                                    break;
-                                } else {
-                                    format!(
-                                        "invalid last block id: actual={}, expected={}",
-                                        actual, expected
-                                    )
-                                }
-                            }
-
-                            _ => {
-                                format!("unhandled PreconfRouter revert: {err:?}")
-                            }
-                        },
-
-                        RevertReason::PreconfWhitelist(err) => {
-                            format!("unhandled PreconfWhitelist revert: {err:?}")
+            let err = if let Ok(reason) = RevertReason::try_from(err_str.as_str()) {
+                match reason {
+                    RevertReason::TaikoL1(err) => match err {
+                        TaikoL1Errors::TimestampTooLarge(err) => {
+                            warn!(?err, "timestamp of last block in batch is > proposal block timestamp, sleeping for 12s");
+                            tokio::time::sleep(Duration::from_secs(12)).await;
+                            continue;
                         }
+
+                        _ => {
+                            format!("unhandled TaikoInbox revert: {err:?}")
+                        }
+                    },
+
+                    RevertReason::PreconfRouter(err) => match err {
+                        PreconfRouterErrors::NotPreconferOrFallback(_) => {
+                            warn!("failed proposing before change in operator, stop retrying");
+                            break;
+                        }
+                        PreconfRouterErrors::InvalidLastBlockId(invalid) => {
+                            let actual = invalid._actual;
+                            let expected = invalid._expected;
+
+                            if actual > expected {
+                                // this batch was most likely already proposed, skip
+                                warn!(%actual, %expected, "invalid expected block id, was this batch already proposed?");
+                                break;
+                            } else {
+                                format!(
+                                    "invalid last block id: actual={}, expected={}",
+                                    actual, expected
+                                )
+                            }
+                        }
+
+                        _ => {
+                            format!("unhandled PreconfRouter revert: {err:?}")
+                        }
+                    },
+
+                    RevertReason::PreconfWhitelist(err) => {
+                        format!("unhandled PreconfWhitelist revert: {err:?}")
                     }
                 }
-                Err(_) => err_str,
+            } else if let Some(err) = FailReason::try_extract(&err_str) {
+                match err {
+                    FailReason::UnderpricedTipCap { sent, queued } => {
+                        warn!(sent, queued, "tip cap underpriced, retrying with higher fees");
+                        tip_cap = Some(2 * queued);
+                        continue;
+                    }
+
+                    FailReason::UnderpricedBlobFeeCap { sent, queued } => {
+                        warn!(sent, queued, "blob fee cap underpriced, retrying with higher fees");
+                        blob_fee_cap = Some(2 * queued);
+                        continue;
+                    }
+                }
+            } else {
+                err_str
             };
 
             set_propose_delayed();
@@ -492,6 +512,7 @@ impl ProposerManager {
             tokio::time::sleep(Duration::from_secs(12)).await;
         }
 
+        LivePending::remove_pending();
         ProposerMetrics::proposed_batches(true);
 
         set_propose_ok();
@@ -506,18 +527,55 @@ impl ProposerManager {
         &self,
         input: Bytes,
         sidecar: Option<BlobTransactionSidecar>,
+        bump_fees: bool,
+        tip_cap: Option<u128>,
+        blob_fee_cap: Option<u128>,
+        last_used_nonce: &mut u64,
     ) -> eyre::Result<()> {
+        let nonce = self.client.get_nonce().await?;
+
+        if nonce > *last_used_nonce {
+            warn!("nonce is higher than override, most likely tx got already confirmed. Returning");
+            return Ok(())
+        }
+
+        *last_used_nonce = nonce;
+
         let tx = if let Some(sidecar) = sidecar {
-            debug!(blobs = sidecar.blobs.len(), "building blob tx");
-            self.client.build_eip4844(input, sidecar).await?
+            debug!(nonce, blobs = sidecar.blobs.len(), "building blob tx");
+            self.client
+                .build_eip4844(input, nonce, sidecar, bump_fees, tip_cap, blob_fee_cap)
+                .await?
         } else {
-            self.client.build_eip1559(input).await?
+            self.client.build_eip1559(input, nonce, bump_fees, tip_cap).await?
         };
 
-        info!("type" = %tx.tx_type(), tx_hash = %tx.tx_hash(), "sending blocks proposal tx");
+        let current_block = self.client.get_last_block_number().await?;
+        let tx_hash = *tx.tx_hash();
+        info!(nonce, bump_fees, "type" = %tx.tx_type(), %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
-        let tx_receipt = self.client.send_tx(tx).await?;
+        let hash = self.client.send_tx(tx).await?;
+        assert_eq!(tx_hash, hash);
+
+        // try to fetch the receipt for next 3 blocks, otherwise we assume it failed and we'll bump
+        // fees
+        let tx_receipt = loop {
+            if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
+                break receipt;
+            }
+
+            let bn = self.client.get_last_block_number().await?;
+
+            if bn > current_block + 3 {
+                *last_used_nonce = nonce;
+                bail!(ProposerError::TxNotIncludedInNextBlocks);
+            }
+
+            tokio::time::sleep(Duration::from_secs(6)).await;
+            warn!(sent_bn = current_block, l1_bn = bn, %tx_hash, "waiting for receipt")
+        };
+
         ProposerMetrics::proposal_latency(start.elapsed());
 
         let tx_hash = tx_receipt.transaction_hash;
@@ -539,6 +597,8 @@ impl ProposerManager {
                     panic!("{}", msg);
                 };
             });
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
 
             Ok(())
         } else {
