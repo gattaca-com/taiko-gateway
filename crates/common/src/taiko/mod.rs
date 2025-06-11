@@ -16,9 +16,16 @@ use pacaya::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::taiko::pacaya::{
+    forced_inclusion::ForcedInclusionStore::ForcedInclusionStoreInstance,
+    wrapper::TaikoWrapper::TaikoWrapperInstance,
+};
+
 pub type TaikoL1Client = TaikoL1Instance<(), alloy_provider::RootProvider>;
 pub type TaikoL2Client = TaikoL2Instance<(), alloy_provider::RootProvider>;
 pub type PreconfWhitelist = PreconfWhitelistInstance<(), alloy_provider::RootProvider>;
+pub type TaikoWrapper = TaikoWrapperInstance<(), alloy_provider::RootProvider>;
+pub type ForcedInclusionStore = ForcedInclusionStoreInstance<(), alloy_provider::RootProvider>;
 
 /// Golden touch is the key that needs to propose the anchor tx in every block
 pub const GOLDEN_TOUCH_PRIVATE_KEY: B256 =

@@ -1,12 +1,13 @@
 //! Manages communication with simulator and sequence incoming transactions
 
 use std::{
+    collections::VecDeque,
     sync::{atomic::AtomicU64, Arc},
     thread::sleep,
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{utils::format_ether, Address, U256};
+use alloy_primitives::{utils::format_ether, Address, B256, U256};
 use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::{Receiver, Sender};
 use eyre::bail;
@@ -16,11 +17,13 @@ use pc_common::{
     proposer::{
         is_propose_delayed, LivePending, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
     },
-    sequencer::{ExecutionResult, StateId},
+    sequencer::{ExecutionResult, Order, StateId},
     taiko::{
         get_difficulty, get_extra_data,
         lookahead::LookaheadHandle,
-        pacaya::{estimate_compressed_size, BlockParams},
+        pacaya::{
+            estimate_compressed_size, BlockParams, ForcedInclusionClient, ForcedInclusionInfo,
+        },
         AnchorParams, ANCHOR_GAS_LIMIT,
     },
     types::BlockEnv,
@@ -71,6 +74,43 @@ struct Timings {
     start_produce_block: Instant,
 }
 
+struct ForcedInclusionData {
+    curr_info: Option<(ForcedInclusionInfo, Vec<Order>)>,
+    last_blob_hashhes: VecDeque<B256>,
+    last_fetched_forced: Instant,
+}
+
+impl ForcedInclusionData {
+    const MAX_BLOB_HASHES: usize = 10;
+
+    fn new() -> Self {
+        Self {
+            curr_info: None,
+            last_blob_hashhes: VecDeque::with_capacity(Self::MAX_BLOB_HASHES + 1),
+            last_fetched_forced: Instant::now(),
+        }
+    }
+
+    fn update(&mut self, info: (ForcedInclusionInfo, Vec<Order>)) {
+        if self.last_blob_hashhes.contains(&info.0.inclusion.blobHash) {
+            return;
+        }
+
+        debug!(info = ?info.0, "fetched forced txs");
+
+        self.last_blob_hashhes.push_front(info.0.inclusion.blobHash);
+        self.curr_info = Some(info);
+
+        if self.last_blob_hashhes.len() > Self::MAX_BLOB_HASHES {
+            self.last_blob_hashhes.pop_back();
+        }
+    }
+
+    fn get_info(&mut self) -> Option<(ForcedInclusionInfo, Vec<Order>)> {
+        self.curr_info.take()
+    }
+}
+
 impl Timings {
     fn new() -> Self {
         Self {
@@ -112,12 +152,15 @@ pub struct Sequencer {
     /// whether we need to call status and check highest unsafe block id
     needs_status_check: bool,
     timings: Timings,
+    forced_data: ForcedInclusionData,
 }
 
 impl Sequencer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: SequencerConfig,
         taiko_config: TaikoConfig,
+        forced_inclusion_client: ForcedInclusionClient,
         spine: SequencerSpine,
         lookahead: LookaheadHandle,
         l2_origin: Arc<AtomicU64>,
@@ -125,7 +168,12 @@ impl Sequencer {
         sim_tx: Sender<eyre::Result<SimulatedOrder>>,
     ) -> Self {
         let chain_config = taiko_config.params;
-        let simulator = SimulatorClient::new(config.simulator_url.clone(), taiko_config, sim_tx);
+        let simulator = SimulatorClient::new(
+            config.simulator_url.clone(),
+            forced_inclusion_client,
+            taiko_config,
+            sim_tx,
+        );
         let ctx = SequencerContext::new(
             config.l1_safe_lag,
             l2_origin,
@@ -146,6 +194,7 @@ impl Sequencer {
             anchor_error_count: 0,
             needs_status_check: true,
             timings: Timings::new(),
+            forced_data: ForcedInclusionData::new(),
         }
     }
 
@@ -178,6 +227,7 @@ impl Sequencer {
         // fetch new data
         self.recv_blocks();
         self.fetch_txs();
+        self.fetch_forced_txs();
 
         // handle sim results
         self.handle_sims();
@@ -292,6 +342,17 @@ impl Sequencer {
                     Ok((state_id, block_info)) => {
                         self.anchor_error_count = 0;
                         debug!(?block_info, %state_id, "anchored");
+
+                        if self.proposer_request.is_none() {
+                            if let Some((forced, orders)) = self.forced_data.get_info() {
+                                if let Err(err) =
+                                    self.process_forced_block(state_id, block_info, orders, forced)
+                                {
+                                    error!(%err, "failed processing forced batch");
+                                }
+                                return SequencerState::default();
+                            }
+                        }
 
                         let Some(active) = self
                             .tx_pool
@@ -553,6 +614,24 @@ impl Sequencer {
         receive_for(Duration::from_millis(10), &mut handle_tx, &self.spine.mempool_rx);
     }
 
+    fn fetch_forced_txs(&mut self) {
+        const FETCH_FREQ: Duration = Duration::from_secs(60);
+
+        if self.forced_data.last_fetched_forced.elapsed() < FETCH_FREQ {
+            return;
+        }
+
+        self.forced_data.last_fetched_forced = Instant::now();
+
+        match self.simulator.fetch_forced() {
+            Ok(Some(forced)) => {
+                self.forced_data.update(forced);
+            }
+            Ok(None) => debug!("no forced txs"),
+            Err(err) => error!("failed fetch forced txs: {err}"),
+        }
+    }
+
     fn handle_sims(&mut self) {
         if let Ok(sim_res) = self.spine.sim_rx.try_recv() {
             let sim_res = match sim_res {
@@ -765,6 +844,61 @@ impl Sequencer {
         if self.needs_anchor_refresh(&anchor_params) {
             self.send_batch_to_proposer("sealed last for this anchor", false);
         }
+
+        Ok(())
+    }
+
+    fn process_forced_block(
+        &mut self,
+        state_id: StateId,
+        block_info: BlockInfo,
+        forced_orders: Vec<Order>,
+        forced: ForcedInclusionInfo,
+    ) -> eyre::Result<()> {
+        let start = Instant::now();
+        let res = self.simulator.sim_tx_list(forced_orders, state_id)?;
+        let seal_time = start.elapsed();
+
+        let block = res.built_block;
+        let block_number = block.header.number;
+
+        info!(
+            bn = block_number,
+            ?seal_time,
+            block_hash = %block.header.hash,
+            payment = format_ether(res.cumulative_builder_payment),
+            gas_used = res.cumulative_gas_used,
+            "sealed forced block"
+        );
+
+        self.gossip_soft_block(&block, false)?;
+
+        // mark for being verified later
+        self.ctx.new_preconf_l2_block(&block);
+
+        assert!(self.proposer_request.is_none());
+
+        let request = ProposeBatchParams {
+            anchor_block_id: block_info.anchor_params.block_id,
+            start_block_num: block_number,
+            end_block_num: block_number,
+            last_timestamp: block.header.timestamp,
+            coinbase: self.config.coinbase_address,
+            block_params: Default::default(),
+            all_tx_list: Default::default(),
+            compressed_est: 0, // the forced inclusion info is very small
+            forced: Some(forced),
+        };
+
+        info!(
+            start = request.start_block_num,
+            end = request.end_block_num,
+            est_batch_size = request.compressed_est,
+            txs = request.all_tx_list.len(),
+            "batch info"
+        );
+
+        self.proposer_request = Some(request);
 
         Ok(())
     }

@@ -660,6 +660,7 @@ fn request_from_blocks(
         compressed_est: 0,
         last_timestamp: timestamp_override.unwrap_or(full_blocks[0].header.timestamp),
         coinbase,
+        forced: None,
     };
 
     let mut i = 0;
@@ -692,6 +693,7 @@ fn request_from_blocks(
                 compressed_est: compressed.len(),
                 last_timestamp: timestamp_override.unwrap_or(block.header.timestamp),
                 coinbase,
+                forced: None,
             };
 
             let old_params = std::mem::replace(&mut cur_params, new_params);

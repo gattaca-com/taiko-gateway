@@ -1,9 +1,11 @@
 mod anchor;
+mod forced;
 mod propose;
 
 use alloy_sol_types::sol;
 pub use anchor::*;
 use eyre::bail;
+pub use forced::*;
 use l1::TaikoL1::TaikoL1Errors;
 use preconf::{PreconfRouter::PreconfRouterErrors, PreconfWhitelist::PreconfWhitelistErrors};
 pub use propose::*;
@@ -50,6 +52,17 @@ pub mod wrapper {
         #[allow(missing_docs)]
         TaikoWrapper,
         "../../abi/TaikoWrapper.abi.json"
+    );
+}
+
+pub mod forced_inclusion {
+    use alloy_sol_types::sol;
+    sol!(
+        #[derive(Debug, Eq, PartialEq)]
+        #[sol(rpc)]
+        #[allow(missing_docs)]
+        ForcedInclusionStore,
+        "../../abi/ForcedInclusionStore.abi.json"
     );
 }
 
@@ -119,6 +132,8 @@ sol! {
         uint32 byteOffset;
         // The byte size of the blob.
         uint32 byteSize;
+        // The block number when the blob was created.
+        uint64 createdIn;
     }
 
     #[derive(Debug, Default)]

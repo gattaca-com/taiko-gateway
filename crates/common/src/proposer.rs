@@ -6,7 +6,10 @@ use std::sync::{
 use alloy_primitives::Address;
 use lazy_static::lazy_static;
 
-use crate::{sequencer::Order, taiko::pacaya::BlockParams};
+use crate::{
+    sequencer::Order,
+    taiko::pacaya::{BlockParams, ForcedInclusionInfo},
+};
 
 lazy_static! {
     static ref IS_PROPOSE_DELAYED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
@@ -60,6 +63,7 @@ pub struct ProposeBatchParams {
     /// estimated encoded / compressed tx list size
     pub compressed_est: usize,
     pub coinbase: Address,
+    pub forced: Option<ForcedInclusionInfo>,
 }
 
 #[derive(Debug, Clone)]
