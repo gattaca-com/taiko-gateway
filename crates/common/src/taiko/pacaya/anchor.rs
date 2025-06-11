@@ -53,7 +53,7 @@ pub fn assemble_anchor_v3(
 
     let tx = TxEip1559 {
         chain_id: config.params.chain_id,
-        nonce: parent.block_number, // one anchor tx per L2 block -> block number = nonce
+        nonce: parent.anchor_nonce + 1,
         gas_limit: ANCHOR_GAS_LIMIT,
         max_fee_per_gas: l2_base_fee,
         max_priority_fee_per_gas: 0,
@@ -184,6 +184,7 @@ mod tests {
             block_number: parent_block.header.number,
             timestamp: parent_block.header.timestamp,
             hash: parent_block.header.hash,
+            anchor_nonce: parent_block.header.number,
         };
 
         let config = TaikoConfig {

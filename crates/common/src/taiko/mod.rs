@@ -68,15 +68,17 @@ pub struct ParentParams {
     pub gas_used: u32,
     pub block_number: u64,
     pub hash: B256,
+    pub anchor_nonce: u64,
 }
 
-impl From<&Header> for ParentParams {
-    fn from(header: &Header) -> Self {
+impl ParentParams {
+    pub fn from_header_and_anchor_nonce(header: &Header, anchor_nonce: u64) -> Self {
         Self {
             timestamp: header.timestamp,
             gas_used: header.gas_used.try_into().unwrap(),
             block_number: header.number,
             hash: header.hash,
+            anchor_nonce,
         }
     }
 }
