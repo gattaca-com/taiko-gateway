@@ -568,7 +568,6 @@ impl ProposerManager {
             let bn = self.client.get_last_block_number().await?;
 
             if bn > current_block + 3 {
-                *last_used_nonce = nonce;
                 bail!(ProposerError::TxNotIncludedInNextBlocks);
             }
 
@@ -602,6 +601,7 @@ impl ProposerManager {
 
             Ok(())
         } else {
+            *last_used_nonce = u64::MAX; // retry with new nonce
             let receipt_json = serde_json::to_string(&tx_receipt)?;
             bail!("failed to propose block: l1_bn={block_number}, tx_hash={tx_hash}, receipt={receipt_json}");
         }
