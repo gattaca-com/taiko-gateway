@@ -13,9 +13,7 @@ use eyre::bail;
 use pc_common::{
     config::{SequencerConfig, TaikoChainParams, TaikoConfig},
     metrics::{BlocksMetrics, SequencerMetrics},
-    proposer::{
-        is_propose_delayed, LivePending, ProposalRequest, ProposeBatchParams, TARGET_BATCH_SIZE,
-    },
+    proposer::{is_propose_delayed, LivePending, ProposalRequest, ProposeBatchParams},
     sequencer::{ExecutionResult, StateId},
     taiko::{
         get_difficulty, get_extra_data,
@@ -234,7 +232,7 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                let max_block_size = TARGET_BATCH_SIZE.saturating_sub(
+                let max_block_size = self.config.batch_target_size.saturating_sub(
                     self.proposer_request.as_ref().map(|p| p.compressed_est).unwrap_or(0),
                 );
 
@@ -609,7 +607,7 @@ impl Sequencer {
             self.proposer_request.as_ref().map(|p| p.compressed_est).unwrap_or(0);
         // note we could exceed the size here if the last block is large, but we have a buffer so
         // shouldnt be a problem
-        let is_batch_big = current_batch_size > TARGET_BATCH_SIZE;
+        let is_batch_big = current_batch_size > self.config.batch_target_size;
 
         if is_batch_big {
             self.update_anchor(&safe_l1_header, "batch too big");

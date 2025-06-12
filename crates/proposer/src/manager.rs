@@ -19,7 +19,6 @@ use pc_common::{
     metrics::ProposerMetrics,
     proposer::{
         set_propose_delayed, set_propose_ok, LivePending, ProposalRequest, ProposeBatchParams,
-        TARGET_BATCH_SIZE,
     },
     runtime::spawn,
     sequencer::Order,
@@ -270,6 +269,7 @@ impl ProposerManager {
                     None,
                     None,
                     self.taiko_config.params.max_blocks_per_batch,
+                    self.config.batch_target_size,
                 );
 
                 LivePending::add_n_pending(requests.len());
@@ -322,6 +322,7 @@ impl ProposerManager {
             Some(override_timestamp),
             Some(0),
             self.taiko_config.params.max_blocks_per_batch,
+            self.config.batch_target_size,
         );
 
         LivePending::add_n_pending(requests.len());
@@ -345,11 +346,11 @@ impl ProposerManager {
         let compressed = encode_and_compress_orders(std::mem::take(&mut request.all_tx_list), true);
         ProposerMetrics::batch_size(compressed.len() as u64);
 
-        if compressed.len() > TARGET_BATCH_SIZE {
-            let diff = compressed.len() - TARGET_BATCH_SIZE;
+        if compressed.len() > self.config.batch_target_size {
+            let diff = compressed.len() - self.config.batch_target_size;
             warn!(
                 actual = compressed.len(),
-                target = TARGET_BATCH_SIZE,
+                target = self.config.batch_target_size,
                 diff,
                 "exceeding target batch size, is the compression estimate correct?"
             );
@@ -640,6 +641,7 @@ fn request_from_blocks(
     timestamp_override: Option<u64>,
     timeshift_override: Option<u8>,
     max_blocks_per_batch: usize,
+    batch_target_size: usize,
 ) -> Vec<ProposeBatchParams> {
     assert!(!full_blocks.is_empty(), "no blocks to propose");
 
@@ -679,7 +681,7 @@ fn request_from_blocks(
         new_tx_list.extend(txs.clone());
 
         let compressed = encode_and_compress_orders(new_tx_list.clone(), false);
-        if compressed.len() > TARGET_BATCH_SIZE ||
+        if compressed.len() > batch_target_size ||
             cur_params.block_params.len() >= max_blocks_per_batch
         {
             // push previous params and start new one

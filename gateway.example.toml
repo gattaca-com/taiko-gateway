@@ -42,3 +42,5 @@ max_sims_per_loop = 5
 throttle_queue_target = 2
 # block size will be throttled by (1 - factor)^(queue_size - target)
 throttle_factor = 0.1
+# when a batch exceeds this size in blobs we'll propose it immediately
+blob_target = 3

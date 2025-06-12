@@ -6,7 +6,7 @@ use eyre::ensure;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::taiko::BaseFeeConfig;
+use crate::{proposer::BLOBS_SAFE_SIZE, taiko::BaseFeeConfig};
 
 /// Config to deserialize toml config file
 #[derive(Debug, Deserialize, Serialize)]
@@ -80,6 +80,9 @@ pub struct GatewayConfig {
     pub throttle_queue_target: usize,
     /// throttle block size, target size will be throttled by (1 - factor)^(queue_size - target)
     pub throttle_factor: f64,
+    /// when a batch exceeds this size in blobs we'll propose it immediately
+    #[serde(default = "default_usize::<3>")]
+    pub blob_target: usize,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -158,6 +161,7 @@ pub struct SequencerConfig {
     pub jwt_secret: Bytes,
     pub throttle_queue_target: usize,
     pub throttle_factor: f64,
+    pub batch_target_size: usize,
 }
 
 impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
@@ -176,6 +180,7 @@ impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
             operator_address,
             throttle_queue_target: config.gateway.throttle_queue_target,
             throttle_factor: config.gateway.throttle_factor,
+            batch_target_size: config.gateway.blob_target * BLOBS_SAFE_SIZE,
         }
     }
 }
@@ -185,6 +190,7 @@ pub struct ProposerConfig {
     /// time
     pub l1_safe_lag: Duration,
     pub coinbase: Address,
+    pub batch_target_size: usize,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
@@ -193,6 +199,7 @@ impl From<&StaticConfig> for ProposerConfig {
             dry_run: config.gateway.dry_run,
             l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
             coinbase: config.gateway.coinbase,
+            batch_target_size: config.gateway.blob_target * BLOBS_SAFE_SIZE,
         }
     }
 }

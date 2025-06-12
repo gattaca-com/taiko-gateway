@@ -13,8 +13,6 @@ lazy_static! {
 }
 
 pub const BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
-/// Use max 3 blobs, potentially we could exceed this but the buffer should be enough
-pub const TARGET_BATCH_SIZE: usize = 3 * BLOBS_SAFE_SIZE;
 
 pub fn set_propose_ok() {
     IS_PROPOSE_DELAYED.store(false, Ordering::Relaxed);
