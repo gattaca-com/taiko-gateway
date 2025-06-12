@@ -38,6 +38,7 @@ const DEFAULT_MAX_FEE_PER_GAS: u128 = 10_000_000_000;
 const DEFAULT_MAX_PRIORITY_FEE_PER_GAS: u128 = 1_000_000_000;
 const DEFAULT_MAX_FEE_PER_BLOB_GAS: u128 = 5_000_000;
 const BUFFER_PERCENTAGE: u128 = 140;
+const GAS_BUFFER_PERCENTAGE: u128 = 180;
 
 impl L1Client {
     pub async fn new(
@@ -134,7 +135,7 @@ impl L1Client {
             };
 
         // add buffer
-        let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
+        let gas_limit = (gas_limit as u128 * GAS_BUFFER_PERCENTAGE / 100) as u64;
         let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
 
@@ -207,7 +208,7 @@ impl L1Client {
             .unwrap_or(DEFAULT_MAX_FEE_PER_BLOB_GAS);
 
         // add buffer
-        let gas_limit = (gas_limit as u128 * BUFFER_PERCENTAGE / 100) as u64;
+        let gas_limit = (gas_limit as u128 * GAS_BUFFER_PERCENTAGE / 100) as u64;
         let mut max_fee_per_gas = max_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let mut max_priority_fee_per_gas = max_priority_fee_per_gas * BUFFER_PERCENTAGE / 100;
         let mut max_fee_per_blob_gas = blob_gas_fee * BUFFER_PERCENTAGE / 100;
