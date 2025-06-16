@@ -151,7 +151,7 @@ pub fn init_tracing_log(app_id: &str) -> (WorkerGuard, Option<WorkerGuard>) {
             .event_format(format)
             .with_ansi(false)
             .with_writer(file_writer)
-            .with_filter(get_crate_filter(log_level.clone()))
+            .with_filter(get_crate_filter(log_level))
             .boxed();
 
         layers.push(layer);
