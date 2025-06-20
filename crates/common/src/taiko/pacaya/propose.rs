@@ -202,8 +202,9 @@ pub fn estimate_compressed_size_simple(uncompressed_size: usize) -> usize {
 
 pub fn estimate_compressed_size(uncompressed_size: usize) -> usize {
     let uncompressed_size_f64 = uncompressed_size as f64;
-    let log_uncompressed_size = uncompressed_size_f64.ln();
-    let predicted_size = (0.9881615963738659 * log_uncompressed_size + -0.19936358812829091).exp();
+    let slope = 0.9881615963738659;
+    let intercept = -0.19936358812829091;
+    let predicted_size = (slope * uncompressed_size_f64.ln() + intercept).exp();
     predicted_size as usize
 }
 
