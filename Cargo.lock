@@ -2843,7 +2843,6 @@ dependencies = [
  "tracing-appender",
  "tracing-loki",
  "tracing-subscriber",
- "url",
 ]
 
 [[package]]
