@@ -72,15 +72,11 @@ pub fn assemble_anchor_v3(
 
 #[cfg(test)]
 mod tests {
-    use core::slice;
-    use std::sync::Arc;
-
     use alloy_consensus::Transaction;
     use alloy_primitives::{address, b256, hex, Address, Bytes};
     use alloy_provider::{Provider, ProviderBuilder};
     use alloy_rpc_types::Block;
     use alloy_sol_types::{SolInterface, SolType};
-    use rand::prelude::*;
     use url::Url;
 
     use super::*;
@@ -88,7 +84,6 @@ mod tests {
         config::{L2ChainConfig, TaikoChainParams},
         taiko::{
             pacaya::{
-                encode_and_compress_tx_list,
                 l1::TaikoL1::{proposeBatchCall, TaikoL1Errors},
                 l2::TaikoL2::{self, TaikoL2Errors},
                 preconf::{
