@@ -10,7 +10,9 @@ use alloy_rpc_types::Header;
 use alloy_sol_types::SolInterface;
 use tracing::{error, info};
 use tracing_appender::{non_blocking::WorkerGuard, rolling::Rotation};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{
+    fmt::Layer, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer as _,
+};
 use url::Url;
 
 // Time
@@ -112,7 +114,7 @@ pub fn initialize_test_tracing() {
     tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 }
 
-pub fn init_tracing_log() -> (WorkerGuard, Option<WorkerGuard>) {
+pub fn init_tracing_log(app_id: &str) -> (WorkerGuard, Option<WorkerGuard>) {
     let format = tracing_subscriber::fmt::format()
         .with_level(true)
         .with_thread_ids(false)
@@ -122,51 +124,60 @@ pub fn init_tracing_log() -> (WorkerGuard, Option<WorkerGuard>) {
         .map(|lev| lev.parse().expect("invalid RUST_LOG, change to eg 'info'"))
         .unwrap_or(tracing::Level::INFO);
 
-    if is_test_env() {
-        let (writer, guard) = tracing_appender::non_blocking(std::io::stdout());
+    let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+    let layer = Layer::default()
+        .event_format(format.clone())
+        .with_writer(stdout_writer)
+        .with_filter(get_crate_filter(log_level))
+        .boxed();
+
+    let mut layers = vec![layer];
+    let mut file_guard = None;
+
+    if let Ok(path) = std::env::var("LOG_PATH") {
+        let max_logs = std::env::var("MAX_LOGS")
+            .unwrap_or("30".to_string())
+            .parse::<usize>()
+            .expect("invalid MAX_LOGS, change to eg '30'");
+
+        let file_appender = tracing_appender::rolling::Builder::new()
+            .max_log_files(max_logs)
+            .rotation(Rotation::DAILY)
+            .build(path)
+            .expect("failed to create file log appender");
+
+        let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
         let layer = tracing_subscriber::fmt::layer()
             .event_format(format)
-            .with_writer(writer)
-            .with_filter(get_crate_filter(log_level));
+            .with_ansi(false)
+            .with_writer(file_writer)
+            .with_filter(get_crate_filter(log_level))
+            .boxed();
 
-        tracing_subscriber::registry().with(layer).init();
-
-        (guard, None)
-    } else {
-        let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
-        let layer = tracing_subscriber::fmt::layer()
-            .event_format(format.clone())
-            .with_writer(stdout_writer)
-            .with_filter(get_crate_filter(log_level));
-
-        let registry = tracing_subscriber::registry().with(layer);
-
-        if let Ok(path) = std::env::var("LOG_PATH") {
-            let max_logs = std::env::var("MAX_LOGS")
-                .unwrap_or("30".to_string())
-                .parse::<usize>()
-                .expect("invalid MAX_LOGS, change to eg '30'");
-
-            let file_appender = tracing_appender::rolling::Builder::new()
-                .max_log_files(max_logs)
-                .rotation(Rotation::DAILY)
-                .build(path)
-                .expect("failed to create file log appender");
-
-            let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
-            let layer = tracing_subscriber::fmt::layer()
-                .event_format(format)
-                .with_ansi(false)
-                .with_writer(file_writer)
-                .with_filter(get_crate_filter(log_level));
-
-            registry.with(layer).init();
-            (stdout_guard, Some(file_guard))
-        } else {
-            registry.init();
-            (stdout_guard, None)
-        }
+        layers.push(layer);
+        file_guard = Some(guard);
     }
+
+    if let Ok(loki_url) = std::env::var("LOKI_ENDPOINT") {
+        let url = Url::parse(&loki_url).expect("invalid LOKI_ENDPOINT value");
+
+        let (loki_layer, task) = tracing_loki::builder()
+            .label("app_id", app_id)
+            .unwrap()
+            .label("service_name", "taiko_gateway")
+            .unwrap()
+            .extra_field("run_id", utcnow_ns().to_string())
+            .unwrap()
+            .build_url(url)
+            .unwrap();
+        let layer = loki_layer.with_filter(get_crate_filter(log_level)).boxed();
+
+        layers.push(layer);
+        tokio::spawn(task);
+    }
+
+    tracing_subscriber::registry().with(layers).init();
+    (stdout_guard, file_guard)
 }
 
 pub const OUR_CRATES: [&str; 4] = ["common", "proposer", "rpc", "sequencer"];
@@ -179,6 +190,7 @@ fn get_crate_filter(crates_level: tracing::Level) -> EnvFilter {
         env_filter =
             env_filter.add_directive(format!("pc_{our_crate}={crates_level}").parse().unwrap())
     }
+    env_filter = env_filter.add_directive(format!("gateway={crates_level}").parse().unwrap());
 
     env_filter
 }
