@@ -168,8 +168,7 @@ pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>, log: bool) -> 
     let compress_len = b.len();
 
     let compressed_ratio = (compress_len as f64) / (encoded_len as f64);
-
-    let expected_len = (COMPRESS_RATIO * encoded_len as f64).round() as usize;
+    let expected_len = estimate_compressed_size(encoded_len);
 
     if log {
         debug!(
@@ -187,10 +186,12 @@ pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>, log: bool) -> 
     b.into()
 }
 
-const COMPRESS_RATIO: f64 = 0.625;
-
 pub fn estimate_compressed_size(uncompressed_size: usize) -> usize {
-    (COMPRESS_RATIO * uncompressed_size as f64).round() as usize
+    let uncompressed_size_f64 = uncompressed_size as f64;
+    let slope = 0.9881615963738659;
+    let intercept = -0.19936358812829091;
+    let predicted_size = (slope * uncompressed_size_f64.ln() + intercept).exp();
+    predicted_size as usize
 }
 
 #[cfg(test)]
