@@ -168,7 +168,7 @@ pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>, log: bool) -> 
     let compress_len = b.len();
 
     let compressed_ratio = (compress_len as f64) / (encoded_len as f64);
-    let expected_len = (COMPRESS_RATIO * encoded_len as f64).round() as usize;
+    let expected_len = estimate_compressed_size(encoded_len);
 
     if log {
         debug!(
@@ -184,20 +184,6 @@ pub fn encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>, log: bool) -> 
     }
 
     b.into()
-}
-
-pub fn temp_encode_and_compress_tx_list(tx_list: Vec<Arc<TxEnvelope>>) -> (usize, usize) {
-    let encoded = alloy_rlp::encode(tx_list);
-    let encoded_len = encoded.len();
-    let b = compress_bytes(&encoded);
-    let compress_len = b.len();
-    (encoded_len, compress_len)
-}
-
-const COMPRESS_RATIO: f64 = 0.625;
-
-pub fn estimate_compressed_size_simple(uncompressed_size: usize) -> usize {
-    (COMPRESS_RATIO * uncompressed_size as f64).round() as usize
 }
 
 pub fn estimate_compressed_size(uncompressed_size: usize) -> usize {
@@ -235,17 +221,5 @@ mod tests {
         assert_eq!(start_block, 1);
         assert_eq!(last_block, 2);
         assert_eq!(anchor_block_id, 99);
-    }
-
-    #[test]
-    fn test_predicted_size() {
-        for size in [1, 10, 100, 1000, 10000, 100000, 1000000] {
-            let predicted = estimate_compressed_size(size);
-            let simple_predicted = estimate_compressed_size_simple(size);
-            println!(
-                "Uncompressed size: {}, Predicted compressed size: {}, Simple predicted: {}",
-                size, predicted, simple_predicted
-            );
-        }
     }
 }

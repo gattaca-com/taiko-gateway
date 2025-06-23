@@ -94,7 +94,7 @@ mod tests {
                 preconf::{
                     PreconfRouter::PreconfRouterErrors, PreconfWhitelist::PreconfWhitelistErrors,
                 },
-                temp_encode_and_compress_tx_list, BatchParams,
+                BatchParams,
             },
             GOLDEN_TOUCH_ADDRESS,
         },
@@ -296,40 +296,6 @@ mod tests {
 
         // let s = serde_json::to_string(&bn).unwrap();
         // println!("{}", s);
-    }
-
-    #[ignore]
-    #[tokio::test]
-    async fn test_fetch_txs() {
-        let provider =
-            ProviderBuilder::new().on_http("http://18.199.195.154:18545".parse().unwrap());
-
-        let mut tx_buff = Vec::new();
-
-        for i in (60000..64000).step_by(1000) {
-            let bn = provider.get_block_by_number(i.into(), true.into()).await.unwrap().unwrap();
-            let txs = bn
-                .transactions
-                .txns()
-                .cloned()
-                .collect::<Vec<_>>()
-                .into_iter()
-                .map(|tx| Arc::new(tx.inner))
-                .collect::<Vec<_>>();
-            tx_buff.extend(txs);
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            println!("Fetched block {} total: {} txs", i, tx_buff.len());
-        }
-        let rng = &mut rand::thread_rng();
-        tx_buff.shuffle(rng);
-
-        for i in 0..1000 {
-            let size = rng.gen_range(1..=200);
-            let slice = &tx_buff[0..size];
-            let txs = slice.iter().map(|tx| tx.clone()).collect::<Vec<_>>();
-            let (encoded, compressed) = temp_encode_and_compress_tx_list(txs);
-            println!("{},{}", encoded, compressed);
-        }
     }
 
     #[ignore]
