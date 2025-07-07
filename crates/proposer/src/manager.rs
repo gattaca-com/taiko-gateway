@@ -405,6 +405,7 @@ impl ProposerManager {
         let mut last_used_nonce = u64::MAX;
         let mut tip_cap = None;
         let mut blob_fee_cap = None;
+        let mut gas_fee_cap = None;
 
         while let Err(err) = self
             .propose_one_batch(
@@ -413,6 +414,7 @@ impl ProposerManager {
                 bump_fees,
                 tip_cap,
                 blob_fee_cap,
+                gas_fee_cap,
                 &mut last_used_nonce,
             )
             .await
@@ -487,6 +489,12 @@ impl ProposerManager {
                         blob_fee_cap = Some(2 * queued);
                         continue;
                     }
+
+                    FailReason::UnderpricedGasFeeCap { sent, queued } => {
+                        warn!(sent, queued, "gas fee cap underpriced, retrying with higher fees");
+                        gas_fee_cap = Some(2 * queued);
+                        continue;
+                    }
                 }
             } else {
                 err_str
@@ -531,6 +539,7 @@ impl ProposerManager {
         bump_fees: bool,
         tip_cap: Option<u128>,
         blob_fee_cap: Option<u128>,
+        gas_fee_cap: Option<u128>,
         last_used_nonce: &mut u64,
     ) -> eyre::Result<()> {
         let nonce = self.client.get_nonce().await?;
@@ -545,10 +554,10 @@ impl ProposerManager {
         let tx = if let Some(sidecar) = sidecar {
             debug!(nonce, blobs = sidecar.blobs.len(), "building blob tx");
             self.client
-                .build_eip4844(input, nonce, sidecar, bump_fees, tip_cap, blob_fee_cap)
+                .build_eip4844(input, nonce, sidecar, bump_fees, tip_cap, blob_fee_cap, gas_fee_cap)
                 .await?
         } else {
-            self.client.build_eip1559(input, nonce, bump_fees, tip_cap).await?
+            self.client.build_eip1559(input, nonce, bump_fees, tip_cap, gas_fee_cap).await?
         };
 
         let current_block = self.client.get_last_block_number().await?;

@@ -57,6 +57,7 @@ pub struct BlockEnv {
 pub enum FailReason {
     UnderpricedTipCap { sent: u128, queued: u128 },
     UnderpricedBlobFeeCap { sent: u128, queued: u128 },
+    UnderpricedGasFeeCap { sent: u128, queued: u128 },
 }
 
 impl FailReason {
@@ -95,6 +96,20 @@ impl FailReason {
             return Some(FailReason::UnderpricedBlobFeeCap { sent, queued });
         }
 
+        if let Some(after) = lower.split("new tx gas fee cap ").nth(1) {
+            let parts: Vec<&str> = after.split(" < ").collect();
+            if parts.len() != 2 {
+                return None;
+            }
+
+            let sent = parts[0].trim().parse::<u128>().ok()?;
+
+            let queued_str = parts[1].split_whitespace().next()?;
+            let queued = queued_str.parse::<u128>().ok()?;
+
+            return Some(FailReason::UnderpricedGasFeeCap { sent, queued });
+        }
+
         None
     }
 }
@@ -115,5 +130,12 @@ mod tests {
         let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx blob gas fee cap 1 <= 2 queued";
         let result = FailReason::try_extract(input).unwrap();
         assert_eq!(FailReason::UnderpricedBlobFeeCap { sent: 1, queued: 2 }, result);
+    }
+
+    #[test]
+    fn test_extract_fail_reason_blob_fee_cap_2() {
+        let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx gas fee cap 2101629 < 1400047 queued + 100% replacement penalty";
+        let result = FailReason::try_extract(input).unwrap();
+        assert_eq!(FailReason::UnderpricedGasFeeCap { sent: 2101629, queued: 1400047 }, result);
     }
 }

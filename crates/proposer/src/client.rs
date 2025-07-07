@@ -111,6 +111,7 @@ impl L1Client {
         nonce: u64,
         bump_fees: bool,
         tip_cap: Option<u128>,
+        gas_fee_cap: Option<u128>,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -141,6 +142,10 @@ impl L1Client {
 
         if let Some(tip_cap) = tip_cap {
             max_priority_fee_per_gas = tip_cap * BUFFER_PERCENTAGE / 100 + 1;
+        }
+
+        if let Some(gas_fee_cap) = gas_fee_cap {
+            max_fee_per_gas = gas_fee_cap + 1;
         }
 
         if bump_fees {
@@ -174,6 +179,7 @@ impl L1Client {
         bump_fees: bool,
         tip_cap: Option<u128>,
         blob_fee_cap: Option<u128>,
+        gas_fee_cap: Option<u128>,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -219,6 +225,10 @@ impl L1Client {
 
         if let Some(blob_fee_cap) = blob_fee_cap {
             max_fee_per_blob_gas = blob_fee_cap * BUFFER_PERCENTAGE / 100 + 1;
+        }
+
+        if let Some(gas_fee_cap) = gas_fee_cap {
+            max_fee_per_gas = gas_fee_cap + 1;
         }
 
         if bump_fees {
