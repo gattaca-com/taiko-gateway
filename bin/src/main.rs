@@ -23,7 +23,7 @@ async fn main() {
 
     init_statics(config.app_id.clone());
     init_panic_hook();
-    let _guards = init_tracing_log();
+    let _guards = init_tracing_log(&config.app_id);
     init_runtime();
     start_metrics_server();
 
