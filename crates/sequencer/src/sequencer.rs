@@ -871,7 +871,7 @@ impl Sequencer {
 
         assert!(self.proposer_request.is_none());
 
-        let request = ProposeBatchParams {
+        let mut request = ProposeBatchParams {
             anchor_block_id: block_info.anchor_params.block_id,
             start_block_num: block_number,
             end_block_num: block_number,
@@ -883,12 +883,49 @@ impl Sequencer {
             compressed_est: Default::default(),
         };
 
+        // sequence an empty block to make sure we have at least one in propose batch. This is a bit
+        // hacky
+
+        let (state_id, _) = self.anchor_block()?;
+        let start = Instant::now();
+        let res = self.simulator.seal_block(state_id)?;
+        let seal_time = start.elapsed();
+
+        let block = res.built_block;
+        let block_number = block.header.number;
+
+        info!(
+            bn = block_number,
+            ?seal_time,
+            block_hash = %block.header.hash,
+            payment = format_ether(res.cumulative_builder_payment),
+            gas_used = res.cumulative_gas_used,
+            "sealed empty block"
+        );
+
+        self.gossip_soft_block(&block, false)?;
+        self.ctx.new_preconf_l2_block(&block);
+        let time_shift: u8 = block
+            .header
+            .timestamp
+            .saturating_sub(request.last_timestamp)
+            .try_into()
+            .expect("exceeed u8 time shift");
+
+        request.end_block_num = block_number;
+        request.last_timestamp = block.header.timestamp;
+        request.block_params.push(BlockParams {
+            numTransactions: 0,
+            timeShift: time_shift,
+            signalSlots: vec![],
+        });
+
         info!(
             start = request.start_block_num,
             end = request.end_block_num,
-            batch_size = 0,
+            est_batch_size = request.compressed_est,
             txs = request.all_tx_list.len(),
-            "forced batch info"
+            "batch info"
         );
 
         self.proposer_request = Some(request);
