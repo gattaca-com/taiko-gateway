@@ -24,6 +24,7 @@ struct BlobResponse {
 pub struct ForcedInclusionInfo {
     pub inclusion: ForcedInclusion,
     pub min_txs_per_forced: usize,
+    pub timestamp: u64,
 }
 
 pub struct ForcedInclusionClient {
@@ -100,6 +101,6 @@ impl ForcedInclusionClient {
         let txs = txs.into_iter().map(Order::new).collect::<eyre::Result<Vec<Order>>>()?;
         debug!(min_txs_per_forced, txs = txs.len(), "got txs in forced inclusion");
 
-        Ok(Some((ForcedInclusionInfo { inclusion, min_txs_per_forced }, txs)))
+        Ok(Some((ForcedInclusionInfo { inclusion, min_txs_per_forced, timestamp: 0 }, txs)))
     }
 }

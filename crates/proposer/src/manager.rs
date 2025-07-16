@@ -111,6 +111,7 @@ impl ProposerManager {
             match request {
                 ProposalRequest::Batch(request) => {
                     info!(
+                        with_forced = request.forced.is_some(),
                         n_blocks = request.block_params.len(),
                         all_txs = request.all_tx_list.len(),
                         est_batch_size = request.compressed_est,

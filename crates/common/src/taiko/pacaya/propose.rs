@@ -126,7 +126,7 @@ pub fn propose_batch_blobs(
                 coinbase: request.coinbase,
                 parentMetaHash: parent_meta_hash,
                 anchorBlockId: request.anchor_block_id,
-                lastBlockTimestamp: request.last_timestamp,
+                lastBlockTimestamp: f.timestamp,
                 revertIfNotFirstProposal: false,
                 blobParams: BlobParams {
                     blobHashes: vec![f.inclusion.blobHash],

@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{utils::format_ether, Address, U256};
+use alloy_primitives::{map::HashSet, utils::format_ether, Address, B256, U256};
 use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::{Receiver, Sender};
 use eyre::bail;
@@ -46,6 +46,8 @@ const ANCHOR_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 // 10S
 const MAX_ANCHOR_ERRORS: u64 = 20;
 
+const FETCH_FORCED_INTERVAL: Duration = Duration::from_secs(30);
+
 #[derive(Debug, Default)]
 struct SequencerFlags {
     /// Can we sequence new blocks
@@ -69,6 +71,8 @@ struct Timings {
     last_tx_pool_check: Instant,
     /// last time we produced a block
     start_produce_block: Instant,
+    /// last time we fetched forced txs
+    last_fetched_forced: Instant,
 }
 
 impl Timings {
@@ -78,6 +82,7 @@ impl Timings {
             last_status_check: Instant::now(),
             last_tx_pool_check: Instant::now(),
             start_produce_block: Instant::now(),
+            last_fetched_forced: Instant::now() - FETCH_FORCED_INTERVAL,
         }
     }
 
@@ -98,6 +103,12 @@ impl Timings {
     }
 }
 
+#[derive(Default)]
+struct ForcedInfo {
+    info: Option<(ForcedInclusionInfo, Vec<Order>)>,
+    processed: HashSet<B256>,
+}
+
 pub struct Sequencer {
     config: SequencerConfig,
     chain_config: TaikoChainParams,
@@ -112,8 +123,8 @@ pub struct Sequencer {
     /// whether we need to call status and check highest unsafe block id
     needs_status_check: bool,
     timings: Timings,
-    forced_info: Option<(ForcedInclusionInfo, Vec<Order>)>,
-    last_fetched_forced: Instant,
+    forced_info: ForcedInfo,
+    seal_empty_block: bool,
 }
 
 impl Sequencer {
@@ -155,8 +166,8 @@ impl Sequencer {
             anchor_error_count: 0,
             needs_status_check: true,
             timings: Timings::new(),
-            forced_info: None,
-            last_fetched_forced: Instant::now() - Duration::from_secs(60),
+            forced_info: ForcedInfo::default(),
+            seal_empty_block: false,
         }
     }
 
@@ -306,7 +317,9 @@ impl Sequencer {
                         debug!(?block_info, %state_id, "anchored");
 
                         if self.proposer_request.is_none() {
-                            if let Some((forced, orders)) = std::mem::take(&mut self.forced_info) {
+                            if let Some((forced, orders)) =
+                                std::mem::take(&mut self.forced_info.info)
+                            {
                                 if let Err(err) =
                                     self.process_forced_block(state_id, block_info, orders, forced)
                                 {
@@ -314,6 +327,14 @@ impl Sequencer {
                                 }
                                 return SequencerState::default();
                             }
+                        }
+
+                        if self.seal_empty_block {
+                            if let Err(err) = self.seal_empty_block(state_id, block_info) {
+                                error!(%err, "failed sealing empty block");
+                            }
+                            self.seal_empty_block = false;
+                            return SequencerState::default();
                         }
 
                         let Some(active) = self
@@ -470,6 +491,7 @@ impl Sequencer {
                 warn!(reason, "can now sequence based on lookahead");
             } else {
                 warn!(reason, "can no longer sequence based on lookahead");
+                self.forced_info.processed.clear(); // TODO: should clear this periodically
             }
             self.flags.lookahead_sequence = can_sequence;
         }
@@ -577,17 +599,25 @@ impl Sequencer {
     }
 
     fn fetch_forced_txs(&mut self) {
-        const FETCH_FREQ: Duration = Duration::from_secs(60);
-
-        if self.last_fetched_forced.elapsed() < FETCH_FREQ {
+        if !self.config.process_forced_txs {
             return;
         }
 
-        self.last_fetched_forced = Instant::now();
+        if self.timings.last_fetched_forced.elapsed() < FETCH_FORCED_INTERVAL {
+            return;
+        }
+
+        self.timings.last_fetched_forced = Instant::now();
 
         match self.simulator.fetch_forced() {
             Ok(Some(forced)) => {
-                self.forced_info = Some(forced);
+                if self.forced_info.processed.contains(&forced.0.inclusion.blobHash) {
+                    debug!(blob_hash = ?forced.0.inclusion.blobHash, "ignore already processed forced txs");
+                    return;
+                }
+
+                info!(txs = forced.1.len(), blob_hash = ?forced.0.inclusion.blobHash, "fetched forced txs");
+                self.forced_info.info = Some(forced);
             }
             Ok(None) => debug!("no forced txs"),
             Err(err) => error!("failed fetch forced txs: {err}"),
@@ -810,6 +840,73 @@ impl Sequencer {
         Ok(())
     }
 
+    // TODO: refactor
+    // TODO: assume for now only called after a forced block crated a new batch proposal
+    fn seal_empty_block(
+        &mut self,
+        seal_state_id: StateId,
+        block_info: BlockInfo,
+    ) -> Result<(), SequencerError> {
+        let anchor_params = block_info.anchor_params;
+
+        // seal
+        let start = Instant::now();
+        let res = self.simulator.seal_block(seal_state_id)?;
+        let seal_time = start.elapsed();
+
+        let block = res.built_block;
+        let block_number = block.header.number;
+
+        info!(
+            bn = block_number,
+            ?seal_time,
+            block_hash = %block.header.hash,
+            payment = format_ether(res.cumulative_builder_payment),
+            gas_used = block.header.gas_used,
+            timestamp = block.header.timestamp,
+            "sealed empty block"
+        );
+
+        // we set this to true when we think we wont be sequencing any more blocks
+        // ideally this is not part of the new
+        let end_of_sequencing = false;
+
+        // fail if gossiping fails
+        self.gossip_soft_block(&block, end_of_sequencing)?;
+
+        self.ctx.new_preconf_l2_block(&block);
+
+        let request = self.proposer_request.as_mut().expect("no proposal request for empty block");
+
+        request.end_block_num = block_number;
+        request.last_timestamp = block.header.timestamp;
+        request.block_params.push(BlockParams {
+            numTransactions: 0,
+            timeShift: 0,
+            signalSlots: vec![],
+        });
+
+        assert_eq!(
+            block.transactions.len(), // with anchor
+            1,
+            "mismatch in tx from block and sorting"
+        );
+
+        info!(
+            start = request.start_block_num,
+            end = request.end_block_num,
+            est_batch_size = request.compressed_est,
+            txs = request.all_tx_list.len(),
+            "batch info (new empty)"
+        );
+
+        if self.needs_anchor_refresh(&anchor_params) {
+            self.send_batch_to_proposer("sealed last for this anchor", false);
+        }
+
+        Ok(())
+    }
+
     fn needs_anchor_refresh(&self, anchor_params: &AnchorParams) -> bool {
         self.ctx.anchor.map(|a| a.block_id != anchor_params.block_id).unwrap_or(true)
     }
@@ -840,7 +937,7 @@ impl Sequencer {
         state_id: StateId,
         block_info: BlockInfo,
         forced_orders: Vec<Order>,
-        forced: ForcedInclusionInfo,
+        mut forced: ForcedInclusionInfo,
     ) -> eyre::Result<()> {
         let start = Instant::now();
         let res = self.simulator.sim_tx_list(forced_orders, state_id)?;
@@ -871,7 +968,9 @@ impl Sequencer {
 
         assert!(self.proposer_request.is_none());
 
-        let mut request = ProposeBatchParams {
+        self.forced_info.processed.insert(forced.inclusion.blobHash);
+        forced.timestamp = block.header.timestamp;
+        let request = ProposeBatchParams {
             anchor_block_id: block_info.anchor_params.block_id,
             start_block_num: block_number,
             end_block_num: block_number,
@@ -883,51 +982,7 @@ impl Sequencer {
             compressed_est: Default::default(),
         };
 
-        // sequence an empty block to make sure we have at least one in propose batch. This is a bit
-        // hacky
-
-        let (state_id, _) = self.anchor_block()?;
-        let start = Instant::now();
-        let res = self.simulator.seal_block(state_id)?;
-        let seal_time = start.elapsed();
-
-        let block = res.built_block;
-        let block_number = block.header.number;
-
-        info!(
-            bn = block_number,
-            ?seal_time,
-            block_hash = %block.header.hash,
-            payment = format_ether(res.cumulative_builder_payment),
-            gas_used = res.cumulative_gas_used,
-            "sealed empty block"
-        );
-
-        self.gossip_soft_block(&block, false)?;
-        self.ctx.new_preconf_l2_block(&block);
-        let time_shift: u8 = block
-            .header
-            .timestamp
-            .saturating_sub(request.last_timestamp)
-            .try_into()
-            .expect("exceeed u8 time shift");
-
-        request.end_block_num = block_number;
-        request.last_timestamp = block.header.timestamp;
-        request.block_params.push(BlockParams {
-            numTransactions: 0,
-            timeShift: time_shift,
-            signalSlots: vec![],
-        });
-
-        info!(
-            start = request.start_block_num,
-            end = request.end_block_num,
-            est_batch_size = request.compressed_est,
-            txs = request.all_tx_list.len(),
-            "batch info"
-        );
-
+        self.seal_empty_block = true;
         self.proposer_request = Some(request);
 
         Ok(())

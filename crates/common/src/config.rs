@@ -90,6 +90,8 @@ pub struct GatewayConfig {
     /// if true, we'll skip the expected block check
     #[serde(default = "default_bool::<false>")]
     pub skip_expected_block: bool,
+    #[serde(default = "default_bool::<true>")]
+    pub process_forced_txs: bool,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -171,6 +173,7 @@ pub struct SequencerConfig {
     pub throttle_queue_target: usize,
     pub throttle_factor: f64,
     pub batch_target_size: usize,
+    pub process_forced_txs: bool,
 }
 
 impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
@@ -190,6 +193,7 @@ impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
             throttle_queue_target: config.gateway.throttle_queue_target,
             throttle_factor: config.gateway.throttle_factor,
             batch_target_size: config.gateway.blob_target * BLOBS_SAFE_SIZE,
+            process_forced_txs: config.gateway.process_forced_txs,
         }
     }
 }
