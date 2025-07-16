@@ -156,7 +156,7 @@ impl Sequencer {
             needs_status_check: true,
             timings: Timings::new(),
             forced_info: None,
-            last_fetched_forced: Instant::now(),
+            last_fetched_forced: Instant::now() - Duration::from_secs(60),
         }
     }
 

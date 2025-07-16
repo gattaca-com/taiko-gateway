@@ -12,7 +12,7 @@ use super::{decode_tx_list, forced_inclusion::IForcedInclusionStore::ForcedInclu
 use crate::{
     beacon::BeaconHandle,
     sequencer::Order,
-    taiko::{ForcedInclusionStore, TaikoWrapper},
+    taiko::{blob::decode_blob_data, ForcedInclusionStore, TaikoWrapper},
 };
 
 #[derive(Deserialize)]
@@ -84,11 +84,12 @@ impl ForcedInclusionClient {
 
         let blob_start = inclusion.blobByteOffset as usize;
         let blob_end = blob_start + inclusion.blobByteSize as usize;
-
         debug!(blob_index = blob.index, blob_start, blob_end, "decoding txs in blob");
 
+        let bytes = decode_blob_data(blob.blob.as_slice());
+
         let encoded =
-            blob.blob.as_slice().get(blob_start..blob_end).ok_or_eyre("missing slice in blob")?;
+            bytes.as_slice().get(blob_start..blob_end).ok_or_eyre("missing slice in blob")?;
 
         let txs = decode_tx_list(encoded)?;
 
