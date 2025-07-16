@@ -199,6 +199,7 @@ mod tests {
                 router_contract: Address::ZERO,
                 whitelist_contract: Address::ZERO,
                 wrapper_contract: Address::ZERO,
+                inclusion_store_address: Address::ZERO,
             },
             params: TaikoChainParams::new_helder(),
         };

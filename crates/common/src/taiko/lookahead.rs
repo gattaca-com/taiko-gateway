@@ -221,7 +221,7 @@ pub struct LookaheadHandle {
     checked: Instant,
     last: Lookahead,
     config: LookaheadConfig,
-    beacon: BeaconHandle,
+    pub beacon: BeaconHandle,
 }
 
 impl LookaheadHandle {
