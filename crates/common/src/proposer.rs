@@ -13,6 +13,7 @@ use crate::{
 
 lazy_static! {
     static ref IS_PROPOSE_DELAYED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    static ref SKIP_EXPECTED_BLOCK: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
 
 pub const BLOBS_SAFE_SIZE: usize = 125_000; // 131072 with some buffer
@@ -25,6 +26,14 @@ pub fn set_propose_delayed() {
 }
 pub fn is_propose_delayed() -> bool {
     IS_PROPOSE_DELAYED.load(Ordering::Relaxed)
+}
+
+pub fn set_skip_expected_block(skip: bool) {
+    SKIP_EXPECTED_BLOCK.store(skip, Ordering::Relaxed);
+}
+
+pub fn skip_expected_block() -> bool {
+    SKIP_EXPECTED_BLOCK.load(Ordering::Relaxed)
 }
 
 static CURRENT_PROPOSALS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));

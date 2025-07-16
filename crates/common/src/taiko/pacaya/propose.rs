@@ -16,7 +16,7 @@ use super::{
     BatchParams,
 };
 use crate::{
-    proposer::ProposeBatchParams,
+    proposer::{skip_expected_block, ProposeBatchParams},
     sequencer::Order,
     taiko::{
         blob::{blobs_to_sidecar, encode_blob, MAX_BLOB_DATA_SIZE},
@@ -85,13 +85,19 @@ pub fn propose_batch_calldata(
     let encoded_params =
         (forced_batch_params, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    PreconfRouter::proposeBatchWithExpectedLastBlockIdCall {
-        _params: encoded_params.into(),
-        _txList: compressed,
-        _expectedLastBlockId: U96::from(request.end_block_num),
+    if skip_expected_block() {
+        PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
+            .abi_encode()
+            .into()
+    } else {
+        PreconfRouter::proposeBatchWithExpectedLastBlockIdCall {
+            _params: encoded_params.into(),
+            _txList: Bytes::new(),
+            _expectedLastBlockId: U96::from(request.end_block_num),
+        }
+        .abi_encode()
+        .into()
     }
-    .abi_encode()
-    .into()
 }
 
 /// Returns the calldata and blob sidecar for the proposeBatchCall
@@ -166,13 +172,19 @@ pub fn propose_batch_blobs(
     let encoded_params =
         (forced_batch_params, Bytes::from(batch_params.abi_encode())).abi_encode_params();
 
-    let input = PreconfRouter::proposeBatchWithExpectedLastBlockIdCall {
-        _params: encoded_params.into(),
-        _txList: Bytes::new(),
-        _expectedLastBlockId: U96::from(request.end_block_num),
-    }
-    .abi_encode()
-    .into();
+    let input = if skip_expected_block() {
+        PreconfRouter::proposeBatchCall { _params: encoded_params.into(), _txList: Bytes::new() }
+            .abi_encode()
+            .into()
+    } else {
+        PreconfRouter::proposeBatchWithExpectedLastBlockIdCall {
+            _params: encoded_params.into(),
+            _txList: Bytes::new(),
+            _expectedLastBlockId: U96::from(request.end_block_num),
+        }
+        .abi_encode()
+        .into()
+    };
 
     (input, sidecar)
 }

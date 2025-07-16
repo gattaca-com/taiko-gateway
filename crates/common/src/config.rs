@@ -6,7 +6,10 @@ use eyre::ensure;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{proposer::BLOBS_SAFE_SIZE, taiko::BaseFeeConfig};
+use crate::{
+    proposer::{set_skip_expected_block, BLOBS_SAFE_SIZE},
+    taiko::BaseFeeConfig,
+};
 
 /// Config to deserialize toml config file
 #[derive(Debug, Deserialize, Serialize)]
@@ -84,6 +87,9 @@ pub struct GatewayConfig {
     /// when a batch exceeds this size in blobs we'll propose it immediately
     #[serde(default = "default_usize::<3>")]
     pub blob_target: usize,
+    /// if true, we'll skip the expected block check
+    #[serde(default = "default_bool::<false>")]
+    pub skip_expected_block: bool,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -100,6 +106,8 @@ pub fn load_static_config() -> StaticConfig {
     let config_file = fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("unable to find config file: '{}'", path));
     let config: StaticConfig = toml::from_str(&config_file).expect("failed to parse toml");
+
+    set_skip_expected_block(config.gateway.skip_expected_block);
 
     config
 }

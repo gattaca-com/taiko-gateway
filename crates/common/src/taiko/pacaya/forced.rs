@@ -77,16 +77,7 @@ impl ForcedInclusionClient {
         let client = reqwest::ClientBuilder::new().timeout(Duration::from_secs(5)).build()?;
         let blob_url = self.beacon_url.join(&format!("eth/v1/beacon/blob_sidecars/{slot}"))?;
 
-        debug!(?blob_url, "fetching blob");
-
-        let response = client.get(blob_url).send().await?;
-        debug!("fetched blobs");
-
-        let blobs = response.bytes().await?;
-        let blobs = serde_json::from_slice::<BlobResponse>(&blobs)
-            .map_err(|e| eyre!("failed to parse blobs: {e}"))?
-            .data;
-
+        let blobs = client.get(blob_url).send().await?.json::<BlobResponse>().await?.data;
         let blob = blobs
             .into_iter()
             .find(|b| b.to_kzg_versioned_hash() == inclusion.blobHash.0)
