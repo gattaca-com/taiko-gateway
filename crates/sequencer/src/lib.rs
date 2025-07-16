@@ -87,7 +87,7 @@ pub fn start_sequencer(
 
     let forced_inclusion_client = ForcedInclusionClient::new(
         config.l1.rpc_url.clone(),
-        config.l2.rpc_url[0].clone(),
+        config.l1.beacon_url.clone(),
         lookahead.beacon,
         taiko_config.wrapper_contract,
         taiko_config.inclusion_store_address,
