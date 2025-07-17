@@ -1,5 +1,6 @@
 use std::{fs, ops::Deref, path::PathBuf, time::Duration};
 
+use alloy_consensus::constants::GWEI_TO_WEI;
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_signer_local::PrivateKeySigner;
 use eyre::ensure;
@@ -83,6 +84,9 @@ pub struct GatewayConfig {
     /// when a batch exceeds this size in blobs we'll propose it immediately
     #[serde(default = "default_usize::<3>")]
     pub blob_target: usize,
+    /// Minimum priority fee to use for batch proposals in gwei
+    #[serde(default = "default_priority_fee")]
+    pub min_priority_fee: f64,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -91,6 +95,10 @@ pub const fn default_bool<const U: bool>() -> bool {
 
 pub const fn default_usize<const U: usize>() -> usize {
     U
+}
+
+fn default_priority_fee() -> f64 {
+    1.0
 }
 
 pub fn load_static_config() -> StaticConfig {
@@ -191,15 +199,20 @@ pub struct ProposerConfig {
     pub l1_safe_lag: Duration,
     pub coinbase: Address,
     pub batch_target_size: usize,
+    /// wei
+    pub min_priority_fee: u128,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
     fn from(config: &StaticConfig) -> Self {
+        let fee_wei = (config.gateway.min_priority_fee * GWEI_TO_WEI as f64).round() as u128;
+
         Self {
             dry_run: config.gateway.dry_run,
             l1_safe_lag: Duration::from_secs(config.gateway.l1_safe_lag * 12),
             coinbase: config.gateway.coinbase,
             batch_target_size: config.gateway.blob_target * BLOBS_SAFE_SIZE,
+            min_priority_fee: fee_wei,
         }
     }
 }

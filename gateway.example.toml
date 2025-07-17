@@ -44,3 +44,5 @@ throttle_queue_target = 2
 throttle_factor = 0.1
 # when a batch exceeds this size in blobs we'll propose it immediately
 blob_target = 3
+# minimum priority fee to use for batch proposals in gwei
+min_priority_fee = 1.0

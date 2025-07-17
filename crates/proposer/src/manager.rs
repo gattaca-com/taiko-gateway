@@ -554,10 +554,28 @@ impl ProposerManager {
         let tx = if let Some(sidecar) = sidecar {
             debug!(nonce, blobs = sidecar.blobs.len(), "building blob tx");
             self.client
-                .build_eip4844(input, nonce, sidecar, bump_fees, tip_cap, blob_fee_cap, gas_fee_cap)
+                .build_eip4844(
+                    input,
+                    nonce,
+                    sidecar,
+                    bump_fees,
+                    tip_cap,
+                    blob_fee_cap,
+                    gas_fee_cap,
+                    self.config.min_priority_fee,
+                )
                 .await?
         } else {
-            self.client.build_eip1559(input, nonce, bump_fees, tip_cap, gas_fee_cap).await?
+            self.client
+                .build_eip1559(
+                    input,
+                    nonce,
+                    bump_fees,
+                    tip_cap,
+                    gas_fee_cap,
+                    self.config.min_priority_fee,
+                )
+                .await?
         };
 
         let current_block = self.client.get_last_block_number().await?;

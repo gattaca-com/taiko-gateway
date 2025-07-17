@@ -112,6 +112,7 @@ impl L1Client {
         bump_fees: bool,
         tip_cap: Option<u128>,
         gas_fee_cap: Option<u128>,
+        min_priority_fee: u128,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -153,6 +154,8 @@ impl L1Client {
             max_priority_fee_per_gas *= 2;
         }
 
+        max_priority_fee_per_gas = max_priority_fee_per_gas.max(min_priority_fee);
+
         let tx = TxEip1559 {
             chain_id: self.chain_id,
             nonce,
@@ -180,6 +183,7 @@ impl L1Client {
         tip_cap: Option<u128>,
         blob_fee_cap: Option<u128>,
         gas_fee_cap: Option<u128>,
+        min_priority_fee: u128,
     ) -> eyre::Result<TxEnvelope> {
         let to = self.router_address;
 
@@ -236,6 +240,8 @@ impl L1Client {
             max_priority_fee_per_gas *= 2;
             max_fee_per_blob_gas *= 2;
         }
+
+        max_priority_fee_per_gas = max_priority_fee_per_gas.max(min_priority_fee);
 
         let tx = TxEip4844 {
             chain_id: self.chain_id,
