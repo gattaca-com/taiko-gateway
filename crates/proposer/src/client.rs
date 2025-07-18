@@ -155,6 +155,7 @@ impl L1Client {
         }
 
         max_priority_fee_per_gas = max_priority_fee_per_gas.max(min_priority_fee);
+        max_fee_per_gas = max_fee_per_gas.max(min_priority_fee);
 
         let tx = TxEip1559 {
             chain_id: self.chain_id,
@@ -242,6 +243,7 @@ impl L1Client {
         }
 
         max_priority_fee_per_gas = max_priority_fee_per_gas.max(min_priority_fee);
+        max_fee_per_gas = max_fee_per_gas.max(min_priority_fee);
 
         let tx = TxEip4844 {
             chain_id: self.chain_id,
