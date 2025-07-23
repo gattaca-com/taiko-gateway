@@ -87,6 +87,23 @@ pub struct GatewayConfig {
     /// Minimum priority fee to use for batch proposals in gwei
     #[serde(default = "default_priority_fee")]
     pub min_priority_fee: f64,
+
+    /// Minimum bond calculation: min_bond = bond_base + bond_per_block * min_bond_block_buffer
+    #[serde(default = "default_u64::<200>")]
+    pub min_bond_block_buffer: u64,
+    /// Automatically deposit bond when below threshold
+    #[serde(default = "default_bool::<false>")]
+    pub auto_deposit_bond_enabled: bool,
+    /// Deposit (min_bond * auto_bond_deposit_factor - contract_balance) when contract_balance is lower than min_bond
+    #[serde(default = "default_auto_deposit_bond_factor")]
+    pub auto_deposit_bond_factor: f64,
+
+    /// Send alert if proposer's ETH balance falls below this value
+    #[serde(default = "default_alert_eth_balance_threshold")]
+    pub alert_eth_balance_threshold: f64,
+    /// Send alert if deposited Taiko Token bond falls below this value
+    #[serde(default = "default_alert_deposited_bond_threshold")]
+    pub alert_deposited_bond_threshold: f64,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -97,8 +114,24 @@ pub const fn default_usize<const U: usize>() -> usize {
     U
 }
 
+pub const fn default_u64<const U: u64>() -> u64 {
+    U
+}
+
 fn default_priority_fee() -> f64 {
     1.0
+}
+
+fn default_auto_deposit_bond_factor() -> f64 {
+    2.0
+}
+
+fn default_alert_eth_balance_threshold() -> f64 {
+    0.5
+}
+
+fn default_alert_deposited_bond_threshold() -> f64 {
+    1000.0
 }
 
 pub fn load_static_config() -> StaticConfig {
