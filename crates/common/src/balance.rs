@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use alloy_consensus::constants::ETH_TO_WEI;
-use alloy_primitives::{Address, FixedBytes, U256};
+use alloy_primitives::{utils::format_ether, Address, FixedBytes, B256, U256};
 use alloy_provider::{
     fillers::{
         BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
@@ -19,7 +19,6 @@ use crate::{
     balance::ERC20::ERC20Instance,
     config::{GatewayConfig, TaikoChainParams},
     metrics::ProposerMetrics,
-    runtime::spawn,
     taiko::pacaya::l1::TaikoL1::{self, TaikoL1Instance},
     utils::alert_discord,
 };
@@ -90,35 +89,29 @@ impl BalanceManager {
             info!(%new_allowance, "approved max allowance for taiko contract");
         }
 
-        self.ensure_contract_balance(Some(token_balance), Some(contract_balance)).await?;
+        self.ensure_contract_balance(token_balance, contract_balance).await?;
 
         Ok(())
     }
 
-    pub async fn ensure_contract_balance(
+    async fn ensure_contract_balance(
         &self,
-        token_balance: Option<U256>,
-        contract_balance: Option<U256>,
+        token_balance: U256,
+        contract_balance: U256,
     ) -> eyre::Result<()> {
         let threshold = self.get_min_bond();
 
-        let token_balance = match token_balance {
-            Some(balance) => balance,
-            None => self.get_token_balance().await?,
-        };
-
-        let contract_balance = match contract_balance {
-            Some(balance) => balance,
-            None => self.get_contract_balance().await?,
-        };
-
         if contract_balance >= threshold {
-            debug!("contract already has enough balance, no need to deposit");
-            return Ok(());
+            debug!(
+                contract_balance = format_ether(contract_balance),
+                threshold = format_ether(threshold),
+                "contract already has enough balance, no need to deposit"
+            );
         } else {
             let target_amount =
                 U256::from(f64::from(threshold) * self.gateway_config.auto_deposit_bond_factor);
-            let amount_to_deposit = target_amount - contract_balance;
+
+            let amount_to_deposit = target_amount.saturating_sub(contract_balance);
             if token_balance < amount_to_deposit {
                 bail!(
                     "not enough balance to deposit, current: {}, required: {}",
@@ -138,7 +131,7 @@ impl BalanceManager {
         Ok(self.erc20.balanceOf(self.operator.address()).call().await?._0)
     }
 
-    pub async fn approve_max_allowance(&self) -> eyre::Result<FixedBytes<32>> {
+    pub async fn approve_max_allowance(&self) -> eyre::Result<B256> {
         Ok(self.erc20.approve(self.l1_contract, U256::MAX).send().await?.watch().await?)
     }
 
@@ -154,7 +147,7 @@ impl BalanceManager {
         Ok(self.taiko_l1.bondBalanceOf(self.operator.address()).call().await?._0)
     }
 
-    pub async fn deposit_bond(&self, amount: U256) -> eyre::Result<FixedBytes<32>> {
+    pub async fn deposit_bond(&self, amount: U256) -> eyre::Result<B256> {
         Ok(self.taiko_l1.depositBond(amount).send().await?.watch().await?)
     }
 
@@ -165,77 +158,82 @@ impl BalanceManager {
         base + per_batch * n_batches_bond_threshold
     }
 
-    pub fn start_balance_monitor(&self) {
-        let s = self.clone();
-
-        let _eth_thres = s.gateway_config.alert_eth_balance_threshold;
-        let _token_thres = s.gateway_config.alert_total_token_threshold;
+    pub async fn start_balance_monitor(self) {
+        let _eth_thres = self.gateway_config.alert_eth_balance_threshold;
+        let _token_thres = self.gateway_config.alert_total_token_threshold;
         let eth_balance_threshold = U256::from(_eth_thres * ETH_TO_WEI as f64);
-        let total_token_threshold = U256::from(_token_thres * 1e18);
+        const TAIKO_TOKEN_UNITS: f64 = 1e18;
+        let total_token_threshold = U256::from(_token_thres * TAIKO_TOKEN_UNITS);
 
-        spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
 
-                // Fetch balances
-                let (eth_balance_res, token_balance_res, contract_balance_res) = tokio::join!(
-                    s.get_eth_balance(),
-                    s.get_token_balance(),
-                    s.get_contract_balance()
-                );
+            // Fetch balances
+            let (eth_balance_res, token_balance_res, contract_balance_res) = tokio::join!(
+                self.get_eth_balance(),
+                self.get_token_balance(),
+                self.get_contract_balance()
+            );
 
-                let eth_balance = match eth_balance_res {
-                    Ok(balance) => {
-                        ProposerMetrics::eth_balance(balance);
-                        Some(balance)
-                    }
-                    Err(err) => {
-                        warn!(%err, "failed to fetch ETH balance");
-                        None
-                    }
-                };
-
-                let token_balance = match token_balance_res {
-                    Ok(balance) => {
-                        ProposerMetrics::token_balance(balance);
-                        Some(balance)
-                    }
-                    Err(err) => {
-                        warn!(%err, "failed to fetch token balance");
-                        None
-                    }
-                };
-
-                let contract_balance = match contract_balance_res {
-                    Ok(balance) => {
-                        ProposerMetrics::token_bond(balance);
-                        Some(balance)
-                    }
-                    Err(err) => {
-                        warn!(%err, "failed to fetch token bond");
-                        None
-                    }
-                };
-
-                // Auto deposit
-                if s.gateway_config.auto_deposit_bond_enabled {
-                    match s.ensure_contract_balance(token_balance, contract_balance).await {
-                        Ok(_) => {}
-                        Err(err) => warn!(%err, "failed to ensure contract balance"),
-                    }
+            let eth_balance = match eth_balance_res {
+                Ok(balance) => {
+                    ProposerMetrics::eth_balance(balance);
+                    Some(balance)
                 }
-
-                // Discord Alerts
-                if let Some(eth_balance) = eth_balance {
-                    s.alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
+                Err(err) => {
+                    warn!(%err, "failed to fetch ETH balance");
+                    None
                 }
+            };
 
-                if token_balance.is_some() && contract_balance.is_some() {
-                    let total = token_balance.unwrap() + contract_balance.unwrap();
-                    s.alert_balance("Total Token", total, total_token_threshold);
+            let token_balance = match token_balance_res {
+                Ok(balance) => {
+                    ProposerMetrics::token_balance(balance);
+                    Some(balance)
+                }
+                Err(err) => {
+                    warn!(%err, "failed to fetch token balance");
+                    None
+                }
+            };
+
+            let contract_balance = match contract_balance_res {
+                Ok(balance) => {
+                    ProposerMetrics::token_bond(balance);
+                    Some(balance)
+                }
+                Err(err) => {
+                    warn!(%err, "failed to fetch token bond");
+                    None
+                }
+            };
+
+            // Auto deposit
+            if self.gateway_config.auto_deposit_bond_enabled {
+                match self.ensure_contract_balance(token_balance, contract_balance).await {
+                    Ok(_) => {}
+                    Err(err) => warn!(%err, "failed to ensure contract balance"),
                 }
             }
-        });
+
+            // Discord Alerts
+            if let Some(eth_balance) = eth_balance {
+                self.alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
+            }
+
+            match (token_balance, contract_balance) {
+                (Some(token_balance), Some(contract_balance)) => {
+                    let total = token_balance + contract_balance;
+                    self.alert_balance("TAIKO Token", total, total_token_threshold);
+                }
+                _ => ..,
+            }
+
+            if token_balance.is_some() && contract_balance.is_some() {
+                let total = token_balance.unwrap() + contract_balance.unwrap();
+                self.alert_balance("TAIKO Token", total, total_token_threshold);
+            }
+        }
     }
 
     pub fn alert_balance(&self, label: &str, balance: U256, threshold: U256) {

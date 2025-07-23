@@ -6,7 +6,7 @@ use pc_common::{
     beacon::init_beacon,
     config::{load_env_vars, load_static_config, EnvConfig, StaticConfig, TaikoConfig},
     metrics::start_metrics_server,
-    runtime::init_runtime,
+    runtime::{init_runtime, spawn},
     taiko::{get_and_validate_config, lookahead::start_lookahead_loop},
     utils::{init_panic_hook, init_statics, init_tracing_log},
 };
@@ -60,7 +60,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         &config.gateway,
     );
     balance_manager.check_and_approve_balance().await.map_err(|e| eyre!("balance checks: {e}"))?;
-    balance_manager.start_balance_monitor();
+    spawn(balance_manager.start_balance_monitor());
 
     let beacon_handle = init_beacon(config.l1.beacon_url.clone()).await?;
     let l1_number = Arc::new(AtomicU64::new(0));

@@ -107,7 +107,7 @@ pub struct GatewayConfig {
     /// Send alert if proposer's ETH balance falls below this value
     #[serde(default = "default_alert_eth_balance_threshold")]
     pub alert_eth_balance_threshold: f64,
-    /// Send alert if total token balance falls below this value
+    /// Send alert if total token balance (contract + wallet) falls below this value
     #[serde(default = "default_alert_total_token_threshold")]
     pub alert_total_token_threshold: f64,
 }
