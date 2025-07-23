@@ -175,9 +175,9 @@ impl BalanceManager {
         let s = self.clone();
 
         let _eth_thres = s.gateway_config.alert_eth_balance_threshold;
-        let _bond_thres = s.gateway_config.alert_deposited_bond_threshold;
-        let eth_thres = U256::from(_eth_thres * ETH_TO_WEI as f64);
-        let token_thres = U256::from(_bond_thres * 1e18);
+        let _token_thres = s.gateway_config.alert_total_token_threshold;
+        let eth_balance_threshold = U256::from(_eth_thres * ETH_TO_WEI as f64);
+        let total_token_threshold = U256::from(_token_thres * 1e18);
 
         spawn(async move {
             loop {
@@ -233,12 +233,12 @@ impl BalanceManager {
 
                 // Discord Alerts
                 if let Some(eth_balance) = eth_balance {
-                    s.alert_balance("ETH Balance", eth_balance, eth_thres);
+                    s.alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
                 }
 
                 if token_balance.is_some() && contract_balance.is_some() {
                     let total = token_balance.unwrap() + contract_balance.unwrap();
-                    s.alert_balance("Total Token Balance", total, token_thres);
+                    s.alert_balance("Total Token", total, total_token_threshold);
                 }
             }
         });

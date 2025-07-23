@@ -103,8 +103,8 @@ pub struct GatewayConfig {
     #[serde(default = "default_alert_eth_balance_threshold")]
     pub alert_eth_balance_threshold: f64,
     /// Send alert if deposited Taiko Token bond falls below this value
-    #[serde(default = "default_alert_deposited_bond_threshold")]
-    pub alert_deposited_bond_threshold: f64,
+    #[serde(default = "default_alert_total_token_threshold")]
+    pub alert_total_token_threshold: f64,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -131,7 +131,7 @@ fn default_alert_eth_balance_threshold() -> f64 {
     0.5
 }
 
-fn default_alert_deposited_bond_threshold() -> f64 {
+fn default_alert_total_token_threshold() -> f64 {
     1000.0
 }
 
