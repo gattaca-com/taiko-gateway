@@ -37,5 +37,6 @@ run:
   RUST_LOG=${RUST_LOG} \
   LOG_PATH=${LOG_PATH} \
   METRICS_PORT=${METRICS_PORT} \
+  LOKI_ENDPOINT=${LOKI_ENDPOINT} \
   cargo run --bin gateway -- "$CONFIG_FILE"
 
