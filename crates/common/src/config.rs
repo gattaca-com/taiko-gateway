@@ -25,6 +25,11 @@ impl StaticConfig {
             "throttle_factor must be between 0.0 and 1.0"
         );
 
+        ensure!(
+            !self.gateway.auto_deposit_bond_enabled || self.gateway.auto_deposit_bond_factor >= 1.0,
+            "auto_deposit_bond_factor must be >= 1.0 if auto_deposit_bond_enabled is true"
+        );
+
         Ok(())
     }
 }
@@ -102,7 +107,7 @@ pub struct GatewayConfig {
     /// Send alert if proposer's ETH balance falls below this value
     #[serde(default = "default_alert_eth_balance_threshold")]
     pub alert_eth_balance_threshold: f64,
-    /// Send alert if deposited Taiko Token bond falls below this value
+    /// Send alert if total token balance falls below this value
     #[serde(default = "default_alert_total_token_threshold")]
     pub alert_total_token_threshold: f64,
 }
