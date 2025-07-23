@@ -56,7 +56,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         config.l2.l1_contract,
         config.l1.rpc_url.clone(),
         envs.proposer_signer_key.clone(),
-        &chain_config,
+        chain_config,
         &config.gateway,
     );
     balance_manager.check_and_approve_balance().await.map_err(|e| eyre!("balance checks: {e}"))?;

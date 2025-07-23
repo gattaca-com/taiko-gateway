@@ -94,7 +94,8 @@ pub struct GatewayConfig {
     /// Automatically deposit bond when below threshold
     #[serde(default = "default_bool::<true>")]
     pub auto_deposit_bond_enabled: bool,
-    /// Deposit (min_bond * auto_bond_deposit_factor - contract_balance) when contract_balance is lower than min_bond
+    /// Deposit (min_bond * auto_bond_deposit_factor - contract_balance) when contract_balance is
+    /// lower than min_bond
     #[serde(default = "default_auto_deposit_bond_factor")]
     pub auto_deposit_bond_factor: f64,
 

@@ -10,20 +10,17 @@ use alloy_provider::{
     Identity, Provider, ProviderBuilder, RootProvider,
 };
 use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{abi::token, sol};
+use alloy_sol_types::sol;
 use eyre::bail;
 use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::{
-    balance::{self, ERC20::ERC20Instance},
+    balance::ERC20::ERC20Instance,
     config::{GatewayConfig, TaikoChainParams},
     metrics::ProposerMetrics,
     runtime::spawn,
-    taiko::{
-        self,
-        pacaya::l1::TaikoL1::{self, TaikoL1Instance},
-    },
+    taiko::pacaya::l1::TaikoL1::{self, TaikoL1Instance},
     utils::alert_discord,
 };
 
@@ -66,7 +63,7 @@ impl BalanceManager {
         l1_contract: Address,
         l1_rpc: Url,
         operator: PrivateKeySigner,
-        taiko_config: &TaikoChainParams,
+        taiko_config: TaikoChainParams,
         gateway_config: &GatewayConfig,
     ) -> Self {
         let wallet = EthereumWallet::new(operator.clone());
@@ -74,7 +71,7 @@ impl BalanceManager {
         Self {
             l1_contract,
             operator,
-            taiko_config: taiko_config.clone(),
+            taiko_config,
             gateway_config: gateway_config.clone(),
             erc20: ERC20::new(taiko_token, l1_provider.clone()),
             taiko_l1: TaikoL1::new(l1_contract, l1_provider.clone()),
@@ -180,7 +177,7 @@ impl BalanceManager {
         let _eth_thres = s.gateway_config.alert_eth_balance_threshold;
         let _bond_thres = s.gateway_config.alert_deposited_bond_threshold;
         let eth_thres = U256::from(_eth_thres * ETH_TO_WEI as f64);
-        let token_thres = U256::from(_bond_thres * 1e18 as f64);
+        let token_thres = U256::from(_bond_thres * 1e18);
 
         spawn(async move {
             loop {
@@ -243,7 +240,6 @@ impl BalanceManager {
                     let total = token_balance.unwrap() + contract_balance.unwrap();
                     s.alert_balance("Total Token Balance", total, token_thres);
                 }
-
             }
         });
     }
