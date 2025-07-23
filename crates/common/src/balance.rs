@@ -209,16 +209,14 @@ impl BalanceManager {
             };
 
             // Auto deposit
-            if self.gateway_config.auto_deposit_bond_enabled {
-                match (token_balance, contract_balance) {
-                    (Some(token_balance), Some(contract_balance)) => {
-                        match self.ensure_contract_balance(token_balance, contract_balance).await {
-                            Ok(_) => {}
-                            Err(err) => warn!(%err, "failed to ensure contract balance"),
-                        }
+            match (self.gateway_config.auto_deposit_bond_enabled, token_balance, contract_balance) {
+                (true, Some(token_balance), Some(contract_balance)) => {
+                    match self.ensure_contract_balance(token_balance, contract_balance).await {
+                        Ok(_) => {}
+                        Err(err) => warn!(%err, "failed to ensure contract balance"),
                     }
-                    _ => {}
                 }
+                _ => {}
             }
 
             // Discord Alerts
@@ -232,11 +230,6 @@ impl BalanceManager {
                     self.alert_balance("TAIKO Token", total, total_token_threshold);
                 }
                 _ => {}
-            }
-
-            if token_balance.is_some() && contract_balance.is_some() {
-                let total = token_balance.unwrap() + contract_balance.unwrap();
-                self.alert_balance("TAIKO Token", total, total_token_threshold);
             }
         }
     }
