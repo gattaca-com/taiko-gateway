@@ -88,11 +88,11 @@ pub struct GatewayConfig {
     #[serde(default = "default_priority_fee")]
     pub min_priority_fee: f64,
 
-    /// Minimum bond calculation: min_bond = bond_base + bond_per_block * min_bond_block_buffer
+    /// Minimum bond calculation: min_bond = bond_base + bond_per_batch * n_batches_bond_threshold
     #[serde(default = "default_u64::<200>")]
-    pub min_bond_block_buffer: u64,
+    pub n_batches_bond_threshold: u64,
     /// Automatically deposit bond when below threshold
-    #[serde(default = "default_bool::<false>")]
+    #[serde(default = "default_bool::<true>")]
     pub auto_deposit_bond_enabled: bool,
     /// Deposit (min_bond * auto_bond_deposit_factor - contract_balance) when contract_balance is lower than min_bond
     #[serde(default = "default_auto_deposit_bond_factor")]

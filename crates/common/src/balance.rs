@@ -170,7 +170,7 @@ impl BalanceManager {
     pub fn get_min_bond(&self) -> U256 {
         let base = U256::from(self.taiko_config.bond_base);
         let per_block = U256::from(self.taiko_config.bond_per_block);
-        let block_buffer = U256::from(self.gateway_config.min_bond_block_buffer);
+        let block_buffer = U256::from(self.gateway_config.n_batches_bond_threshold);
         base + per_block * block_buffer
     }
 
@@ -180,13 +180,14 @@ impl BalanceManager {
         let _eth_thres = s.gateway_config.alert_eth_balance_threshold;
         let _bond_thres = s.gateway_config.alert_deposited_bond_threshold;
         let eth_thres = U256::from(_eth_thres * ETH_TO_WEI as f64);
-        let bond_thres = U256::from(_bond_thres * 1e18 as f64);
+        let token_thres = U256::from(_bond_thres * 1e18 as f64);
 
         spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(60)).await;
 
-                let (eth_balance_res, token_balance_res, token_bond_res) = tokio::join!(
+                // Fetch balances
+                let (eth_balance_res, token_balance_res, contract_balance_res) = tokio::join!(
                     s.get_eth_balance(),
                     s.get_token_balance(),
                     s.get_contract_balance()
@@ -195,7 +196,6 @@ impl BalanceManager {
                 let eth_balance = match eth_balance_res {
                     Ok(balance) => {
                         ProposerMetrics::eth_balance(balance);
-                        s.alert_balance("ETH balance", balance, eth_thres);
                         Some(balance)
                     }
                     Err(err) => {
@@ -215,10 +215,9 @@ impl BalanceManager {
                     }
                 };
 
-                let token_bond = match token_bond_res {
+                let contract_balance = match contract_balance_res {
                     Ok(balance) => {
                         ProposerMetrics::token_bond(balance);
-                        s.alert_balance("Deposited bond", balance, bond_thres);
                         Some(balance)
                     }
                     Err(err) => {
@@ -227,12 +226,24 @@ impl BalanceManager {
                     }
                 };
 
+                // Auto deposit
                 if s.gateway_config.auto_deposit_bond_enabled {
-                    match s.ensure_contract_balance(token_balance, token_bond).await {
+                    match s.ensure_contract_balance(token_balance, contract_balance).await {
                         Ok(_) => {}
                         Err(err) => warn!(%err, "failed to ensure contract balance"),
                     }
                 }
+
+                // Discord Alerts
+                if let Some(eth_balance) = eth_balance {
+                    s.alert_balance("ETH Balance", eth_balance, eth_thres);
+                }
+
+                if token_balance.is_some() && contract_balance.is_some() {
+                    let total = token_balance.unwrap() + contract_balance.unwrap();
+                    s.alert_balance("Total Token Balance", total, token_thres);
+                }
+
             }
         });
     }
