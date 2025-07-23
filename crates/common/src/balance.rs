@@ -210,9 +210,14 @@ impl BalanceManager {
 
             // Auto deposit
             if self.gateway_config.auto_deposit_bond_enabled {
-                match self.ensure_contract_balance(token_balance, contract_balance).await {
-                    Ok(_) => {}
-                    Err(err) => warn!(%err, "failed to ensure contract balance"),
+                match (token_balance, contract_balance) {
+                    (Some(token_balance), Some(contract_balance)) => {
+                        match self.ensure_contract_balance(token_balance, contract_balance).await {
+                            Ok(_) => {}
+                            Err(err) => warn!(%err, "failed to ensure contract balance"),
+                        }
+                    }
+                    _ => {}
                 }
             }
 
@@ -226,7 +231,7 @@ impl BalanceManager {
                     let total = token_balance + contract_balance;
                     self.alert_balance("TAIKO Token", total, total_token_threshold);
                 }
-                _ => ..,
+                _ => {}
             }
 
             if token_balance.is_some() && contract_balance.is_some() {
