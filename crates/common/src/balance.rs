@@ -166,9 +166,9 @@ impl BalanceManager {
 
     pub fn get_min_bond(&self) -> U256 {
         let base = U256::from(self.taiko_config.bond_base);
-        let per_block = U256::from(self.taiko_config.bond_per_block);
-        let block_buffer = U256::from(self.gateway_config.n_batches_bond_threshold);
-        base + per_block * block_buffer
+        let per_batch = U256::from(self.taiko_config.bond_per_block);
+        let n_batches_bond_threshold = U256::from(self.gateway_config.n_batches_bond_threshold);
+        base + per_batch * n_batches_bond_threshold
     }
 
     pub fn start_balance_monitor(&self) {
