@@ -134,12 +134,6 @@ impl BalanceManager {
         Ok(())
     }
 
-    pub async fn total_balance(&self) -> eyre::Result<U256> {
-        let token_balance = self.get_token_balance().await?;
-        let contract_balance = self.get_contract_balance().await?;
-        Ok(token_balance + contract_balance)
-    }
-
     pub async fn get_token_balance(&self) -> eyre::Result<U256> {
         Ok(self.erc20.balanceOf(self.operator.address()).call().await?._0)
     }
