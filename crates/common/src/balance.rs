@@ -108,8 +108,9 @@ impl BalanceManager {
                 "contract already has enough balance, no need to deposit"
             );
         } else {
-            let target_amount =
-                U256::from(f64::from(threshold) * self.gateway_config.auto_deposit_bond_factor);
+            let mul_factor =
+                U256::from((self.gateway_config.auto_deposit_bond_factor * 1000000.0).ceil());
+            let target_amount = U256::from(f64::from(threshold * mul_factor)) / U256::from(1000000);
 
             let amount_to_deposit = target_amount.saturating_sub(contract_balance);
             if token_balance < amount_to_deposit {
@@ -156,7 +157,7 @@ impl BalanceManager {
         // let per_batch = self.taiko_config.bond_per_block; // not used for now
         let n_batches_bond_threshold = U256::from(self.gateway_config.n_batches_bond_threshold);
         let threshold = base * n_batches_bond_threshold;
-        
+
         info!(
             base = %format_ether(base),
             // per_batch = %format_ether(per_batch),
