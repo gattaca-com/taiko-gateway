@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use alloy_consensus::constants::ETH_TO_WEI;
-use alloy_primitives::{utils::format_ether, Address, FixedBytes, B256, U256};
+use alloy_primitives::{utils::format_ether, Address, B256, U256};
 use alloy_provider::{
     fillers::{
         BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
@@ -209,14 +209,15 @@ impl BalanceManager {
             };
 
             // Auto deposit
-            match (self.gateway_config.auto_deposit_bond_enabled, token_balance, contract_balance) {
-                (true, Some(token_balance), Some(contract_balance)) => {
+            if self.gateway_config.auto_deposit_bond_enabled {
+                if let (Some(token_balance), Some(contract_balance)) =
+                    (token_balance, contract_balance)
+                {
                     match self.ensure_contract_balance(token_balance, contract_balance).await {
                         Ok(_) => {}
                         Err(err) => warn!(%err, "failed to ensure contract balance"),
                     }
                 }
-                _ => {}
             }
 
             // Discord Alerts
@@ -224,12 +225,10 @@ impl BalanceManager {
                 self.alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
             }
 
-            match (token_balance, contract_balance) {
-                (Some(token_balance), Some(contract_balance)) => {
-                    let total = token_balance + contract_balance;
-                    self.alert_balance("TAIKO Token", total, total_token_threshold);
-                }
-                _ => {}
+            if let (Some(token_balance), Some(contract_balance)) = (token_balance, contract_balance)
+            {
+                let total = token_balance + contract_balance;
+                self.alert_balance("TAIKO Token", total, total_token_threshold);
             }
         }
     }
