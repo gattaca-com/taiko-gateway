@@ -81,7 +81,12 @@ impl BalanceManager {
         let token_balance = self.get_token_balance().await?;
         let contract_balance = self.get_contract_balance().await?;
         let contract_allowance = self.get_allowance().await?;
-        info!(%token_balance, %contract_balance, %contract_allowance, "fetched taiko token info");
+        info!(
+            token_balance = %format_ether(token_balance),
+            contract_balance = %format_ether(contract_balance),
+            contract_allowance = %format_ether(contract_allowance),
+            "fetched taiko token info"
+        );
 
         if contract_allowance < U256::MAX {
             self.approve_max_allowance().await?;
@@ -246,7 +251,7 @@ impl BalanceManager {
 
     pub fn alert_balance(&self, label: &str, balance: U256, threshold: U256) {
         if balance < threshold {
-            let msg = format!("{} balance is below threshold: {} < {}", label, balance, threshold);
+            let msg = format!("{} balance is below threshold: {} < {}", label, format_ether(balance), format_ether(threshold));
             warn!("{}", msg);
             alert_discord(&msg);
         }
