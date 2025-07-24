@@ -46,3 +46,4 @@ logs/
 datadir
 .env
 gateway.toml
+.instance

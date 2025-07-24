@@ -296,7 +296,7 @@ pub struct TaikoChainParams {
     /// Liveness bond base
     pub bond_base: U256,
     /// Liveness bond multiplier
-    pub bond_per_block: U256, // TODO: rename to bond_per_batch?
+    pub bond_per_block: U256,
     /// Max number of blocks in a batch
     pub max_blocks_per_batch: usize,
 }

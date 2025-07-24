@@ -152,10 +152,20 @@ impl BalanceManager {
     }
 
     pub fn get_min_bond(&self) -> U256 {
-        let base = U256::from(self.taiko_config.bond_base);
-        let per_batch = U256::from(self.taiko_config.bond_per_block);
+        let base = self.taiko_config.bond_base;
+        // let per_batch = self.taiko_config.bond_per_block; // not used for now
         let n_batches_bond_threshold = U256::from(self.gateway_config.n_batches_bond_threshold);
-        base + per_batch * n_batches_bond_threshold
+        let threshold = base * n_batches_bond_threshold;
+        
+        info!(
+            base = %format_ether(base),
+            // per_batch = %format_ether(per_batch),
+            n_batches_bond_threshold = %n_batches_bond_threshold,
+            threshold = %format_ether(threshold),
+            "calculated minimum bond amount"
+        );
+
+        threshold
     }
 
     pub async fn start_balance_monitor(self) {
