@@ -389,6 +389,7 @@ impl ProposerManager {
     async fn propose_batch(&self, request: ProposeBatchParams) {
         let start_bn = request.start_block_num;
         let end_bn = request.end_block_num;
+        let block_count = request.block_params.len();
 
         debug_assert!(!request.block_params.is_empty(), "no blocks to propose");
 
@@ -523,7 +524,7 @@ impl ProposerManager {
 
         LivePending::remove_pending();
         ProposerMetrics::proposed_batches(true);
-        ProposerMetrics::batch_size_blocks(start_bn-end_bn);
+        ProposerMetrics::batch_size_blocks(block_count as u64);
 
         set_propose_ok();
 
