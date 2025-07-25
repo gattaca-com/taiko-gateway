@@ -523,6 +523,7 @@ impl ProposerManager {
 
         LivePending::remove_pending();
         ProposerMetrics::proposed_batches(true);
+        ProposerMetrics::batch_size_blocks(start_bn-end_bn);
 
         set_propose_ok();
 
