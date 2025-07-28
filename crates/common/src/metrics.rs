@@ -197,6 +197,10 @@ lazy_static! {
     static ref BATCH_SIZE: Histogram =
         register_histogram_with_registry!("proposer_batch_size_bytes", "Batch size in bytes", exponential_buckets(1.0, 3.0, 16).unwrap(), &REGISTRY).unwrap();
 
+    /// Batch size in blocks
+    static ref BATCH_SIZE_BLOCKS: IntCounter =
+        register_int_counter_with_registry!("proposer_batch_size_blocks", "Batch size in blocks", &REGISTRY).unwrap();
+
     /// Proposal latency in seconds
     static ref PROPOSAL_LATENCY: Histogram =
         register_histogram_with_registry!("proposer_proposal_latency_secs", "Proposal latency in seconds", linear_buckets(3.0, 6.0, 12).unwrap(), &REGISTRY).unwrap();
@@ -232,6 +236,10 @@ impl ProposerMetrics {
 
     pub fn batch_size(size: u64) {
         BATCH_SIZE.observe(size as f64);
+    }
+
+    pub fn batch_size_blocks(size: u64) {
+        BATCH_SIZE_BLOCKS.inc_by(size as u64);
     }
 
     pub fn proposal_latency(latency: Duration) {
