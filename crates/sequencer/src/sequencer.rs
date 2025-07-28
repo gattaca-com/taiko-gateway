@@ -275,7 +275,11 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if !self.tx_pool.has_valid_orders() {
+                // TODO: this is very ugly and should be refactored
+                if !self.tx_pool.has_valid_orders() &&
+                    self.forced_info.info.is_none() &&
+                    !self.seal_empty_block
+                {
                     return SequencerState::default();
                 }
 
