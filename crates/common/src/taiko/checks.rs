@@ -59,6 +59,15 @@ pub async fn get_and_validate_config(
         warn!(operator= %operator, ?operators, "provided address is not in whitelist");
     };
 
+    info!(
+        liveness_bond_base = ?taiko_config.livenessBondBase,
+        liveness_bond_per_block = ?taiko_config.livenessBondPerBlock,
+        max_anchor_height_offset = ?taiko_config.maxAnchorHeightOffset,
+        max_batches_to_verify = ?taiko_config.maxBatchesToVerify,
+        max_blocks_per_batch = ?taiko_config.maxBlocksPerBatch,
+        "taiko config values"
+    );
+
     let chain_config = TaikoChainParams::new(
         l2_chain_id,
         taiko_config.baseFeeConfig.into(),
