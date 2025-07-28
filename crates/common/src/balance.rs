@@ -257,7 +257,7 @@ impl BalanceManager {
                 match self.get_eth_balance(prover_address).await {
                     Ok(prover_balance) => {
                         ProposerMetrics::prover_eth_balance(prover_balance);
-                        self.alert_balance(
+                        self.maybe_alert_balance(
                             "Prover ETH Balance",
                             prover_balance,
                             prover_eth_balance_threshold,
