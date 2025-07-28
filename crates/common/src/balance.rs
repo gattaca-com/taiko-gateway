@@ -145,8 +145,8 @@ impl BalanceManager {
         Ok(self.erc20.allowance(self.operator.address(), self.l1_contract).call().await?._0)
     }
 
-    pub async fn get_eth_balance(&self) -> eyre::Result<U256> {
-        Ok(self.taiko_l1.provider().get_balance(self.operator.address()).await?)
+    pub async fn get_eth_balance(&self, address: Address) -> eyre::Result<U256> {
+        Ok(self.taiko_l1.provider().get_balance(address).await?)
     }
 
     pub async fn get_contract_balance(&self) -> eyre::Result<U256> {
@@ -175,18 +175,20 @@ impl BalanceManager {
     }
 
     pub async fn start_balance_monitor(self) {
+        const TAIKO_TOKEN_UNITS: f64 = 1e18;
         let _eth_thres = self.gateway_config.alert_eth_balance_threshold;
         let _token_thres = self.gateway_config.alert_total_token_threshold;
+        let _prover_eth_thres = self.gateway_config.alert_prover_balance_threshold;
         let eth_balance_threshold = U256::from(_eth_thres * ETH_TO_WEI as f64);
-        const TAIKO_TOKEN_UNITS: f64 = 1e18;
         let total_token_threshold = U256::from(_token_thres * TAIKO_TOKEN_UNITS);
+        let prover_eth_balance_threshold = U256::from(_prover_eth_thres * ETH_TO_WEI as f64);
 
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
 
             // Fetch balances
             let (eth_balance_res, token_balance_res, contract_balance_res) = tokio::join!(
-                self.get_eth_balance(),
+                self.get_eth_balance(self.operator.address()),
                 self.get_token_balance(),
                 self.get_contract_balance()
             );
@@ -248,6 +250,25 @@ impl BalanceManager {
             {
                 let total = token_balance + contract_balance;
                 self.maybe_alert_balance("TAIKO Token", total, total_token_threshold);
+            }
+
+            // Prover ETH balance alert
+            if let Some(prover_address) = self.gateway_config.prover_address {
+                match self.get_eth_balance(prover_address).await {
+                    Ok(prover_balance) => {
+                        ProposerMetrics::prover_eth_balance(prover_balance);
+                        self.maybe_alert_balance(
+                            "Prover ETH Balance",
+                            prover_balance,
+                            prover_eth_balance_threshold,
+                        );
+                    }
+                    Err(err) => {
+                        warn!(%err, "failed to fetch prover ETH balance");
+                    }
+                };
+            } else {
+                warn!("Prover address is not set in the configuration");
             }
         }
     }

@@ -225,6 +225,11 @@ lazy_static! {
     static ref TOKEN_BOND: Gauge =
         register_gauge_with_registry!("proposer_token_bond", "Token bond", &REGISTRY).unwrap();
 
+
+    /// Prover balance
+    static ref PROVER_ETH_BALANCE: Gauge =
+        register_gauge_with_registry!("prover_eth_balance", "Prover ETH balance", &REGISTRY).unwrap();
+
 }
 
 pub struct ProposerMetrics;
@@ -239,7 +244,7 @@ impl ProposerMetrics {
     }
 
     pub fn batch_size_blocks(size: u64) {
-        BATCH_SIZE_BLOCKS.inc_by(size as u64);
+        BATCH_SIZE_BLOCKS.inc_by(size);
     }
 
     pub fn proposal_latency(latency: Duration) {
@@ -264,6 +269,10 @@ impl ProposerMetrics {
 
     pub fn token_bond(bond: U256) {
         TOKEN_BOND.set(f64::from(bond) / ETH_TO_WEI as f64);
+    }
+
+    pub fn prover_eth_balance(balance: U256) {
+        PROVER_ETH_BALANCE.set(f64::from(balance) / ETH_TO_WEI as f64);
     }
 }
 
