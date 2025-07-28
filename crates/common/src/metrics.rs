@@ -244,7 +244,7 @@ impl ProposerMetrics {
     }
 
     pub fn batch_size_blocks(size: u64) {
-        BATCH_SIZE_BLOCKS.inc_by(size as u64);
+        BATCH_SIZE_BLOCKS.inc_by(size);
     }
 
     pub fn proposal_latency(latency: Duration) {

@@ -262,7 +262,7 @@ impl BalanceManager {
                             prover_balance,
                             prover_eth_balance_threshold,
                         );
-                    },
+                    }
                     Err(err) => {
                         warn!(%err, "failed to fetch prover ETH balance");
                     }
