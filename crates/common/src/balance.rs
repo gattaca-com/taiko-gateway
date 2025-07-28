@@ -198,6 +198,7 @@ impl BalanceManager {
                 }
                 Err(err) => {
                     warn!(%err, "failed to fetch ETH balance");
+                    alert_discord(&format!("failed to fetch ETH balance: {}", err));
                     None
                 }
             };
@@ -209,6 +210,7 @@ impl BalanceManager {
                 }
                 Err(err) => {
                     warn!(%err, "failed to fetch token balance");
+                    alert_discord(&format!("failed to fetch token balance: {}", err));
                     None
                 }
             };
@@ -220,6 +222,7 @@ impl BalanceManager {
                 }
                 Err(err) => {
                     warn!(%err, "failed to fetch token bond");
+                    alert_discord(&format!("failed to fetch token bond: {}", err));
                     None
                 }
             };
@@ -238,20 +241,25 @@ impl BalanceManager {
 
             // Discord Alerts
             if let Some(eth_balance) = eth_balance {
-                self.alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
+                self.maybe_alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
             }
 
             if let (Some(token_balance), Some(contract_balance)) = (token_balance, contract_balance)
             {
                 let total = token_balance + contract_balance;
-                self.alert_balance("TAIKO Token", total, total_token_threshold);
+                self.maybe_alert_balance("TAIKO Token", total, total_token_threshold);
             }
         }
     }
 
-    pub fn alert_balance(&self, label: &str, balance: U256, threshold: U256) {
+    pub fn maybe_alert_balance(&self, label: &str, balance: U256, threshold: U256) {
         if balance < threshold {
-            let msg = format!("{} balance is below threshold: {} < {}", label, format_ether(balance), format_ether(threshold));
+            let msg = format!(
+                "{} balance is below threshold: {} < {}",
+                label,
+                format_ether(balance),
+                format_ether(threshold)
+            );
             warn!("{}", msg);
             alert_discord(&msg);
         }
