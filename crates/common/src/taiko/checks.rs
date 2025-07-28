@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{aliases::U96, Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use tracing::{info, warn};
 
@@ -34,6 +34,9 @@ pub async fn get_and_validate_config(
     // L1 data
     let taiko_config = taiko_l1.pacayaConfig().call().await?._0;
     assert_eq!(taiko_config.chainId, l2_chain_id, "l2 chain id in l1 contract");
+
+    let bond_per_block = taiko_config.livenessBondPerBlock;
+    assert!(bond_per_block == U96::ZERO, "Non-zero liveness bond per block not supported");
 
     // L2 data
     let golden_touch = taiko_l2.GOLDEN_TOUCH_ADDRESS().call().await?._0;

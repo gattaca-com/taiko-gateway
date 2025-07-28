@@ -532,6 +532,7 @@ impl ProposerManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn propose_one_batch(
         &self,
         input: Bytes,

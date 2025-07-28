@@ -175,6 +175,7 @@ impl L1Client {
         Ok(signed.into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_eip4844(
         &self,
         input: Bytes,
