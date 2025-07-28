@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{collections::{BTreeMap, HashMap}, time::Instant};
 
 use alloy_consensus::Transaction;
 use alloy_primitives::Address;
@@ -79,9 +79,11 @@ impl TxPool {
 
     /// Return active orders: either we have these nonces or we have new senders
     fn get_active_for_nonces(&self, base_fee: u128) -> Option<ActiveOrders> {
+        let fn_timer = Instant::now();
         let mut active = HashMap::with_capacity(self.tx_lists.len());
 
         for (sender, tx_list) in self.tx_lists.iter() {
+            let for_loop_timer = Instant::now();
             if let Some(state_nonce) = self.nonces.get(sender) {
                 if tx_list.has_tx_by_nonce(state_nonce, base_fee) {
                     // we have this nonce and fee is high enough
@@ -96,7 +98,19 @@ impl TxPool {
                 // new sender
                 active.insert(*sender, tx_list.clone());
             }
+            debug!(
+                elapsed = for_loop_timer.elapsed().as_millis(),
+                sender = %sender,
+                "checking sender in get_active_for_nonces"
+            );
         }
+
+        debug!(
+            elapsed = fn_timer.elapsed().as_millis(),
+            active = active.len(),
+            tx_list_len = self.tx_lists.len(),
+            "fn get_active_for_nonces"
+        );
 
         (!active.is_empty()).then(|| ActiveOrders::new(active))
     }

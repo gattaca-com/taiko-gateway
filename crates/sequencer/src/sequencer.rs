@@ -296,6 +296,10 @@ impl Sequencer {
                             .active_orders(block_info.block_number, block_info.base_fee)
                         else {
                             self.tx_pool.set_no_valid_orders();
+                            debug!(
+                                block = block_info.block_number,
+                                "no active orders, resetting state"
+                            );
                             return SequencerState::default();
                         };
 
