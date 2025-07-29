@@ -301,7 +301,7 @@ impl Sequencer {
 
                 // after here we have enough L1 blocks, dont need to check it anymore
                 if !self.flags.can_sequence {
-                    self.return_state(2, "can sequence now");
+                    self.return_state(2, "Not sequencing");
                     return SequencerState::default();
                 }
 
