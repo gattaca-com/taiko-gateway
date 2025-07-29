@@ -69,6 +69,7 @@ pub struct ParentParams {
     pub block_number: u64,
     pub hash: B256,
     pub anchor_nonce: u64,
+    pub beneficiary: Address,
 }
 
 impl ParentParams {
@@ -79,6 +80,7 @@ impl ParentParams {
             block_number: header.number,
             hash: header.hash,
             anchor_nonce,
+            beneficiary: header.beneficiary,
         }
     }
 }

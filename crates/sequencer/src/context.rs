@@ -123,9 +123,10 @@ impl SequencerContext {
                 debug!(
                     n_txs = new_block.transactions.len(),
                     sync_time = ?self.last_l2_receive.elapsed(),
-                    new_hash = %header.hash,
                     reorged_hash = %self.l2_headers[local].hash,
-                    coinbase = %header.beneficiary,
+                    new_hash = %header.hash,
+                    reorged_coinbase = %self.l2_headers[local].beneficiary,
+                    new_coinbase = %header.beneficiary,
                     "l2 reorg: {} -> {}", header.number, last_seen.block_number
                 );
                 self.l2_headers.truncate(local); // remove local too
