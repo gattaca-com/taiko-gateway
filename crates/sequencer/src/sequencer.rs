@@ -161,13 +161,68 @@ impl Sequencer {
 
         info!("starting loop");
 
-        loop {
-            self.tick();
+        let mut tick_time_since = Instant::now();
+        let mut tick_time_short = true;
+        let mut tick_average = Duration::from_millis(100);
+        let mut tick_time_accum = Duration::ZERO;
+        let mut tick_count = 0;
 
+        let mut state_time_since = Instant::now();
+        let mut state_time_short = true;
+        let mut state_average = Duration::from_millis(100);
+        let mut state_time_accum = Duration::ZERO;
+        let mut state_count = 0;
+
+        loop {
+            let start = Instant::now();
+            self.tick();
+            let tick_elapsed = start.elapsed();
+
+            let start = Instant::now();
             let state = std::mem::take(&mut self.ctx.state);
             self.ctx.state = self.state_transition(state);
+            let state_elapsed = start.elapsed();
 
             self.record_metrics();
+
+            tick_count += 1;
+            tick_time_accum += tick_elapsed;
+            tick_average = tick_time_accum / tick_count as u32;
+            if tick_elapsed > tick_average * 2 {
+                if tick_time_short {
+                    tick_time_short = false;
+                    let short_tick_for = tick_time_since.elapsed();
+                    debug!(?tick_elapsed, ?short_tick_for, ?tick_average, "tick is taking too long");
+                    tick_time_since = Instant::now();
+                }
+            } else {
+                if !tick_time_short {
+                    tick_time_short = true;
+                    let long_tick_for = tick_time_since.elapsed();
+                    debug!(?tick_elapsed, ?long_tick_for, ?tick_average, "tick is short");
+                    tick_time_since = Instant::now();
+                }
+            }
+
+            state_count += 1;
+            state_time_accum += state_elapsed;
+            state_average = state_time_accum / state_count as u32;
+            if state_elapsed > state_average * 2 {
+                if state_time_short {
+                    state_time_short = false;
+                    let short_state_for = state_time_since.elapsed();
+                    debug!(?state_elapsed, ?short_state_for, ?state_average, "state transition is taking too long");
+                    state_time_since = Instant::now();
+                }
+            } else {
+                if !state_time_short {
+                    state_time_short = true;
+                    let long_state_for = state_time_since.elapsed();
+                    debug!(?state_elapsed, ?long_state_for, ?state_average, "state transition is short");
+                    state_time_since = Instant::now();
+                }
+            }
+
         }
     }
 
