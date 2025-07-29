@@ -188,7 +188,7 @@ impl Sequencer {
             tick_count += 1;
             tick_time_accum += tick_elapsed;
             tick_average = tick_time_accum / tick_count as u32;
-            if tick_elapsed > tick_average * 2 {
+            if tick_elapsed > Duration::from_millis(10) {
                 if tick_time_short {
                     tick_time_short = false;
                     let short_tick_for = tick_time_since.elapsed();
@@ -207,7 +207,7 @@ impl Sequencer {
             state_count += 1;
             state_time_accum += state_elapsed;
             state_average = state_time_accum / state_count as u32;
-            if state_elapsed > state_average * 2 {
+            if state_elapsed > Duration::from_millis(10) {
                 if state_time_short {
                     state_time_short = false;
                     let short_state_for = state_time_since.elapsed();
