@@ -110,6 +110,10 @@ pub struct Sequencer {
     /// whether we need to call status and check highest unsafe block id
     needs_status_check: bool,
     timings: Timings,
+
+    ///
+    debug_previous_return_state: i64,
+    debug_previous_return_state_since: Instant,
 }
 
 impl Sequencer {
@@ -144,6 +148,8 @@ impl Sequencer {
             anchor_error_count: 0,
             needs_status_check: true,
             timings: Timings::new(),
+            debug_previous_return_state: 0,
+            debug_previous_return_state_since: Instant::now()
         }
     }
 
@@ -261,10 +267,20 @@ impl Sequencer {
         }
     }
 
+    fn return_state(&mut self, reason: i64, description: &str) {
+        if self.debug_previous_return_state != reason {
+            let elapsed = self.debug_previous_return_state_since.elapsed();
+            debug!(from= self.debug_previous_return_state, to = reason, elapsed = ?elapsed, "returning state: {description}");
+            self.debug_previous_return_state_since = Instant::now();
+            self.debug_previous_return_state = reason;
+        }
+    }
+
     fn state_transition(&mut self, state: SequencerState) -> SequencerState {
         match state {
             SequencerState::Sync { last_l1 } => {
                 let Some(safe_l1_header) = self.ctx.safe_l1_header() else {
+                    self.return_state(0, "missing safe L1 header");
                     return state;
                 };
 
@@ -279,11 +295,13 @@ impl Sequencer {
                         );
                     }
 
+                    self.return_state(1, "waiting for safe L1 block");
                     return SequencerState::Sync { last_l1: safe_l1 };
                 }
 
                 // after here we have enough L1 blocks, dont need to check it anymore
                 if !self.flags.can_sequence {
+                    self.return_state(2, "can sequence now");
                     return SequencerState::default();
                 }
 
@@ -302,18 +320,22 @@ impl Sequencer {
                     (max_block_size as f64 * throttle_factor).round() as usize;
 
                 if max_block_size == 0 {
+                    self.return_state(3, "max block size is 0");
                     return SequencerState::default();
                 }
 
                 if !self.tx_pool.has_valid_orders() {
+                    self.return_state(4, "no valid orders");
                     return SequencerState::default();
                 }
 
                 if !self.timings.can_retry_anchor() {
+                    self.return_state(5, "cannot retry anchor");
                     return SequencerState::default();
                 }
 
                 if !self.timings.can_produce_block() {
+                    self.return_state(6, "cannot produce block");
                     return SequencerState::default();
                 }
 
@@ -325,6 +347,7 @@ impl Sequencer {
                             let last_local_block = self.ctx.l2_parent().block_number;
                             if status_block > last_local_block {
                                 warn!(status_block, last_local_block, "highest unsafe block id is greater than local block, waiting 2s");
+                                self.return_state(7, "waiting for status block");
                                 return SequencerState::default();
                             } else {
                                 // cover both status is 0 and equal to geth block
@@ -336,6 +359,7 @@ impl Sequencer {
 
                         Err(err) => {
                             error!(%err, "failed to get status block");
+                            self.return_state(8, "failed to get status block");
                             return SequencerState::default();
                         }
                     }
@@ -355,6 +379,7 @@ impl Sequencer {
                                 block = block_info.block_number,
                                 "no active orders, resetting state"
                             );
+                            self.return_state(9, "no active orders");
                             return SequencerState::default();
                         };
 
@@ -393,6 +418,7 @@ impl Sequencer {
                         self.timings.start_produce_block =
                             Instant::now() + self.config.target_block_time;
 
+                        self.return_state(10, "starting sorting loop");
                         SequencerState::Sorting(sort_data)
                     }
 
@@ -406,6 +432,7 @@ impl Sequencer {
                             panic!("too many anchor errors, resetting");
                         }
 
+                        self.return_state(11, "failed anchoring");
                         SequencerState::default()
                     }
                 }
@@ -420,6 +447,7 @@ impl Sequencer {
                         false,
                     );
                 }
+                self.return_state(12, "invalid state detected");
                 SequencerState::default()
             }
 
@@ -430,10 +458,12 @@ impl Sequencer {
                         if let SequencerError::SoftBlock(status, err) = err {
                             warn!(status, %err, "failed seal");
                             self.tx_pool.clear_nonces();
+                            self.return_state(13, "failed seal");
                             SequencerState::default()
                         } else if err.is_nil_block() {
                             error!(block_number, %err, "nil block on seal. is there a reorg?");
                             self.tx_pool.clear_nonces();
+                            self.return_state(14, "nil block on seal");
                             SequencerState::default()
                         } else {
                             error!(block_number, %err, "failed seal");
@@ -442,6 +472,7 @@ impl Sequencer {
                     } else {
                         // reset state for next block
                         self.timings.last_tx_pool_check = Instant::now();
+                        self.return_state(15, "resetting state for next block");
                         SequencerState::default()
                     }
                 } else {
@@ -460,12 +491,14 @@ impl Sequencer {
                             false,
                         );
                     }
+                    self.return_state(16, "exhausted active orders");
                     SequencerState::default()
                 }
             }
 
             SequencerState::Sorting(mut sort_data) => {
                 sort_data.maybe_sim_next_batch(&self.simulator, self.config.max_sims_per_loop);
+                self.return_state(17, "continuing sorting loop");
                 SequencerState::Sorting(sort_data)
             }
         }
