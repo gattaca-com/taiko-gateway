@@ -98,11 +98,6 @@ impl TxPool {
                 // new sender
                 active.insert(*sender, tx_list.clone());
             }
-            debug!(
-                elapsed = for_loop_timer.elapsed().as_millis(),
-                sender = %sender,
-                "checking sender in get_active_for_nonces"
-            );
         }
 
         debug!(
