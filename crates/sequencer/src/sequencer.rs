@@ -328,6 +328,7 @@ impl Sequencer {
                             self.chain_config.block_max_gas_limit,
                             self.config.target_block_time,
                             throttled_block_size,
+                            &self.config,
                         );
 
                         // even if we finish early, dont produce blocks too frequently

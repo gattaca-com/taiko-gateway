@@ -6,6 +6,7 @@ use std::{
 use alloy_consensus::Transaction;
 use alloy_primitives::{utils::format_ether, Address};
 use pc_common::{
+    config::SequencerConfig,
     metrics::SequencerMetrics,
     sequencer::{ExecutionResult, InvalidReason, Order, StateId},
     taiko::pacaya::estimate_compressed_size,
@@ -36,6 +37,8 @@ pub struct SortData {
     pub uncompressed_size: usize,
     /// Time when we should stop sequencing this block
     target_seal: Instant,
+    /// Target block time
+    target_block_time: Duration,
     /// Cumulative builder payment
     builder_payment: u128,
     /// Cumulative gas used in the block
@@ -57,6 +60,10 @@ pub struct SortData {
     last_logged: Instant,
     /// waiting for new txs
     waiting_for_new_txs: bool,
+    /// Minimum orders before sealing a block
+    min_orders_before_seal: u64,
+    /// Maximum number of times we can skip a block before sealing
+    max_block_skips: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -126,12 +133,14 @@ impl SortData {
         gas_limit: u128,
         target_block_time: Duration,
         max_block_size: usize,
+        sequencer_config: &SequencerConfig,
     ) -> Self {
         Self {
             block_info,
             state_id: anchor_state_id,
             start_build: Instant::now(),
             target_seal: Instant::now() + target_block_time,
+            target_block_time,
             builder_payment: 0,
             gas_remaining: gas_limit,
             max_block_size,
@@ -146,6 +155,8 @@ impl SortData {
             last_logged: Instant::now(),
             uncompressed_size: 0,
             waiting_for_new_txs: false,
+            min_orders_before_seal: sequencer_config.min_orders_before_seal,
+            max_block_skips: sequencer_config.max_block_skips,
         }
     }
 
@@ -339,7 +350,9 @@ impl SortData {
     }
 
     pub fn should_seal(&self) -> bool {
-        self.should_seal || self.is_past_target_seal()
+        self.should_seal ||
+            (self.is_enough_orders() && self.is_past_target_seal()) ||
+            self.is_past_max_skip()
     }
 
     pub fn should_discard(&self) -> bool {
@@ -348,6 +361,14 @@ impl SortData {
 
     pub fn is_past_target_seal(&self) -> bool {
         Instant::now() > self.target_seal
+    }
+
+    pub fn is_past_max_skip(&self) -> bool {
+        Instant::now() > self.target_seal + self.target_block_time * self.max_block_skips as u32
+    }
+
+    pub fn is_enough_orders(&self) -> bool {
+        self.orders.len() >= self.min_orders_before_seal as usize
     }
 
     pub fn num_txs(&self) -> usize {
