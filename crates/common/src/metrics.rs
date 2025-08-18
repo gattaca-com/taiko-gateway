@@ -187,6 +187,10 @@ lazy_static! {
     static ref BLOCK_BASE_FEE: Gauge =
         register_gauge_with_registry!("blocks_base_fee", "Block base fee", &REGISTRY).unwrap();
 
+    static ref PRECONF_BLOCK_TIME: Histogram =
+        register_histogram_with_registry!("preconf_block_time_secs", "Time to post preconf block", exponential_buckets(0.001, 2.0, 16).unwrap(), &REGISTRY).unwrap();
+
+
     /////////////////////// PROPOSER ///////////////////////
 
     /// How many batches we have proposed
@@ -298,6 +302,10 @@ impl BlocksMetrics {
         BLOCK_GAS_USED.set(header.gas_used as f64);
         BLOCK_GAS_LIMIT.set(header.gas_limit as f64);
         BLOCK_BASE_FEE.set(header.base_fee_per_gas.unwrap_or_default() as f64);
+    }
+
+    pub fn preconf_block(time: Duration) {
+        PRECONF_BLOCK_TIME.observe(time.as_secs_f64());
     }
 }
 
