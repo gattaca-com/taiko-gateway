@@ -93,6 +93,13 @@ pub struct GatewayConfig {
     #[serde(default = "default_priority_fee")]
     pub min_priority_fee: f64,
 
+    /// Minimum orders before sealing a block (https://github.com/NethermindEth/Catalyst/pull/570)
+    #[serde(default = "default_u64::<5>")]
+    pub min_orders_before_seal: u64,
+    /// Maximum block skips
+    #[serde(default = "default_u64::<2>")]
+    pub max_block_skips: u64,
+
     /// Minimum bond calculation: min_bond = (bond_base + bond_per_batch) *
     /// n_batches_bond_threshold
     #[serde(default = "default_u64::<200>")]
@@ -216,6 +223,8 @@ pub struct SequencerConfig {
     pub throttle_queue_target: usize,
     pub throttle_factor: f64,
     pub batch_target_size: usize,
+    pub min_orders_before_seal: u64,
+    pub max_block_skips: u64,
 }
 
 impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
@@ -235,6 +244,8 @@ impl From<(&StaticConfig, Vec<u8>, Address)> for SequencerConfig {
             throttle_queue_target: config.gateway.throttle_queue_target,
             throttle_factor: config.gateway.throttle_factor,
             batch_target_size: config.gateway.blob_target * BLOBS_SAFE_SIZE,
+            min_orders_before_seal: config.gateway.min_orders_before_seal,
+            max_block_skips: config.gateway.max_block_skips,
         }
     }
 }
