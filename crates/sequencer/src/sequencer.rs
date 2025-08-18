@@ -813,10 +813,12 @@ impl Sequencer {
                     req_builder = req_builder.header(AUTHORIZATION, format!("Bearer {}", jwt));
                 }
 
+                let start = Instant::now();
                 let res = req_builder.send().await?;
 
                 let status = res.status();
                 let body = res.text().await?;
+                BlocksMetrics::preconf_block(start.elapsed());
 
                 if status.is_success() {
                     debug!(block_number, "soft block posted");
