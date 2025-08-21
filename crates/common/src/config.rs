@@ -94,7 +94,7 @@ pub struct GatewayConfig {
     pub min_priority_fee: f64,
 
     /// Minimum orders before sealing a block (https://github.com/NethermindEth/Catalyst/pull/570)
-    #[serde(default = "default_u64::<5>")]
+    #[serde(default = "default_u64::<3>")]
     pub min_orders_before_seal: u64,
     /// Maximum block skips
     #[serde(default = "default_u64::<2>")]
