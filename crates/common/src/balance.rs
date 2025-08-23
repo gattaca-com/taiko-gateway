@@ -247,13 +247,23 @@ impl BalanceManager {
 
             // Discord Alerts
             if let Some(eth_balance) = eth_balance {
-                self.maybe_alert_balance("ETH Balance", eth_balance, &mut previous_eth_balance, eth_balance_threshold);
+                self.maybe_alert_balance(
+                    "ETH Balance",
+                    eth_balance,
+                    &mut previous_eth_balance,
+                    eth_balance_threshold,
+                );
             }
 
             if let (Some(token_balance), Some(contract_balance)) = (token_balance, contract_balance)
             {
                 let total = token_balance + contract_balance;
-                self.maybe_alert_balance("TAIKO Token", total, &mut previous_token_balance, total_token_threshold);
+                self.maybe_alert_balance(
+                    "TAIKO Token",
+                    total,
+                    &mut previous_token_balance,
+                    total_token_threshold,
+                );
             }
 
             // Prover ETH balance alert
@@ -278,7 +288,13 @@ impl BalanceManager {
         }
     }
 
-    pub fn maybe_alert_balance(&self, label: &str, balance: U256, previous: &mut Option<U256>, threshold: U256) {
+    pub fn maybe_alert_balance(
+        &self,
+        label: &str,
+        balance: U256,
+        previous: &mut Option<U256>,
+        threshold: U256,
+    ) {
         if balance < threshold && (previous.is_none() || previous.unwrap() >= threshold) {
             *previous = Some(balance);
             let msg = format!(
