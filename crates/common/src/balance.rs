@@ -183,6 +183,10 @@ impl BalanceManager {
         let total_token_threshold = U256::from(_token_thres * TAIKO_TOKEN_UNITS);
         let prover_eth_balance_threshold = U256::from(_prover_eth_thres * ETH_TO_WEI as f64);
 
+        let mut previous_eth_balance = None;
+        let mut previous_token_balance = None;
+        let mut previous_prover_eth_balance = None;
+
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
 
@@ -243,13 +247,13 @@ impl BalanceManager {
 
             // Discord Alerts
             if let Some(eth_balance) = eth_balance {
-                self.maybe_alert_balance("ETH Balance", eth_balance, eth_balance_threshold);
+                self.maybe_alert_balance("ETH Balance", eth_balance, &mut previous_eth_balance, eth_balance_threshold);
             }
 
             if let (Some(token_balance), Some(contract_balance)) = (token_balance, contract_balance)
             {
                 let total = token_balance + contract_balance;
-                self.maybe_alert_balance("TAIKO Token", total, total_token_threshold);
+                self.maybe_alert_balance("TAIKO Token", total, &mut previous_token_balance, total_token_threshold);
             }
 
             // Prover ETH balance alert
@@ -260,6 +264,7 @@ impl BalanceManager {
                         self.maybe_alert_balance(
                             "Prover ETH Balance",
                             prover_balance,
+                            &mut previous_prover_eth_balance,
                             prover_eth_balance_threshold,
                         );
                     }
@@ -273,8 +278,9 @@ impl BalanceManager {
         }
     }
 
-    pub fn maybe_alert_balance(&self, label: &str, balance: U256, threshold: U256) {
-        if balance < threshold {
+    pub fn maybe_alert_balance(&self, label: &str, balance: U256, previous: &mut Option<U256>, threshold: U256) {
+        if balance < threshold && (previous.is_none() || previous.unwrap() >= threshold) {
+            *previous = Some(balance);
             let msg = format!(
                 "{} balance is below threshold: {} < {}",
                 label,
