@@ -87,9 +87,7 @@ pub async fn start_lookahead_loop(
                     }
                 }
                 Err(err) => {
-                    error!(%err, "failed to fetch preconf router");
-                    current_handover = default_handover;
-                    handover_window_clone.store(default_handover, Ordering::Relaxed);
+                    error!(last = current_handover, %err, "failed to fetch preconf router, keeping last value for handover");
                 }
             }
 
