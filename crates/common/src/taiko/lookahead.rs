@@ -17,7 +17,7 @@ use crate::{
     beacon::BeaconHandle,
     config::{L2ChainConfig, LookaheadConfig},
     runtime::spawn,
-    taiko::pacaya::preconf::PreconfWhitelist::PreconfWhitelistErrors,
+    taiko::pacaya::preconf::{PreconfRouter, PreconfWhitelist::PreconfWhitelistErrors},
     utils::{extract_revert_reason, utcnow_sec},
 };
 
@@ -31,7 +31,8 @@ pub async fn start_lookahead_loop(
 ) -> eyre::Result<LookaheadHandle> {
     let l1_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(l1_rpc);
     let whitelist = PreconfWhitelist::new(l2_chain_config.whitelist_contract, l1_provider.clone());
-    let wrapper = TaikoWrapper::new(l2_chain_config.wrapper_contract, l1_provider);
+    let wrapper = TaikoWrapper::new(l2_chain_config.wrapper_contract, l1_provider.clone());
+    let router = PreconfRouter::new(l2_chain_config.router_contract, l1_provider);
 
     let preconfs_enabled = Arc::new(AtomicBool::new(false));
 
@@ -55,6 +56,38 @@ pub async fn start_lookahead_loop(
                 Err(err) => {
                     error!(%err, "failed to fetch preconf router");
                     preconfs_enabled.store(false, Ordering::Relaxed);
+                }
+            }
+
+            tokio::time::sleep(Duration::from_secs(12)).await;
+        }
+    });
+
+    let default_handover = config.handover_window_slots;
+    let handover_window_slots = Arc::new(AtomicU64::new(default_handover));
+    let handover_window_clone = handover_window_slots.clone();
+    tokio::spawn(async move {
+        let mut current_handover = default_handover;
+        loop {
+            match router.getConfig().call().await {
+                Ok(router_config) => {
+                    let config_handover = router_config
+                        ._0
+                        .handOverSlots
+                        .try_into()
+                        .expect("handover slot is too large");
+                    if current_handover != config_handover {
+                        warn!(
+                            previous = current_handover,
+                            new = config_handover,
+                            "handover slot window is now changed"
+                        );
+                        current_handover = config_handover;
+                        handover_window_clone.store(config_handover, Ordering::Relaxed);
+                    }
+                }
+                Err(err) => {
+                    error!(last = current_handover, %err, "failed to fetch preconf router, keeping last value for handover");
                 }
             }
 
@@ -204,7 +237,13 @@ pub async fn start_lookahead_loop(
         }
     }.in_current_span());
 
-    Ok(LookaheadHandle::new(lookahead, preconfs_enabled_clone, config, beacon_handle))
+    Ok(LookaheadHandle::new(
+        lookahead,
+        preconfs_enabled_clone,
+        handover_window_slots,
+        config,
+        beacon_handle,
+    ))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -218,6 +257,7 @@ pub struct Lookahead {
 pub struct LookaheadHandle {
     lookahead: Arc<RwLock<Lookahead>>,
     preconfs_enabled: Arc<AtomicBool>,
+    handover_window_slots: Arc<AtomicU64>,
     checked: Instant,
     last: Lookahead,
     config: LookaheadConfig,
@@ -228,11 +268,20 @@ impl LookaheadHandle {
     fn new(
         lookahead: Arc<RwLock<Lookahead>>,
         preconfs_enabled: Arc<AtomicBool>,
+        handover_window_slots: Arc<AtomicU64>,
         config: LookaheadConfig,
         beacon: BeaconHandle,
     ) -> Self {
         let last = *lookahead.read();
-        Self { lookahead, preconfs_enabled, checked: Instant::now(), last, config, beacon }
+        Self {
+            lookahead,
+            preconfs_enabled,
+            handover_window_slots,
+            checked: Instant::now(),
+            last,
+            config,
+            beacon,
+        }
     }
 
     fn maybe_refresh(&mut self) {
@@ -240,6 +289,10 @@ impl LookaheadHandle {
             self.last = *self.lookahead.read();
             self.checked = Instant::now();
         }
+    }
+
+    fn handover_window_slots(&self) -> u64 {
+        self.handover_window_slots.load(Ordering::Relaxed)
     }
 
     // Returns true if the operator can sequence based on the lookahead, the lookahead is only
@@ -255,7 +308,7 @@ impl LookaheadHandle {
 
         // current operator only sequences until here
         let cutoff_slot = self.beacon.slot_epoch_start(current_epoch) + self.beacon.slots_per_epoch -
-            self.config.handover_window_slots;
+            self.handover_window_slots();
 
         // next operator sequences after this time
         let cutoff_time = self.beacon.timestamp_of_slot(cutoff_slot) +
@@ -338,7 +391,7 @@ impl LookaheadHandle {
         // current operator only sequences until here
         let cutoff_slot = self.beacon.slot_epoch_start(lookahead.updated_epoch) +
             self.beacon.slots_per_epoch -
-            self.config.handover_window_slots;
+            self.handover_window_slots();
 
         if self.beacon.current_slot() < cutoff_slot {
             (false, "current operator early in epoch")
