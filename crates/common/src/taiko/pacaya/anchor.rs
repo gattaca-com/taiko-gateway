@@ -185,6 +185,7 @@ mod tests {
             timestamp: parent_block.header.timestamp,
             hash: parent_block.header.hash,
             anchor_nonce: parent_block.header.number,
+            beneficiary: Address::ZERO,
         };
 
         let config = TaikoConfig {
