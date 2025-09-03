@@ -68,7 +68,17 @@ pub async fn start_lookahead_loop(
     let handover_window_clone = handover_window_slots.clone();
     tokio::spawn(async move {
         let mut current_handover = default_handover;
+        let mut curr_epoch = 0;
         loop {
+            // only fetch once at the beginning of the epoch
+            let epoch = beacon_handle.current_epoch();
+            if curr_epoch == epoch {
+                tokio::time::sleep(Duration::from_secs(12)).await;
+                continue;
+            }
+
+            curr_epoch = epoch;
+
             match router.getConfig().call().await {
                 Ok(router_config) => {
                     let config_handover = router_config
