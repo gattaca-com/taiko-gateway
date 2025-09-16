@@ -98,7 +98,7 @@ pub async fn start_lookahead_loop(
                     }
                 }
                 Err(err) => {
-                    error!(last = current_handover, %err, "failed to fetch preconf router, keeping last value for handover");
+                    error!(last = current_handover, %err, "failed to fetch router config, keeping last value for handover");
                 }
             }
 
