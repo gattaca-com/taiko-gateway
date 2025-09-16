@@ -55,6 +55,7 @@ pub async fn start_lookahead_loop(
                 }
                 Err(err) => {
                     error!(%err, "failed to fetch preconf router");
+                    current_router = Address::ZERO;
                     preconfs_enabled.store(false, Ordering::Relaxed);
                 }
             }
