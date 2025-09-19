@@ -147,6 +147,9 @@ mod tests {
     fn test_extract_fail_reason_gas_fee_cap_equal() {
         let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx gas fee cap 1000000000 <= 1000000000 queued";
         let result = FailReason::try_extract(input).unwrap();
-        assert_eq!(FailReason::UnderpricedGasFeeCap { sent: 1000000000, queued: 1000000000 }, result);
+        assert_eq!(
+            FailReason::UnderpricedGasFeeCap { sent: 1000000000, queued: 1000000000 },
+            result
+        );
     }
 }
