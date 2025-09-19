@@ -97,7 +97,11 @@ impl FailReason {
         }
 
         if let Some(after) = lower.split("new tx gas fee cap ").nth(1) {
-            let parts: Vec<&str> = after.split(" < ").collect();
+            let parts: Vec<&str> = if after.contains(" <= ") {
+                after.split(" <= ").collect()
+            } else {
+                after.split(" < ").collect()
+            };
             if parts.len() != 2 {
                 return None;
             }
@@ -137,5 +141,12 @@ mod tests {
         let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx gas fee cap 2101629 < 1400047 queued + 100% replacement penalty";
         let result = FailReason::try_extract(input).unwrap();
         assert_eq!(FailReason::UnderpricedGasFeeCap { sent: 2101629, queued: 1400047 }, result);
+    }
+
+    #[test]
+    fn test_extract_fail_reason_gas_fee_cap_equal() {
+        let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx gas fee cap 1000000000 <= 1000000000 queued";
+        let result = FailReason::try_extract(input).unwrap();
+        assert_eq!(FailReason::UnderpricedGasFeeCap { sent: 1000000000, queued: 1000000000 }, result);
     }
 }
