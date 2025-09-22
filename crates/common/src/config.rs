@@ -124,6 +124,16 @@ pub struct GatewayConfig {
     /// Send alert if proposer's ETH balance falls below this value
     #[serde(default = "default_alert_eth_balance_threshold")]
     pub alert_prover_balance_threshold: f64,
+
+    /// Number of blocks to wait for a receipt before giving up.
+    #[serde(default = "default_u64::<3>")]
+    pub receipt_wait_blocks: u64,
+
+    /// Send exclusive tx (eth_sendBundle)
+    pub builder_url: Option<Url>,
+    /// Maximum number of blocks to try sending to builder before falling back to normal tx
+    #[serde(default = "default_u64::<3>")]
+    pub builder_max_retries: u64,
 }
 
 pub const fn default_bool<const U: bool>() -> bool {
@@ -258,6 +268,10 @@ pub struct ProposerConfig {
     pub batch_target_size: usize,
     /// wei
     pub min_priority_fee: u128,
+
+    pub receipt_wait_blocks: u64,
+    pub builder_url: Option<Url>,
+    pub builder_max_retries: u64,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
@@ -270,6 +284,9 @@ impl From<&StaticConfig> for ProposerConfig {
             coinbase: config.gateway.coinbase,
             batch_target_size: config.gateway.blob_target * BLOBS_SAFE_SIZE,
             min_priority_fee: fee_wei,
+            receipt_wait_blocks: config.gateway.receipt_wait_blocks,
+            builder_url: config.gateway.builder_url.clone(),
+            builder_max_retries: config.gateway.builder_max_retries,
         }
     }
 }

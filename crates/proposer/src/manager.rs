@@ -37,7 +37,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
 
 use super::L1Client;
-use crate::error::ProposerError;
+use crate::{builder::send_bundle, error::ProposerError};
 
 type AlloyProvider = alloy_provider::RootProvider;
 
@@ -549,7 +549,7 @@ impl ProposerManager {
 
         if nonce > *last_used_nonce {
             warn!("nonce is higher than override, most likely tx got already confirmed. Returning");
-            return Ok(())
+            return Ok(());
         }
 
         *last_used_nonce = nonce;
@@ -581,29 +581,36 @@ impl ProposerManager {
                 .await?
         };
 
-        let current_block = self.client.get_last_block_number().await?;
         let tx_hash = *tx.tx_hash();
         info!(nonce, bump_fees, "type" = %tx.tx_type(), %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
-        let hash = self.client.send_tx(tx).await?;
-        assert_eq!(tx_hash, hash);
 
-        // try to fetch the receipt for next 3 blocks, otherwise we assume it failed and we'll bump
-        // fees
-        let tx_receipt = loop {
-            if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
-                break receipt;
+        let maybe_builder_tx_receipt = send_bundle(&self.client, &self.config, &tx, tx_hash).await;
+
+        let tx_receipt = match maybe_builder_tx_receipt {
+            Some(receipt) => receipt,
+            None => {
+                let start_block = self.client.get_last_block_number().await?;
+                let hash = self.client.send_tx(tx).await?;
+                assert_eq!(tx_hash, hash);
+                // try to fetch the receipt for next 3 blocks, otherwise we assume it failed and
+                // we'll bump fees
+                loop {
+                    if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
+                        break receipt;
+                    }
+
+                    let bn = self.client.get_last_block_number().await?;
+
+                    if bn > start_block + self.config.receipt_wait_blocks {
+                        bail!(ProposerError::TxNotIncludedInNextBlocks);
+                    }
+
+                    tokio::time::sleep(Duration::from_secs(6)).await;
+                    warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt")
+                }
             }
-
-            let bn = self.client.get_last_block_number().await?;
-
-            if bn > current_block + 3 {
-                bail!(ProposerError::TxNotIncludedInNextBlocks);
-            }
-
-            tokio::time::sleep(Duration::from_secs(6)).await;
-            warn!(sent_bn = current_block, l1_bn = bn, %tx_hash, "waiting for receipt")
         };
 
         ProposerMetrics::proposal_latency(start.elapsed());
