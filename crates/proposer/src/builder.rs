@@ -26,13 +26,13 @@ pub struct RpcBundleError {
     pub message: String,
 }
 
-pub fn bundle_request(tx: &TxEnvelope, block_number: u64) -> serde_json::Value {
+pub fn bundle_request(tx_encoded: &str, block_number: u64) -> serde_json::Value {
     serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "eth_sendBundle",
         "params": [{
-            "txs": [format!("0x{}", hex::encode(tx.encoded_2718()))],
+            "txs": [tx_encoded],
             "blockNumber": format!("0x{:x}", block_number),
         }]
     })
@@ -40,11 +40,11 @@ pub fn bundle_request(tx: &TxEnvelope, block_number: u64) -> serde_json::Value {
 
 async fn send_bundle_request(
     url: &Url,
-    tx: &TxEnvelope,
+    tx_encoded: &str,
     block_number: u64,
 ) -> eyre::Result<RpcBundleResponse> {
     let client = reqwest::Client::new();
-    let request = client.post(url.clone()).json(&bundle_request(tx, block_number)).send().await?;
+    let request = client.post(url.clone()).json(&bundle_request(tx_encoded, block_number)).send().await?;
 
     if !request.status().is_success() {
         warn!(request_status = ?request.status(), "Failed to send bundle");
@@ -68,8 +68,9 @@ pub async fn send_bundle(
 ) -> Option<TransactionReceipt> {
     match &config.builder_url {
         Some(url) => {
+            let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
             let start_block = client.get_last_block_number().await.ok()?;
-            let _ = send_bundle_request(url, tx, start_block + 1);
+            let _ = send_bundle_request(url, &tx_encoded, start_block + 1);
             let mut current_block = start_block;
             loop {
                 if let Some(receipt) = client.get_tx_receipt(tx_hash).await.ok().flatten() {
@@ -78,13 +79,12 @@ pub async fn send_bundle(
                 }
                 let bn = client.get_last_block_number().await.ok()?;
                 if bn > start_block + config.builder_max_retries {
-                    // TODO configurable
                     debug!(%tx_hash, new_bn = bn, "giving up on builder. trying normal tx");
                     break None;
                 }
                 if bn != current_block {
                     debug!(%tx_hash, new_bn = bn, "resending bundle to builder");
-                    let _ = send_bundle_request(url, tx, bn + 1);
+                    let _ = send_bundle_request(url, &tx_encoded, bn + 1);
                     current_block = bn;
                 }
                 tokio::time::sleep(Duration::from_secs(6)).await;
