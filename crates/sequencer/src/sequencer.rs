@@ -111,7 +111,7 @@ pub struct Sequencer {
     needs_status_check: bool,
     timings: Timings,
     /// previous sequencing skip reason
-    previous_skip_reason: Option<String>,
+    previous_skip_reason: Option<&'static str>,
 }
 
 impl Sequencer {
@@ -460,8 +460,8 @@ impl Sequencer {
                     self.previous_skip_reason = None;
                     info!("we are the current operator and can sequence again");
                 }
-            } else if self.previous_skip_reason.clone().unwrap_or_default() != reason {
-                self.previous_skip_reason = Some(reason.to_string());
+            } else if self.previous_skip_reason != Some(reason) {
+                self.previous_skip_reason = Some(reason);
                 warn!(reason, "skipping sequencing even though we're the current operator");
             }
         }

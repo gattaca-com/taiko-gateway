@@ -313,7 +313,7 @@ impl LookaheadHandle {
 
     // Returns true if the operator can sequence based on the lookahead, the lookahead is only
     // updated 1 slot after the epoch starts, so we make an additional check
-    pub fn can_sequence(&mut self, operator: &Address) -> (bool, &str) {
+    pub fn can_sequence(&mut self, operator: &Address) -> (bool, &'static str) {
         if !self.preconfs_enabled.load(Ordering::Relaxed) {
             return (false, "preconfs are disabled");
         }
