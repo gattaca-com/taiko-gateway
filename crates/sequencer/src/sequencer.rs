@@ -453,7 +453,7 @@ impl Sequencer {
             }
             self.flags.lookahead_sequence = can_sequence;
         }
-        
+
         if is_current_operator {
             if can_sequence {
                 if self.previous_skip_reason.is_some() {
