@@ -7,7 +7,7 @@ use url::Url;
 pub struct RpcBundleResponse {
     pub jsonrpc: String,
     pub id: u32,
-    pub result: Option<String>,
+    pub result: Option<serde_json::Value>,
     pub error: Option<RpcBundleError>,
 }
 

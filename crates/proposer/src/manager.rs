@@ -598,7 +598,7 @@ impl ProposerManager {
             for slot_offset in 0..=self.lookahead.handover_window_slots() {
                 let target_block = start_block + 1 + slot_offset;
                 if let Err(e) = send_bundle_request(url, &tx_encoded, target_block).await {
-                    warn!(%e, %url, %tx_encoded, %target_block, "failed to send bundle to builder");
+                    warn!(%e, %url, %target_block, "failed to send bundle to builder");
                     all_success = false;
                     break;
                 }
