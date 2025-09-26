@@ -126,13 +126,13 @@ pub struct GatewayConfig {
     pub alert_prover_balance_threshold: f64,
 
     /// Number of blocks to wait for a receipt before giving up.
-    #[serde(default = "default_u64::<3>")]
+    #[serde(default = "default_u64::<2>")]
     pub receipt_wait_blocks: u64,
 
     /// Send exclusive tx (eth_sendBundle)
     pub builder_url: Option<Url>,
     /// Maximum number of blocks to try sending to builder before falling back to normal tx
-    #[serde(default = "default_u64::<3>")]
+    #[serde(default = "default_u64::<2>")]
     pub builder_max_retries: u64,
 }
 
