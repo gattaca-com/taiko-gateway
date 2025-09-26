@@ -624,7 +624,7 @@ impl ProposerManager {
                 break receipt;
             }
             let bn = self.client.get_last_block_number().await?;
-            if bn > start_block + 3 {
+            if bn > start_block + self.lookahead.handover_window_slots() {
                 bail!(ProposerError::TxNotIncludedInNextBlocks);
             }
             if send_tx_task.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
