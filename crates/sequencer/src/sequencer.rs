@@ -452,18 +452,11 @@ impl Sequencer {
                 warn!(reason, "can no longer sequence based on lookahead");
             }
             self.flags.lookahead_sequence = can_sequence;
-        }
-
-        if is_current_operator {
-            if can_sequence {
-                if self.previous_skip_reason.is_some() {
-                    self.previous_skip_reason = None;
-                    info!("we are the current operator and can sequence again");
-                }
-            } else if self.previous_skip_reason != Some(reason) {
-                self.previous_skip_reason = Some(reason);
-                warn!(reason, "skipping sequencing even though we're the current operator");
-            }
+        } else if is_current_operator && !can_sequence && self.previous_skip_reason.is_none() {
+            self.previous_skip_reason = Some(reason);
+            warn!(reason, "skipping sequencing even though we're the current operator");
+        } else if !is_current_operator {
+            self.previous_skip_reason = None;
         }
 
         self.flags.can_sequence = !self.flags.proposing_delayed &&
