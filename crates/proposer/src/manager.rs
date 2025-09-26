@@ -591,15 +591,12 @@ impl ProposerManager {
         let start = Instant::now();
 
         let start_block = self.client.get_last_block_number().await?;
-        let lookahead = self.lookahead.clone();
-        let client = self.client.clone();
-        let config = self.config.clone();
 
         let mut normal_tx_sent = false;
-        let normal_tx_at = if let Some(url) = config.builder_url.as_ref() {
+        let normal_tx_at = if let Some(url) = self.config.builder_url.as_ref() {
             let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
             let mut all_success = true;
-            for slot_offset in 0..=lookahead.handover_window_slots() {
+            for slot_offset in 0..=self.lookahead.handover_window_slots() {
                 let target_block = start_block + 1 + slot_offset;
                 if let Err(e) = send_bundle_request(url, &tx_encoded, target_block).await {
                     warn!(%e, %url, %tx_encoded, %target_block, "failed to send bundle to builder");
@@ -621,7 +618,7 @@ impl ProposerManager {
         let tx_receipt = loop {
             if !normal_tx_sent && Instant::now() >= normal_tx_at {
                 normal_tx_sent = true;
-                let hash = client.send_tx(tx.clone()).await?;
+                let hash = self.client.send_tx(tx.clone()).await?;
                 assert_eq!(tx_hash, hash);
             }
             if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
