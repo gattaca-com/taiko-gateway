@@ -7,8 +7,8 @@ use std::{
 };
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
-use alloy_eips::BlockId;
-use alloy_primitives::{Bytes, B256};
+use alloy_eips::{BlockId, Encodable2718};
+use alloy_primitives::{hex, Bytes, B256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
@@ -23,6 +23,7 @@ use pc_common::{
     runtime::spawn,
     sequencer::Order,
     taiko::{
+        lookahead::LookaheadHandle,
         pacaya::{
             encode_and_compress_orders, l1::TaikoL1::TaikoL1Errors, l2::TaikoL2,
             preconf::PreconfRouter::PreconfRouterErrors, propose_batch_blobs,
@@ -33,11 +34,11 @@ use pc_common::{
     types::FailReason,
     utils::{alert_discord, verify_and_log_block},
 };
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
 use tracing::{debug, error, info, warn};
 
 use super::L1Client;
-use crate::{builder::send_bundle, error::ProposerError};
+use crate::{builder::send_bundle_request, error::ProposerError};
 
 type AlloyProvider = alloy_provider::RootProvider;
 
@@ -73,6 +74,7 @@ pub struct ProposerManager {
     taiko_config: Arc<TaikoConfig>,
     safe_l1_lag: u64,
     beacon_handle: BeaconHandle,
+    lookahead: Arc<LookaheadHandle>,
 }
 
 impl ProposerManager {
@@ -83,6 +85,7 @@ impl ProposerManager {
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
         beacon_handle: BeaconHandle,
+        lookahead: Arc<LookaheadHandle>,
     ) -> Self {
         Self {
             config: config.into(),
@@ -91,6 +94,7 @@ impl ProposerManager {
             taiko_config: taiko_config.into(),
             safe_l1_lag,
             beacon_handle,
+            lookahead,
         }
     }
 
@@ -209,9 +213,9 @@ impl ProposerManager {
             // TODO: we could do something more here, eg check batches overlaps. For now dont make
             // it too complex and only check for the exact same batch
             if let Some(pending) = all_pending.iter().find(|p| {
-                p.anchor_block_id == *anchor_block_id &&
-                    p.start_block_num == start_block &&
-                    p.end_block_num == end_block
+                p.anchor_block_id == *anchor_block_id
+                    && p.start_block_num == start_block
+                    && p.end_block_num == end_block
             }) {
                 warn!(
                     nonce = pending.nonce,
@@ -586,40 +590,50 @@ impl ProposerManager {
 
         let start = Instant::now();
 
-        let maybe_builder_tx_receipt = match &self.config.builder_url {
-            Some(_) => match send_bundle(&self.client, &self.config, &tx, tx_hash).await {
-                Ok(receipt) => Some(receipt),
-                Err(err) => {
-                    warn!(%err, "failed to send bundle, falling back to normal tx");
-                    None
+        let start_block = self.client.get_last_block_number().await?;
+        let lookahead = self.lookahead.clone();
+        let client = self.client.clone();
+        let config = self.config.clone();
+
+        let mut send_tx_task = Some(tokio::spawn(async move {
+            if let Some(url) = config.builder_url.as_ref() {
+                let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
+                let mut all_success = true;
+                for slot_offset in 0..=lookahead.handover_window_slots() {
+                    let target_block = start_block + 1 + slot_offset;
+                    if let Err(e) = send_bundle_request(url, &tx_encoded, target_block).await {
+                        warn!(%e, %url, %tx_encoded, %target_block, "failed to send bundle to builder");
+                        all_success = false;
+                        break;
+                    }
                 }
-            },
-            None => None,
-        };
-
-        let tx_receipt = match maybe_builder_tx_receipt {
-            Some(receipt) => receipt,
-            None => {
-                let start_block = self.client.get_last_block_number().await?;
-                let hash = self.client.send_tx(tx).await?;
-                assert_eq!(tx_hash, hash);
-                // try to fetch the receipt for next 3 blocks, otherwise we assume it failed and
-                // we'll bump fees
-                loop {
-                    if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
-                        break receipt;
-                    }
-
-                    let bn = self.client.get_last_block_number().await?;
-
-                    if bn > start_block + self.config.receipt_wait_blocks {
-                        bail!(ProposerError::TxNotIncludedInNextBlocks);
-                    }
-
-                    tokio::time::sleep(Duration::from_secs(6)).await;
-                    warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt")
+                if all_success {
+                    sleep(Duration::from_secs(12 * config.builder_wait_receipt_blocks)).await;
                 }
             }
+            let hash = client.send_tx(tx).await?;
+            assert_eq!(tx_hash, hash);
+            Ok::<B256, eyre::ErrReport>(hash)
+        }));
+
+        let tx_receipt = loop {
+            if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
+                if let Some(task) = send_tx_task.take() {
+                    task.abort(); // no need to keep sending the tx anymore
+                }
+                break receipt;
+            }
+            let bn = self.client.get_last_block_number().await?;
+            if bn > start_block + 3 {
+                bail!(ProposerError::TxNotIncludedInNextBlocks);
+            }
+            if send_tx_task.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
+                if let Some(task) = send_tx_task.take() {
+                    task.await??; // if send failed, propagate error early
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt")
         };
 
         ProposerMetrics::proposal_latency(start.elapsed());
@@ -727,8 +741,8 @@ fn request_from_blocks(
         new_tx_list.extend(txs.clone());
 
         let compressed = encode_and_compress_orders(new_tx_list.clone(), false);
-        if compressed.len() > batch_target_size ||
-            cur_params.block_params.len() >= max_blocks_per_batch
+        if compressed.len() > batch_target_size
+            || cur_params.block_params.len() >= max_blocks_per_batch
         {
             // push previous params and start new one
             let new_params = ProposeBatchParams {

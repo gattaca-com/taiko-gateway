@@ -84,6 +84,7 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
         envs.proposer_signer_key.clone(),
         new_blocks_rx,
         beacon_handle,
+        lookahead.clone(),
     )
     .await
     .map_err(|e| eyre!("proposer init: {e}"))?;

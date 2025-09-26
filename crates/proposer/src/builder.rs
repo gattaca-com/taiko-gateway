@@ -1,16 +1,6 @@
-use std::time::Duration;
-
-use alloy_consensus::TxEnvelope;
-use alloy_eips::Encodable2718;
-use alloy_primitives::{hex, B256};
-use alloy_rpc_types::TransactionReceipt;
-use eyre::Result;
-use pc_common::config::ProposerConfig;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use url::Url;
-
-use crate::client::L1Client;
 
 /// Response structure for the RPC server
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +30,7 @@ pub fn bundle_request(tx_encoded: &str, block_number: u64) -> serde_json::Value 
     })
 }
 
-async fn send_bundle_request(
+pub async fn send_bundle_request(
     url: &Url,
     tx_encoded: &str,
     block_number: u64,
@@ -60,36 +50,6 @@ async fn send_bundle_request(
         return Err(eyre::eyre!("RPC Error {}: {}", error.code, error.message));
     }
 
-    info!(result = ?response.result, "Bundle sent successfully");
+    info!(result = ?response.result, ?block_number, "Bundle sent successfully");
     Ok(response)
-}
-
-pub async fn send_bundle(
-    client: &L1Client,
-    config: &ProposerConfig,
-    tx: &TxEnvelope,
-    tx_hash: B256,
-) -> Result<TransactionReceipt> {
-    let url =
-        config.builder_url.as_ref().ok_or_else(|| eyre::eyre!("Builder URL not configured"))?;
-    let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
-    let start_block = client.get_last_block_number().await?;
-
-    for i in 0..=config.builder_max_retries {
-        send_bundle_request(url, &tx_encoded, start_block + 1 + i).await?;
-    }
-
-    loop {
-        if let Some(receipt) = client.get_tx_receipt(tx_hash).await.ok().flatten() {
-            info!(%tx_hash, "tx included via builder");
-            break Ok(receipt);
-        }
-        let bn = client.get_last_block_number().await?;
-        if bn > start_block + config.builder_max_retries {
-            debug!(%tx_hash, new_bn = bn, "giving up on builder. trying normal tx");
-            break Err(eyre::eyre!("Giving up on builder"));
-        }
-        tokio::time::sleep(Duration::from_secs(6)).await;
-        warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt");
-    }
 }

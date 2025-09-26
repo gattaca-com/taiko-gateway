@@ -302,7 +302,7 @@ impl LookaheadHandle {
         }
     }
 
-    fn handover_window_slots(&self) -> u64 {
+    pub fn handover_window_slots(&self) -> u64 {
         self.handover_window_slots.load(Ordering::Relaxed)
     }
 

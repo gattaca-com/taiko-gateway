@@ -1,5 +1,7 @@
 //! Handles creating and landing L1 blockPropose transactions.
 
+use std::sync::Arc;
+
 use alloy_provider::ProviderBuilder;
 use alloy_signer_local::PrivateKeySigner;
 use client::L1Client;
@@ -9,6 +11,7 @@ use pc_common::{
     config::{ProposerConfig, StaticConfig, TaikoConfig},
     proposer::ProposalRequest,
     runtime::spawn,
+    taiko::lookahead::LookaheadHandle,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -23,6 +26,7 @@ pub async fn start_proposer(
     proposer_signer: PrivateKeySigner,
     new_blocks_rx: UnboundedReceiver<ProposalRequest>,
     beacon_handle: BeaconHandle,
+    lookahead: LookaheadHandle,
 ) -> eyre::Result<()> {
     let proposer_config: ProposerConfig = config.into();
 
@@ -46,6 +50,7 @@ pub async fn start_proposer(
         taiko_config,
         config.gateway.l1_safe_lag,
         beacon_handle,
+        Arc::new(lookahead),
     );
 
     // start proposer
