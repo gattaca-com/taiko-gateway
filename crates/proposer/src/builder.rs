@@ -59,6 +59,7 @@ async fn send_bundle_request(
         return Err(eyre::eyre!("RPC Error {}: {}", error.code, error.message));
     }
 
+    info!(result = ?response.result, "Bundle sent successfully");
     Ok(response)
 }
 
