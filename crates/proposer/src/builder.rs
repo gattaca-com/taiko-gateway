@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use crate::client::L1Client;
 use alloy_consensus::TxEnvelope;
 use alloy_eips::Encodable2718;
 use alloy_primitives::{hex, B256};
@@ -9,6 +8,8 @@ use pc_common::config::ProposerConfig;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use url::Url;
+
+use crate::client::L1Client;
 
 /// Response structure for the RPC server
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,7 +45,8 @@ async fn send_bundle_request(
     block_number: u64,
 ) -> eyre::Result<RpcBundleResponse> {
     let client = reqwest::Client::new();
-    let request = client.post(url.clone()).json(&bundle_request(tx_encoded, block_number)).send().await?;
+    let request =
+        client.post(url.clone()).json(&bundle_request(tx_encoded, block_number)).send().await?;
 
     if !request.status().is_success() {
         warn!(request_status = ?request.status(), "Failed to send bundle");
@@ -70,7 +72,7 @@ pub async fn send_bundle(
         Some(url) => {
             let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
             let start_block = client.get_last_block_number().await.ok()?;
-            let _ = send_bundle_request(url, &tx_encoded, start_block + 1);
+            let _ = send_bundle_request(url, &tx_encoded, start_block + 1).await;
             let mut current_block = start_block;
             loop {
                 if let Some(receipt) = client.get_tx_receipt(tx_hash).await.ok().flatten() {
@@ -84,7 +86,7 @@ pub async fn send_bundle(
                 }
                 if bn != current_block {
                     debug!(%tx_hash, new_bn = bn, "resending bundle to builder");
-                    let _ = send_bundle_request(url, &tx_encoded, bn + 1);
+                    let _ = send_bundle_request(url, &tx_encoded, bn + 1).await;
                     current_block = bn;
                 }
                 tokio::time::sleep(Duration::from_secs(6)).await;
