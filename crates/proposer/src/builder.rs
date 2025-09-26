@@ -4,6 +4,7 @@ use alloy_consensus::TxEnvelope;
 use alloy_eips::Encodable2718;
 use alloy_primitives::{hex, B256};
 use alloy_rpc_types::TransactionReceipt;
+use eyre::Result;
 use pc_common::config::ProposerConfig;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
@@ -68,32 +69,29 @@ pub async fn send_bundle(
     config: &ProposerConfig,
     tx: &TxEnvelope,
     tx_hash: B256,
-) -> Option<TransactionReceipt> {
-    match &config.builder_url {
-        Some(url) => {
-            let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
-            let start_block = client.get_last_block_number().await.ok()?;
-            let _ = send_bundle_request(url, &tx_encoded, start_block + 1).await;
-            let mut current_block = start_block;
-            loop {
-                if let Some(receipt) = client.get_tx_receipt(tx_hash).await.ok().flatten() {
-                    info!(%tx_hash, "tx included via builder");
-                    break Some(receipt);
-                }
-                let bn = client.get_last_block_number().await.ok()?;
-                if bn > start_block + config.builder_max_retries {
-                    debug!(%tx_hash, new_bn = bn, "giving up on builder. trying normal tx");
-                    break None;
-                }
-                if bn != current_block {
-                    debug!(%tx_hash, new_bn = bn, "resending bundle to builder");
-                    let _ = send_bundle_request(url, &tx_encoded, bn + 1).await;
-                    current_block = bn;
-                }
-                tokio::time::sleep(Duration::from_secs(6)).await;
-                warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt");
-            }
+) -> Result<TransactionReceipt> {
+    let url =
+        config.builder_url.as_ref().ok_or_else(|| eyre::eyre!("Builder URL not configured"))?;
+    let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
+    let start_block = client.get_last_block_number().await?;
+    send_bundle_request(url, &tx_encoded, start_block + 1).await?;
+    let mut current_block = start_block;
+    loop {
+        if let Some(receipt) = client.get_tx_receipt(tx_hash).await.ok().flatten() {
+            info!(%tx_hash, "tx included via builder");
+            break Ok(receipt);
         }
-        None => None,
+        let bn = client.get_last_block_number().await?;
+        if bn > start_block + config.builder_max_retries {
+            debug!(%tx_hash, new_bn = bn, "giving up on builder. trying normal tx");
+            break Err(eyre::eyre!("Giving up on builder"));
+        }
+        if bn != current_block {
+            debug!(%tx_hash, new_bn = bn, "resending bundle to builder");
+            send_bundle_request(url, &tx_encoded, bn + 1).await?;
+            current_block = bn;
+        }
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt");
     }
 }

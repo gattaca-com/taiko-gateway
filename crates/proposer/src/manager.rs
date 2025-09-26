@@ -586,7 +586,16 @@ impl ProposerManager {
 
         let start = Instant::now();
 
-        let maybe_builder_tx_receipt = send_bundle(&self.client, &self.config, &tx, tx_hash).await;
+        let maybe_builder_tx_receipt = match &self.config.builder_url {
+            Some(_) => match send_bundle(&self.client, &self.config, &tx, tx_hash).await {
+                Ok(receipt) => Some(receipt),
+                Err(err) => {
+                    warn!(%err, "failed to send bundle, falling back to normal tx");
+                    None
+                }
+            },
+            None => None,
+        };
 
         let tx_receipt = match maybe_builder_tx_receipt {
             Some(receipt) => receipt,
