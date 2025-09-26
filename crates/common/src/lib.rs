@@ -9,3 +9,5 @@ pub mod sequencer;
 pub mod taiko;
 pub mod types;
 pub mod utils;
+
+pub const COMMIT_HASH: &str = env!("GIT_HASH");

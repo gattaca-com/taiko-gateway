@@ -9,6 +9,7 @@ use pc_common::{
     runtime::{init_runtime, spawn},
     taiko::{get_and_validate_config, lookahead::start_lookahead_loop},
     utils::{init_panic_hook, init_statics, init_tracing_log},
+    COMMIT_HASH,
 };
 use pc_proposer::start_proposer;
 use pc_rpc::start_rpc;
@@ -18,6 +19,7 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
+    println!("Taiko gateway commit hash: {}", COMMIT_HASH.trim()); // print even before init_tracing_log
     let config = load_static_config();
     let envs = load_env_vars();
 
@@ -27,7 +29,7 @@ async fn main() {
     init_runtime();
     start_metrics_server();
 
-    info!("starting gateway");
+    info!("Starting gateway (commit: {})", COMMIT_HASH.trim());
 
     match run(config, envs).await {
         Ok(_) => info!("gateway exited"),
