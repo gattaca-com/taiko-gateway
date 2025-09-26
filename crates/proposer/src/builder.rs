@@ -1,5 +1,6 @@
+use eyre::bail;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
 use url::Url;
 
 /// Response structure for the RPC server
@@ -37,15 +38,19 @@ pub async fn send_bundle_request(
     let request =
         client.post(url.clone()).json(&bundle_request(tx_encoded, block_number)).send().await?;
 
-    if !request.status().is_success() {
-        warn!(request_status = ?request.status(), "Failed to send bundle");
-        return Err(eyre::eyre!("Failed to send bundle: HTTP {}", request.status()));
+    let status = request.status();
+    let body = request.bytes().await?;
+
+    if !status.is_success() {
+        bail!("failed to send bundle: code: {}, body: {body:?}", status);
     }
 
-    let response: RpcBundleResponse = request.json().await?;
+    let Ok(response) = serde_json::from_slice::<RpcBundleResponse>(body.as_ref()) else {
+        bail!("failed to decode response body: raw: {body:?}")
+    };
+
     if let Some(error) = &response.error {
-        warn!(%error.code, %error.message, "RPC error occurred");
-        return Err(eyre::eyre!("RPC Error {}: {}", error.code, error.message));
+        bail!("RPC Error {}: {}", error.code, error.message);
     }
 
     info!(result = ?response.result, ?block_number, "Bundle sent successfully");
