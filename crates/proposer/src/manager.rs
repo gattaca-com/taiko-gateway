@@ -625,7 +625,7 @@ impl ProposerManager {
                 break receipt;
             }
             let bn = self.client.get_last_block_number().await?;
-            if bn > start_block + self.lookahead.handover_window_slots() {
+            if bn > start_block + self.config.builder_wait_receipt_blocks + 2 {
                 bail!(ProposerError::TxNotIncludedInNextBlocks);
             }
             tokio::time::sleep(Duration::from_secs(3)).await;
