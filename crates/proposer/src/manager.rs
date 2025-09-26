@@ -592,8 +592,7 @@ impl ProposerManager {
 
         let start_block = self.client.get_last_block_number().await?;
 
-        let mut normal_tx_sent = false;
-        let normal_tx_at = if let Some(url) = self.config.builder_url.as_ref() {
+        let send_mempool_at = if let Some(url) = self.config.builder_url.as_ref() {
             let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
             let mut all_success = true;
             for slot_offset in 0..=self.lookahead.handover_window_slots() {
@@ -615,9 +614,10 @@ impl ProposerManager {
             Instant::now()
         };
 
+        let mut sent_memmpool = false;
         let tx_receipt = loop {
-            if !normal_tx_sent && Instant::now() >= normal_tx_at {
-                normal_tx_sent = true;
+            if !sent_memmpool && Instant::now() >= send_mempool_at {
+                sent_memmpool = true;
                 let hash = self.client.send_tx(tx.clone()).await?;
                 assert_eq!(tx_hash, hash);
             }
