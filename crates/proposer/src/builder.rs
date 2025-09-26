@@ -5,8 +5,6 @@ use url::Url;
 /// Response structure for the RPC server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcBundleResponse {
-    pub jsonrpc: String,
-    pub id: u32,
     pub result: Option<serde_json::Value>,
     pub error: Option<RpcBundleError>,
 }
