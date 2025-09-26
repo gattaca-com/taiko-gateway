@@ -19,6 +19,7 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
+    println!("Taiko gateway commit hash: {}", COMMIT_HASH.trim()); // print even before init_tracing_log
     let config = load_static_config();
     let envs = load_env_vars();
 
@@ -28,7 +29,7 @@ async fn main() {
     init_runtime();
     start_metrics_server();
 
-    info!(commit_hash = COMMIT_HASH, "starting gateway");
+    info!("Starting gateway (commit: {})", COMMIT_HASH.trim());
 
     match run(config, envs).await {
         Ok(_) => info!("gateway exited"),
