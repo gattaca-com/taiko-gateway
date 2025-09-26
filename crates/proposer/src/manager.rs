@@ -34,7 +34,7 @@ use pc_common::{
     types::FailReason,
     utils::{alert_discord, verify_and_log_block},
 };
-use tokio::{sync::mpsc::UnboundedReceiver, time::sleep};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
 
 use super::L1Client;
@@ -595,42 +595,41 @@ impl ProposerManager {
         let client = self.client.clone();
         let config = self.config.clone();
 
-        let mut send_tx_task = Some(tokio::spawn(async move {
-            if let Some(url) = config.builder_url.as_ref() {
-                let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
-                let mut all_success = true;
-                for slot_offset in 0..=lookahead.handover_window_slots() {
-                    let target_block = start_block + 1 + slot_offset;
-                    if let Err(e) = send_bundle_request(url, &tx_encoded, target_block).await {
-                        warn!(%e, %url, %tx_encoded, %target_block, "failed to send bundle to builder");
-                        all_success = false;
-                        break;
-                    }
-                }
-                if all_success {
-                    sleep(Duration::from_secs(12 * config.builder_wait_receipt_blocks)).await;
+        let mut normal_tx_sent = false;
+        let normal_tx_at = if let Some(url) = config.builder_url.as_ref() {
+            let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
+            let mut all_success = true;
+            for slot_offset in 0..=lookahead.handover_window_slots() {
+                let target_block = start_block + 1 + slot_offset;
+                if let Err(e) = send_bundle_request(url, &tx_encoded, target_block).await {
+                    warn!(%e, %url, %tx_encoded, %target_block, "failed to send bundle to builder");
+                    all_success = false;
+                    break;
                 }
             }
-            let hash = client.send_tx(tx).await?;
-            assert_eq!(tx_hash, hash);
-            Ok::<B256, eyre::ErrReport>(hash)
-        }));
+            if all_success {
+                Instant::now() +
+                    Duration::from_secs(12)
+                        .saturating_mul(self.config.builder_wait_receipt_blocks as u32)
+            } else {
+                Instant::now()
+            }
+        } else {
+            Instant::now()
+        };
 
         let tx_receipt = loop {
+            if !normal_tx_sent && Instant::now() >= normal_tx_at {
+                normal_tx_sent = true;
+                let hash = client.send_tx(tx.clone()).await?;
+                assert_eq!(tx_hash, hash);
+            }
             if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
-                if let Some(task) = send_tx_task.take() {
-                    task.abort(); // no need to keep sending the tx anymore
-                }
                 break receipt;
             }
             let bn = self.client.get_last_block_number().await?;
             if bn > start_block + self.lookahead.handover_window_slots() {
                 bail!(ProposerError::TxNotIncludedInNextBlocks);
-            }
-            if send_tx_task.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
-                if let Some(task) = send_tx_task.take() {
-                    task.await??; // if send failed, propagate error early
-                }
             }
             tokio::time::sleep(Duration::from_secs(3)).await;
             warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt")
