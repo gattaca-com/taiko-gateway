@@ -74,8 +74,11 @@ pub async fn send_bundle(
         config.builder_url.as_ref().ok_or_else(|| eyre::eyre!("Builder URL not configured"))?;
     let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
     let start_block = client.get_last_block_number().await?;
-    send_bundle_request(url, &tx_encoded, start_block + 1).await?;
-    let mut current_block = start_block;
+
+    for i in 0..=config.builder_max_retries {
+        send_bundle_request(url, &tx_encoded, start_block + 1 + i).await?;
+    }
+
     loop {
         if let Some(receipt) = client.get_tx_receipt(tx_hash).await.ok().flatten() {
             info!(%tx_hash, "tx included via builder");
@@ -85,11 +88,6 @@ pub async fn send_bundle(
         if bn > start_block + config.builder_max_retries {
             debug!(%tx_hash, new_bn = bn, "giving up on builder. trying normal tx");
             break Err(eyre::eyre!("Giving up on builder"));
-        }
-        if bn != current_block {
-            debug!(%tx_hash, new_bn = bn, "resending bundle to builder");
-            send_bundle_request(url, &tx_encoded, bn + 1).await?;
-            current_block = bn;
         }
         tokio::time::sleep(Duration::from_secs(6)).await;
         warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt");
