@@ -110,6 +110,8 @@ pub struct Sequencer {
     /// whether we need to call status and check highest unsafe block id
     needs_status_check: bool,
     timings: Timings,
+    /// previous sequencing skip reason
+    previous_skip_reason: Option<String>,
 }
 
 impl Sequencer {
@@ -144,6 +146,7 @@ impl Sequencer {
             anchor_error_count: 0,
             needs_status_check: true,
             timings: Timings::new(),
+            previous_skip_reason: None,
         }
     }
 
@@ -440,6 +443,7 @@ impl Sequencer {
             self.flags.l1_delayed = is_l1_delayed;
         }
 
+        let is_current_operator = self.lookahead.is_current_operator(&self.config.operator_address);
         let (can_sequence, reason) = self.lookahead.can_sequence(&self.config.operator_address);
         if can_sequence != self.flags.lookahead_sequence {
             if can_sequence {
@@ -448,6 +452,18 @@ impl Sequencer {
                 warn!(reason, "can no longer sequence based on lookahead");
             }
             self.flags.lookahead_sequence = can_sequence;
+        }
+        
+        if is_current_operator {
+            if can_sequence {
+                if self.previous_skip_reason.is_some() {
+                    self.previous_skip_reason = None;
+                    info!("we are the current operator and can sequence again");
+                }
+            } else if self.previous_skip_reason.clone().unwrap_or_default() != reason {
+                self.previous_skip_reason = Some(reason.to_string());
+                warn!(reason, "skipping sequencing even though we're the current operator");
+            }
         }
 
         self.flags.can_sequence = !self.flags.proposing_delayed &&
