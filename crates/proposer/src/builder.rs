@@ -1,3 +1,4 @@
+use alloy_primitives::B256;
 use eyre::bail;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -5,26 +6,32 @@ use url::Url;
 
 /// Response structure for the RPC server
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcBundleResponse {
-    pub result: Option<serde_json::Value>,
+struct RpcBundleResponse {
+    pub result: Option<BundleResult>,
     pub error: Option<RpcBundleError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BundleResult {
+    bundle_hash: B256,
 }
 
 /// Error structure for the RPC server
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcBundleError {
+struct RpcBundleError {
     pub code: i32,
     pub message: String,
 }
 
-pub fn bundle_request(tx_encoded: &str, block_number: u64) -> serde_json::Value {
+fn bundle_request(tx_encoded: &str, target_block: u64) -> serde_json::Value {
     serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "eth_sendBundle",
         "params": [{
             "txs": [tx_encoded],
-            "blockNumber": format!("0x{:x}", block_number),
+            "blockNumber": format!("0x{:x}", target_block),
         }]
     })
 }
@@ -32,11 +39,11 @@ pub fn bundle_request(tx_encoded: &str, block_number: u64) -> serde_json::Value 
 pub async fn send_bundle_request(
     url: &Url,
     tx_encoded: &str,
-    block_number: u64,
-) -> eyre::Result<RpcBundleResponse> {
+    target_block: u64,
+) -> eyre::Result<()> {
     let client = reqwest::Client::new();
     let request =
-        client.post(url.clone()).json(&bundle_request(tx_encoded, block_number)).send().await?;
+        client.post(url.clone()).json(&bundle_request(tx_encoded, target_block)).send().await?;
 
     let status = request.status();
     let body = request.bytes().await?;
@@ -53,6 +60,11 @@ pub async fn send_bundle_request(
         bail!("RPC Error {}: {}", error.code, error.message);
     }
 
-    info!(result = ?response.result, ?block_number, "Bundle sent successfully");
-    Ok(response)
+    let Some(result) = response.result else {
+        bail!("missing result and error, shouldn't happen: response: {response:?}");
+    };
+
+    info!(bundle_hash = %result.bundle_hash, target_block, "bundle sent successfully");
+
+    Ok(())
 }

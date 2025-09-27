@@ -617,6 +617,11 @@ impl ProposerManager {
         let mut sent_memmpool = false;
         let tx_receipt = loop {
             if !sent_memmpool && Instant::now() >= send_mempool_at {
+                if self.config.builder_url.is_some() {
+                    warn!("batch did not land with builder, sending to mempool");
+                    ProposerMetrics::builder_fallback();
+                }
+
                 sent_memmpool = true;
                 let hash = self.client.send_tx(tx.clone()).await?;
                 assert_eq!(tx_hash, hash);
@@ -638,6 +643,10 @@ impl ProposerManager {
         let block_number = tx_receipt.block_number.unwrap_or_default();
 
         if tx_receipt.status() {
+            if !sent_memmpool {
+                ProposerMetrics::builder_batch();
+            }
+
             info!(
                 %tx_hash,
                 l1_bn = block_number,
