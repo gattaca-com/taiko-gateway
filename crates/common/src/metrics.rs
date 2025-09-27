@@ -197,6 +197,13 @@ lazy_static! {
     static ref PROPOSED_BATCHES: IntCounterVec =
         register_int_counter_vec_with_registry!("proposer_proposed_batches", "Number of batches proposed", &["result"], &REGISTRY).unwrap();
 
+    /// How many batches landed with the builder
+    static ref BUILDER_BATCHES: IntCounter =
+        register_int_counter_with_registry!("builder_batches", "Number of builder batches proposed", &REGISTRY).unwrap();
+
+    static ref BUILDER_FALLBACK: IntCounter =
+        register_int_counter_with_registry!("builder_fallback", "Number of batches sent to mempool after waiting for builder", &REGISTRY).unwrap();
+
     /// Batch size in bytes
     static ref BATCH_SIZE: Histogram =
         register_histogram_with_registry!("proposer_batch_size_bytes", "Batch size in bytes", exponential_buckets(1.0, 3.0, 16).unwrap(), &REGISTRY).unwrap();
@@ -241,6 +248,14 @@ pub struct ProposerMetrics;
 impl ProposerMetrics {
     pub fn proposed_batches(is_success: bool) {
         PROPOSED_BATCHES.with_label_values(&[if is_success { "success" } else { "failed" }]).inc();
+    }
+
+    pub fn builder_batch() {
+        BUILDER_BATCHES.inc();
+    }
+
+    pub fn builder_fallback() {
+        BUILDER_FALLBACK.inc();
     }
 
     pub fn batch_size(size: u64) {

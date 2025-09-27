@@ -46,3 +46,5 @@ throttle_factor = 0.1
 blob_target = 3
 # minimum priority fee to use for batch proposals in gwei
 min_priority_fee = 1.0
+
+builder_url = "https://rpc.builder.xyz"
