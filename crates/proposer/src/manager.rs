@@ -7,8 +7,8 @@ use std::{
 };
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
-use alloy_eips::BlockId;
-use alloy_primitives::{Bytes, B256};
+use alloy_eips::{BlockId, Encodable2718};
+use alloy_primitives::{hex, Bytes, B256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Block, BlockTransactionsKind};
 use alloy_sol_types::SolCall;
@@ -23,6 +23,7 @@ use pc_common::{
     runtime::spawn,
     sequencer::Order,
     taiko::{
+        lookahead::LookaheadHandle,
         pacaya::{
             encode_and_compress_orders, l1::TaikoL1::TaikoL1Errors, l2::TaikoL2,
             preconf::PreconfRouter::PreconfRouterErrors, propose_batch_blobs,
@@ -37,7 +38,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{debug, error, info, warn};
 
 use super::L1Client;
-use crate::error::ProposerError;
+use crate::{builder::send_bundle_request, error::ProposerError};
 
 type AlloyProvider = alloy_provider::RootProvider;
 
@@ -73,6 +74,7 @@ pub struct ProposerManager {
     taiko_config: Arc<TaikoConfig>,
     safe_l1_lag: u64,
     beacon_handle: BeaconHandle,
+    lookahead: Arc<LookaheadHandle>,
 }
 
 impl ProposerManager {
@@ -83,6 +85,7 @@ impl ProposerManager {
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
         beacon_handle: BeaconHandle,
+        lookahead: Arc<LookaheadHandle>,
     ) -> Self {
         Self {
             config: config.into(),
@@ -91,6 +94,7 @@ impl ProposerManager {
             taiko_config: taiko_config.into(),
             safe_l1_lag,
             beacon_handle,
+            lookahead,
         }
     }
 
@@ -549,7 +553,7 @@ impl ProposerManager {
 
         if nonce > *last_used_nonce {
             warn!("nonce is higher than override, most likely tx got already confirmed. Returning");
-            return Ok(())
+            return Ok(());
         }
 
         *last_used_nonce = nonce;
@@ -581,29 +585,56 @@ impl ProposerManager {
                 .await?
         };
 
-        let current_block = self.client.get_last_block_number().await?;
         let tx_hash = *tx.tx_hash();
         info!(nonce, bump_fees, "type" = %tx.tx_type(), %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
-        let hash = self.client.send_tx(tx).await?;
-        assert_eq!(tx_hash, hash);
 
-        // try to fetch the receipt for next 3 blocks, otherwise we assume it failed and we'll bump
-        // fees
+        let start_block = self.client.get_last_block_number().await?;
+
+        let send_mempool_at = if let Some(url) = self.config.builder_url.as_ref() {
+            let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
+            let mut all_success = true;
+            for slot_offset in 0..=self.lookahead.handover_window_slots() {
+                let target_block = start_block + 1 + slot_offset;
+                if let Err(e) = send_bundle_request(url, &tx_encoded, target_block).await {
+                    warn!(%e, %url, %target_block, "failed to send bundle to builder");
+                    all_success = false;
+                    break;
+                }
+            }
+            if all_success {
+                Instant::now() +
+                    Duration::from_secs(12)
+                        .saturating_mul(self.config.builder_wait_receipt_blocks as u32)
+            } else {
+                Instant::now()
+            }
+        } else {
+            Instant::now()
+        };
+
+        let mut sent_memmpool = false;
         let tx_receipt = loop {
+            if !sent_memmpool && Instant::now() >= send_mempool_at {
+                if self.config.builder_url.is_some() {
+                    warn!("batch did not land with builder, sending to mempool");
+                    ProposerMetrics::builder_fallback();
+                }
+
+                sent_memmpool = true;
+                let hash = self.client.send_tx(tx.clone()).await?;
+                assert_eq!(tx_hash, hash);
+            }
             if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
                 break receipt;
             }
-
             let bn = self.client.get_last_block_number().await?;
-
-            if bn > current_block + 3 {
+            if bn > start_block + self.config.builder_wait_receipt_blocks + 2 {
                 bail!(ProposerError::TxNotIncludedInNextBlocks);
             }
-
-            tokio::time::sleep(Duration::from_secs(6)).await;
-            warn!(sent_bn = current_block, l1_bn = bn, %tx_hash, "waiting for receipt")
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            warn!(sent_bn = start_block, l1_bn = bn, %tx_hash, "waiting for receipt")
         };
 
         ProposerMetrics::proposal_latency(start.elapsed());
@@ -612,6 +643,10 @@ impl ProposerManager {
         let block_number = tx_receipt.block_number.unwrap_or_default();
 
         if tx_receipt.status() {
+            if !sent_memmpool {
+                ProposerMetrics::builder_batch();
+            }
+
             info!(
                 %tx_hash,
                 l1_bn = block_number,

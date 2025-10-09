@@ -20,6 +20,7 @@ alloy-transport-http.workspace = true
 eyre.workspace = true
 pc-common.workspace = true
 reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
