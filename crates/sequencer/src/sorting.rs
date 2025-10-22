@@ -125,6 +125,12 @@ impl ActiveOrders {
     }
 }
 
+impl Default for ActiveOrders {
+    fn default() -> Self {
+        Self { tx_lists: VecDeque::new(), num_txs: 0 }
+    }
+}
+
 impl SortData {
     pub fn new(
         block_info: BlockInfo,

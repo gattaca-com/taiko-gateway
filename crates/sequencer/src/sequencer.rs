@@ -253,9 +253,9 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                if !self.tx_pool.has_valid_orders() {
-                    return SequencerState::default();
-                }
+                // if !self.tx_pool.has_valid_orders() {
+                //     return SequencerState::default();
+                // }
 
                 if !self.timings.can_retry_anchor() {
                     return SequencerState::default();
@@ -294,13 +294,9 @@ impl Sequencer {
                         self.anchor_error_count = 0;
                         debug!(?block_info, %state_id, "anchored");
 
-                        let Some(active) = self
+                        let active = self
                             .tx_pool
-                            .active_orders(block_info.block_number, block_info.base_fee)
-                        else {
-                            self.tx_pool.set_no_valid_orders();
-                            return SequencerState::default();
-                        };
+                            .active_orders(block_info.block_number, block_info.base_fee).unwrap_or_default();
 
                         if throttled_block_size != max_block_size {
                             warn!(
