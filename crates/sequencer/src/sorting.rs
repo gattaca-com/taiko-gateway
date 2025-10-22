@@ -66,7 +66,7 @@ pub struct SortData {
     max_block_skips: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ActiveOrders {
     tx_lists: VecDeque<TxList>,
     /// Number of all pending txs in tx lists
@@ -122,12 +122,6 @@ impl ActiveOrders {
                 tx.first_ready(state_nonce, base_fee)
             })
             .take(max)
-    }
-}
-
-impl Default for ActiveOrders {
-    fn default() -> Self {
-        Self { tx_lists: VecDeque::new(), num_txs: 0 }
     }
 }
 

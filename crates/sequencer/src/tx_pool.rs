@@ -166,14 +166,6 @@ impl TxPool {
         self.nonces.clear();
     }
 
-    pub fn set_no_valid_orders(&mut self) {
-        self.valid_orders = false;
-    }
-
-    pub fn has_valid_orders(&self) -> bool {
-        self.valid_orders
-    }
-
     pub fn report_and_sanity_check(&mut self, parent_block: u64, simulator: &SimulatorClient) {
         if self.tx_lists.is_empty() {
             info!(discarded_orders = self.discarded_orders, "expty tx pool");

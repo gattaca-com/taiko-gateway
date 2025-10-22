@@ -253,10 +253,6 @@ impl Sequencer {
                     return SequencerState::default();
                 }
 
-                // if !self.tx_pool.has_valid_orders() {
-                //     return SequencerState::default();
-                // }
-
                 if !self.timings.can_retry_anchor() {
                     return SequencerState::default();
                 }
@@ -296,7 +292,8 @@ impl Sequencer {
 
                         let active = self
                             .tx_pool
-                            .active_orders(block_info.block_number, block_info.base_fee).unwrap_or_default();
+                            .active_orders(block_info.block_number, block_info.base_fee)
+                            .unwrap_or_default();
 
                         if throttled_block_size != max_block_size {
                             warn!(
