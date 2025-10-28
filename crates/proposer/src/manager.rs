@@ -79,6 +79,7 @@ pub struct ProposerManager {
 }
 
 impl ProposerManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: ProposerConfig,
         client: L1Client,
@@ -216,9 +217,9 @@ impl ProposerManager {
             // TODO: we could do something more here, eg check batches overlaps. For now dont make
             // it too complex and only check for the exact same batch
             if let Some(pending) = all_pending.iter().find(|p| {
-                p.anchor_block_id == *anchor_block_id
-                    && p.start_block_num == start_block
-                    && p.end_block_num == end_block
+                p.anchor_block_id == *anchor_block_id &&
+                    p.start_block_num == start_block &&
+                    p.end_block_num == end_block
             }) {
                 warn!(
                     nonce = pending.nonce,
@@ -607,8 +608,8 @@ impl ProposerManager {
                 }
             }
             if all_success {
-                Instant::now()
-                    + Duration::from_secs(12)
+                Instant::now() +
+                    Duration::from_secs(12)
                         .saturating_mul(self.config.builder_wait_receipt_blocks as u32)
             } else {
                 Instant::now()
@@ -754,8 +755,8 @@ fn request_from_blocks(
         new_tx_list.extend(txs.clone());
 
         let compressed = encode_and_compress_orders(new_tx_list.clone(), false);
-        if compressed.len() > batch_target_size
-            || cur_params.block_params.len() >= max_blocks_per_batch
+        if compressed.len() > batch_target_size ||
+            cur_params.block_params.len() >= max_blocks_per_batch
         {
             // push previous params and start new one
             let new_params = ProposeBatchParams {
