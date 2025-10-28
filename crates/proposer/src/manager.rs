@@ -70,6 +70,7 @@ impl std::fmt::Debug for PendingProposal {
 pub struct ProposerManager {
     config: Arc<ProposerConfig>,
     client: Arc<L1Client>,
+    tx_send_provider: Option<AlloyProvider>,
     l2_provider: Arc<AlloyProvider>,
     taiko_config: Arc<TaikoConfig>,
     safe_l1_lag: u64,
@@ -81,6 +82,7 @@ impl ProposerManager {
     pub fn new(
         config: ProposerConfig,
         client: L1Client,
+        tx_send_provider: Option<AlloyProvider>,
         l2_provider: AlloyProvider,
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
@@ -90,6 +92,7 @@ impl ProposerManager {
         Self {
             config: config.into(),
             client: client.into(),
+            tx_send_provider,
             l2_provider: l2_provider.into(),
             taiko_config: taiko_config.into(),
             safe_l1_lag,
@@ -213,9 +216,9 @@ impl ProposerManager {
             // TODO: we could do something more here, eg check batches overlaps. For now dont make
             // it too complex and only check for the exact same batch
             if let Some(pending) = all_pending.iter().find(|p| {
-                p.anchor_block_id == *anchor_block_id &&
-                    p.start_block_num == start_block &&
-                    p.end_block_num == end_block
+                p.anchor_block_id == *anchor_block_id
+                    && p.start_block_num == start_block
+                    && p.end_block_num == end_block
             }) {
                 warn!(
                     nonce = pending.nonce,
@@ -604,8 +607,8 @@ impl ProposerManager {
                 }
             }
             if all_success {
-                Instant::now() +
-                    Duration::from_secs(12)
+                Instant::now()
+                    + Duration::from_secs(12)
                         .saturating_mul(self.config.builder_wait_receipt_blocks as u32)
             } else {
                 Instant::now()
@@ -623,7 +626,12 @@ impl ProposerManager {
                 }
 
                 sent_memmpool = true;
-                let hash = self.client.send_tx(tx.clone()).await?;
+                let hash = match &self.tx_send_provider {
+                    None => self.client.send_tx(tx.clone()).await?,
+                    Some(provider) => {
+                        *provider.send_transaction(tx.clone().into()).await?.tx_hash()
+                    }
+                };
                 assert_eq!(tx_hash, hash);
             }
             if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {
@@ -746,8 +754,8 @@ fn request_from_blocks(
         new_tx_list.extend(txs.clone());
 
         let compressed = encode_and_compress_orders(new_tx_list.clone(), false);
-        if compressed.len() > batch_target_size ||
-            cur_params.block_params.len() >= max_blocks_per_batch
+        if compressed.len() > batch_target_size
+            || cur_params.block_params.len() >= max_blocks_per_batch
         {
             // push previous params and start new one
             let new_params = ProposeBatchParams {
