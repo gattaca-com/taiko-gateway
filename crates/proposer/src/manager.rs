@@ -629,9 +629,7 @@ impl ProposerManager {
                 sent_memmpool = true;
                 let hash = match &self.tx_send_provider {
                     None => self.client.send_tx(tx.clone()).await?,
-                    Some(provider) => {
-                        *provider.send_transaction(tx.clone().into()).await?.tx_hash()
-                    }
+                    Some(provider) => *provider.send_tx_envelope(tx.clone()).await?.tx_hash(),
                 };
                 assert_eq!(tx_hash, hash);
             }
