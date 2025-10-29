@@ -268,8 +268,14 @@ impl L1Client {
         Ok(signed.into())
     }
 
+    #[allow(dead_code)]
     pub async fn send_tx(&self, tx: TxEnvelope) -> eyre::Result<B256> {
         let pending = self.provider().send_tx_envelope(tx).await?;
+        Ok(*pending.tx_hash())
+    }
+
+    pub async fn send_raw_tx(&self, raw_tx: &[u8]) -> eyre::Result<B256> {
+        let pending = self.provider().send_raw_transaction(raw_tx).await?;
         Ok(*pending.tx_hash())
     }
 

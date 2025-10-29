@@ -7,7 +7,7 @@ use std::{
 };
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
-use alloy_eips::{BlockId, Encodable2718};
+use alloy_eips::{eip4844::env_settings::EnvKzgSettings, BlockId, Encodable2718};
 use alloy_network::TransactionResponse;
 use alloy_primitives::{hex, Bytes, B256};
 use alloy_provider::Provider;
@@ -564,9 +564,10 @@ impl ProposerManager {
 
         *last_used_nonce = nonce;
 
-        let tx = if let Some(sidecar) = sidecar {
+        let (tx, tx_hash, tx_type) = if let Some(sidecar) = sidecar {
             debug!(nonce, blobs = sidecar.blobs.len(), "building blob tx");
-            self.client
+            let tx_blob = self
+                .client
                 .build_eip4844(
                     input,
                     nonce,
@@ -577,9 +578,24 @@ impl ProposerManager {
                     gas_fee_cap,
                     self.config.min_priority_fee,
                 )
-                .await?
+                .await?;
+            if true {
+                // TODO: implement switching logic. this is for fusaka transition.
+                (tx_blob.encoded_2718(), *tx_blob.tx_hash(), tx_blob.tx_type())
+            } else {
+                let tx_7594 = tx_blob
+                    .try_into_pooled()?
+                    .try_map_eip4844(|tx| {
+                        tx.try_map_sidecar(|sidecar| {
+                            sidecar.try_into_7594(EnvKzgSettings::Default.get())
+                        })
+                    })
+                    .inspect_err(|e| error!(%e, "failed to convert sidecar to 7594"))?;
+                (tx_7594.encoded_2718(), *tx_7594.tx_hash(), tx_7594.tx_type())
+            }
         } else {
-            self.client
+            let tx_calldata = self
+                .client
                 .build_eip1559(
                     input,
                     nonce,
@@ -588,18 +604,18 @@ impl ProposerManager {
                     gas_fee_cap,
                     self.config.min_priority_fee,
                 )
-                .await?
+                .await?;
+            (tx_calldata.encoded_2718(), *tx_calldata.tx_hash(), tx_calldata.tx_type())
         };
 
-        let tx_hash = *tx.tx_hash();
-        info!(nonce, bump_fees, "type" = %tx.tx_type(), %tx_hash, "sending blocks proposal tx");
+        info!(nonce, bump_fees, "type" = %tx_type, %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
 
         let start_block = self.client.get_last_block_number().await?;
 
         let send_mempool_at = if let Some(url) = self.config.builder_url.as_ref() {
-            let tx_encoded = format!("0x{}", hex::encode(tx.encoded_2718()));
+            let tx_encoded = format!("0x{}", hex::encode(&tx));
             let mut all_success = true;
             for slot_offset in 0..=self.lookahead.handover_window_slots() {
                 let target_block = start_block + 1 + slot_offset;
@@ -630,8 +646,10 @@ impl ProposerManager {
 
                 sent_memmpool = true;
                 let hash = match &self.tx_send_provider {
-                    None => self.client.send_tx(tx.clone()).await?,
-                    Some(provider) => *provider.send_tx_envelope(tx.clone()).await?.tx_hash(),
+                    None => self.client.send_raw_tx(tx.as_slice()).await?,
+                    Some(provider) => {
+                        *provider.send_raw_transaction(tx.as_slice()).await?.tx_hash()
+                    }
                 };
                 assert_eq!(tx_hash, hash);
             }
