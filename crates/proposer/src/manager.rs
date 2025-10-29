@@ -647,10 +647,8 @@ impl ProposerManager {
 
                 sent_memmpool = true;
                 let hash = match &self.tx_send_provider {
-                    None => self.client.send_raw_tx(tx.as_slice()).await?,
-                    Some(provider) => {
-                        *provider.send_raw_transaction(tx.as_slice()).await?.tx_hash()
-                    }
+                    None => self.client.send_raw_tx(&tx).await?,
+                    Some(provider) => *provider.send_raw_transaction(&tx).await?.tx_hash(),
                 };
                 assert_eq!(tx_hash, hash);
             }
