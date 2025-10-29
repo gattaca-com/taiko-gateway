@@ -583,6 +583,7 @@ impl ProposerManager {
                 // TODO: implement switching logic. this is for fusaka transition.
                 (tx_blob.encoded_2718(), *tx_blob.tx_hash(), tx_blob.tx_type())
             } else {
+                // https://github.com/alloy-rs/examples/blob/614f81e27ea2ac118fc73abdc9793917886479a6/examples/transactions/examples/send_eip7594_transaction.rs
                 let tx_7594 = tx_blob
                     .try_into_pooled()?
                     .try_map_eip4844(|tx| {
