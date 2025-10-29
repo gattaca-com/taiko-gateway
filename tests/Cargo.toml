@@ -6,18 +6,18 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-pc-common.workspace = true
-pc-rpc.workspace = true
-alloy-primitives.workspace = true
-alloy-network.workspace = true
+alloy-consensus.workspace = true
 alloy-eips.workspace = true
+alloy-network.workspace = true
+alloy-primitives.workspace = true
 alloy-provider.workspace = true
 alloy-rpc-types.workspace = true
 alloy-signer.workspace = true
 alloy-signer-local.workspace = true
 alloy-transport-http.workspace = true
-alloy-consensus.workspace = true
 jsonrpsee.workspace = true
+pc-common.workspace = true
+pc-rpc.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

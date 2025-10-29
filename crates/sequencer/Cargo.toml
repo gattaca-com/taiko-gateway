@@ -7,12 +7,12 @@ publish = false
 
 [dependencies]
 alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-network.workspace = true
 alloy-primitives.workspace = true
 alloy-provider.workspace = true
-alloy-network.workspace = true
 alloy-rlp.workspace = true
 alloy-rpc-types.workspace = true
-alloy-eips.workspace = true
 alloy-sol-types.workspace = true
 crossbeam-channel.workspace = true
 eyre.workspace = true
@@ -22,6 +22,6 @@ pc-common.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-thiserror.workspace = true

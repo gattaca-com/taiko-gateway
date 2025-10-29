@@ -44,6 +44,9 @@ prometheus = "0.13.4"
 reqwest = { version = "0.12.4", features = ["blocking", "json"] }
 serde = { version = "1.0.203", features = ["derive", "rc"] }
 serde_json = "1.0.117"
+
+taiko_event_indexer = { git = "https://github.com/taikoxyz/taiko-mono.git", rev = "b11cec492e8f91a7e0aa41f76a906620e3618523", package = "event-indexer", version = "2.0.0" }
+taiko_rpc = { git = "https://github.com/taikoxyz/taiko-mono.git", rev = "b11cec492e8f91a7e0aa41f76a906620e3618523", package = "rpc", version = "2.0.0" }
 thiserror = "2.0.11"
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-tungstenite = "0.26.2"
