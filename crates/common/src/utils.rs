@@ -206,7 +206,7 @@ pub fn extract_revert_reason<T: SolInterface>(input: &str) -> Option<T> {
     let hex_str = input.get(code_start..code_end)?;
 
     let bytes = hex::decode(hex_str).ok()?;
-    let err = T::abi_decode(&bytes, true).ok()?;
+    let err = T::abi_decode(&bytes).ok()?;
 
     Some(err)
 }

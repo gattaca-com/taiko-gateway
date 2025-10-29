@@ -73,6 +73,7 @@ pub fn assemble_anchor_v3(
 #[cfg(test)]
 mod tests {
     use alloy_consensus::Transaction;
+    use alloy_network::TransactionResponse;
     use alloy_primitives::{address, b256, hex, Address, Bytes};
     use alloy_provider::{Provider, ProviderBuilder};
     use alloy_rpc_types::Block;
@@ -106,7 +107,7 @@ mod tests {
             b256!("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
         let signal_slots = vec![anchor_state_root, anchor_input];
 
-        let l2_provider = ProviderBuilder::new().on_http("http://abc.xyz".parse().unwrap());
+        let l2_provider = ProviderBuilder::new().connect_http("http://abc.xyz".parse().unwrap());
         let taiko_l2 = address!("1234567890abcdef1234567890abcdef12345678");
 
         let taiko_l2 = TaikoL2::new(taiko_l2, l2_provider);
@@ -154,11 +155,10 @@ mod tests {
 
         let block_transactions = block.transactions.as_transactions().unwrap().to_vec();
         let block_anchor = block_transactions.first().unwrap();
-        assert_eq!(block_anchor.from, GOLDEN_TOUCH_ADDRESS);
+        assert_eq!(block_anchor.from(), GOLDEN_TOUCH_ADDRESS);
         assert_eq!(block_anchor.nonce(), parent_block.header.number);
 
-        let anchor_call =
-            anchorV3Call::abi_decode(&block_anchor.input(), true).expect("decode input");
+        let anchor_call = anchorV3Call::abi_decode(&block_anchor.input()).expect("decode input");
 
         let anchor_block_id = anchor_call._anchorBlockId;
         let anchor_state_root = anchor_call._anchorStateRoot;
@@ -252,9 +252,9 @@ mod tests {
         assert_eq!(l2_block.header.number, 5);
 
         let anchor_tx = l2_block.transactions.txns().next().unwrap().clone();
-        assert_eq!(anchor_tx.from, GOLDEN_TOUCH_ADDRESS);
+        assert_eq!(anchor_tx.from(), GOLDEN_TOUCH_ADDRESS);
 
-        let anchor_call = anchorV3Call::abi_decode(&anchor_tx.input(), true).expect("decode input");
+        let anchor_call = anchorV3Call::abi_decode(&anchor_tx.input()).expect("decode input");
 
         assert_eq!(anchor_call._anchorStateRoot, anchor_block.header.state_root);
 
@@ -268,20 +268,20 @@ mod tests {
             .unwrap();
 
         let input = propose_tx.input();
-        let call = proposeBatchCall::abi_decode(&input, true).expect("decode input");
+        let call = proposeBatchCall::abi_decode(&input).expect("decode input");
 
         let params = call._params;
 
-        assert!(BatchParams::abi_decode(&params, true).is_ok());
+        assert!(BatchParams::abi_decode(&params).is_ok());
     }
 
     #[ignore]
     #[tokio::test]
     async fn test_fetch_block() {
         let provider =
-            ProviderBuilder::new().on_http("http://18.199.195.154:18545".parse().unwrap());
+            ProviderBuilder::new().connect_http("http://18.199.195.154:18545".parse().unwrap());
 
-        let bn = provider.get_block_by_number(751.into(), true.into()).await.unwrap().unwrap();
+        let bn = provider.get_block_by_number(751.into()).await.unwrap().unwrap();
 
         let s = serde_json::to_string(&bn).unwrap();
         println!("{}", s);
@@ -299,7 +299,7 @@ mod tests {
     fn test_decode_l2_error() {
         let bytes = hex!("d719258d");
 
-        let err = TaikoL2Errors::abi_decode(&bytes, true).unwrap();
+        let err = TaikoL2Errors::abi_decode(&bytes).unwrap();
         println!("{:?}", err);
     }
 
@@ -308,7 +308,7 @@ mod tests {
     fn test_decode_l1_error() {
         let bytes = hex!("fe1698b2");
 
-        let err = TaikoL1Errors::abi_decode(&bytes, true).unwrap();
+        let err = TaikoL1Errors::abi_decode(&bytes).unwrap();
         println!("{:?}", err);
     }
 
@@ -317,7 +317,7 @@ mod tests {
     fn test_decode_router_error() {
         let bytes = hex!("47fac6c1");
 
-        let err = PreconfRouterErrors::abi_decode(&bytes, true).unwrap();
+        let err = PreconfRouterErrors::abi_decode(&bytes).unwrap();
         println!("{:?}", err);
     }
 
@@ -326,7 +326,7 @@ mod tests {
     fn test_decode_whitelist_error() {
         let bytes = hex!("83738f36");
 
-        let err = PreconfWhitelistErrors::abi_decode(&bytes, true).unwrap();
+        let err = PreconfWhitelistErrors::abi_decode(&bytes).unwrap();
         println!("{:?}", err);
     }
 }

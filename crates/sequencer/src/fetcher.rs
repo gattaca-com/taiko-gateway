@@ -9,7 +9,7 @@ use std::{
 use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::U256;
 use alloy_provider::{Provider, ProviderBuilder, RootProvider, WsConnect};
-use alloy_rpc_types::{Block, BlockTransactionsKind, Header};
+use alloy_rpc_types::{Block, Header};
 use crossbeam_channel::Sender;
 use eyre::OptionExt;
 use pc_common::metrics::BlocksMetrics;
@@ -42,7 +42,7 @@ impl BlockFetcher {
         let backoff = 4;
 
         let provider =
-            ProviderBuilder::new().disable_recommended_fillers().on_http(self.url.clone());
+            ProviderBuilder::new().disable_recommended_fillers().connect_http(self.url.clone());
 
         let last_block = provider.get_block_number().await.expect("failed to fetch last block");
 
@@ -76,7 +76,7 @@ impl BlockFetcher {
         let backoff = 4;
 
         let provider =
-            ProviderBuilder::new().disable_recommended_fillers().on_http(self.url.clone());
+            ProviderBuilder::new().disable_recommended_fillers().connect_http(self.url.clone());
 
         let last_block = provider.get_block_number().await.expect("failed to fetch last block");
 
@@ -126,7 +126,7 @@ async fn fetch_last_headers(
 ) -> eyre::Result<()> {
     for i in start_block..=end_block {
         let block = provider
-            .get_block_by_number(BlockNumberOrTag::Number(i), BlockTransactionsKind::Hashes)
+            .get_block_by_number(BlockNumberOrTag::Number(i))
             .await?
             .ok_or_eyre("failed to fetch latest block")?;
 
@@ -144,7 +144,8 @@ async fn fetch_last_blocks(
 ) -> eyre::Result<()> {
     for i in start_block..=end_block {
         let block = provider
-            .get_block_by_number(BlockNumberOrTag::Number(i), BlockTransactionsKind::Full)
+            .get_block_by_number(BlockNumberOrTag::Number(i))
+            .full()
             .await?
             .ok_or_eyre("failed to fetch latest block")?;
 
@@ -157,8 +158,10 @@ async fn fetch_last_blocks(
 async fn subscribe_headers(ws_url: Url, tx: Sender<Header>) -> eyre::Result<()> {
     info!(%ws_url, "subscribing to headers");
 
-    let provider =
-        ProviderBuilder::new().disable_recommended_fillers().on_ws(WsConnect::new(ws_url)).await?;
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_ws(WsConnect::new(ws_url))
+        .await?;
     let mut sub = provider.subscribe_blocks().await?;
     while let Ok(header) = sub.recv().await {
         let _ = tx.send(header);
@@ -170,17 +173,17 @@ async fn subscribe_headers(ws_url: Url, tx: Sender<Header>) -> eyre::Result<()> 
 async fn subscribe_blocks(rpc_url: Url, ws_url: Url, tx: Sender<Block>) -> eyre::Result<()> {
     info!(%ws_url, "subscribing to blocks");
 
-    let http_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(rpc_url);
-    let ws_provider =
-        ProviderBuilder::new().disable_recommended_fillers().on_ws(WsConnect::new(ws_url)).await?;
+    let http_provider = ProviderBuilder::new().disable_recommended_fillers().connect_http(rpc_url);
+    let ws_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_ws(WsConnect::new(ws_url))
+        .await?;
     let mut sub = ws_provider.subscribe_blocks().await?;
 
     while let Ok(header) = sub.recv().await {
         let block = http_provider
-            .get_block_by_number(
-                BlockNumberOrTag::Number(header.number),
-                BlockTransactionsKind::Full,
-            )
+            .get_block_by_number(BlockNumberOrTag::Number(header.number))
+            .full()
             .await?
             .ok_or_eyre("missing block")?;
         let _ = tx.send(block);
@@ -195,7 +198,7 @@ async fn fetch_origin_blocks(
     tx: Sender<Header>,
     l2_origin: Arc<AtomicU64>,
 ) -> eyre::Result<()> {
-    let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(url);
+    let provider = ProviderBuilder::new().disable_recommended_fillers().connect_http(url);
 
     let l2_new_origin =
         provider.client().request_noparams::<L1Origin>("taiko_headL1Origin").await?.block_number();

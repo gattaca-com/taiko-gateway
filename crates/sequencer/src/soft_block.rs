@@ -38,7 +38,7 @@ pub struct BuildPreconfBlockResponseBody {
 impl BuildPreconfBlockRequestBody {
     pub fn new(block: &Block, end_of_sequencing: bool) -> Self {
         let tx_list: Vec<Arc<TxEnvelope>> =
-            block.transactions.txns().map(|tx| tx.inner.clone().into()).collect();
+            block.transactions.txns().map(|tx| tx.inner.clone().into_inner().into()).collect();
 
         debug!(n_txs = tx_list.len(), "creating soft block");
 

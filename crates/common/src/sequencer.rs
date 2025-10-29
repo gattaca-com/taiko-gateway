@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use alloy_consensus::{Transaction, TxEnvelope};
+use alloy_consensus::{transaction::SignerRecoverable, Transaction, TxEnvelope};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, Bytes};
 use alloy_rlp::Decodable;
