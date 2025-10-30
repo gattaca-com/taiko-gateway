@@ -197,6 +197,7 @@ mod tests {
                 taiko_token: Address::ZERO,
                 l1_contract: Address::ZERO,
                 l2_contract: block_anchor.inner.to().unwrap(),
+                shasta_inbox_contract: Address::ZERO,
                 router_contract: Address::ZERO,
                 whitelist_contract: Address::ZERO,
                 wrapper_contract: Address::ZERO,

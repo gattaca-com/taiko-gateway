@@ -15,6 +15,7 @@ use pc_proposer::start_proposer;
 use pc_rpc::start_rpc;
 use pc_sequencer::start_sequencer;
 use taiko_event_indexer::indexer::{ShastaEventIndexer, ShastaEventIndexerConfig};
+use taiko_protocol::subscription_source::SubscriptionSource;
 use tokio::{signal::unix::SignalKind, sync::mpsc};
 use tracing::{error, info};
 
@@ -53,11 +54,15 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     .await
     .map_err(|e| eyre!("get config: {e}"))?;
 
-    // let event_indexer = ShastaEventIndexer::new(
-    //     ShastaEventIndexerConfig {
-    //         SubscriptionSour
-    //     }
-    // )
+    let event_indexer = ShastaEventIndexer::new(ShastaEventIndexerConfig {
+        l1_subscription_source: SubscriptionSource::Ws(config.l1.ws_url.clone()),
+        inbox_address: config.l2.shasta_inbox_contract,
+    }).await?;
+
+    info!("starting event indexer. waiting for historical indexing to finish...");
+    event_indexer.clone().spawn();
+    event_indexer.wait_historical_indexing_finished().await;
+    info!("historical indexing finished. continuing with gateway startup...");
 
     let balance_manager = BalanceManager::new(
         config.l2.taiko_token,

@@ -51,6 +51,7 @@ pub struct L2ChainConfig {
     pub taiko_token: Address,
     pub l1_contract: Address,
     pub l2_contract: Address,
+    pub shasta_inbox_contract: Address,
     pub router_contract: Address,
     pub whitelist_contract: Address,
     pub wrapper_contract: Address,

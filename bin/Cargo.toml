@@ -20,4 +20,4 @@ serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 taiko_event_indexer.workspace = true
-taiko_rpc.workspace = true
+taiko_protocol.workspace = true
