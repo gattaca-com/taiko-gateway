@@ -14,6 +14,7 @@ use pc_common::{
 use pc_proposer::start_proposer;
 use pc_rpc::start_rpc;
 use pc_sequencer::start_sequencer;
+use taiko_event_indexer::indexer::{ShastaEventIndexer, ShastaEventIndexerConfig};
 use tokio::{signal::unix::SignalKind, sync::mpsc};
 use tracing::{error, info};
 
@@ -51,6 +52,12 @@ async fn run(config: StaticConfig, envs: EnvConfig) -> eyre::Result<()> {
     )
     .await
     .map_err(|e| eyre!("get config: {e}"))?;
+
+    // let event_indexer = ShastaEventIndexer::new(
+    //     ShastaEventIndexerConfig {
+    //         SubscriptionSour
+    //     }
+    // )
 
     let balance_manager = BalanceManager::new(
         config.l2.taiko_token,

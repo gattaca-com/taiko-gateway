@@ -8,21 +8,21 @@ rust-version = "1.84.0"
 edition = "2021"
 
 [workspace.dependencies]
-alloy-consensus = { version = "1.0.36", features = ["k256"] }
-alloy-contract = "1.0.36"
-alloy-eips = { version = "1.0.36", features = ["kzg"] }
-alloy-network = "1.0.36"
-alloy-primitives = { version = "1.0.36", features = ["getrandom", "k256"] }
-alloy-provider = { version = "1.0.36", features = ["ws"] }
+alloy-consensus = { version = "1", features = ["k256"] }
+alloy-contract = "1"
+alloy-eips = { version = "1", features = ["kzg"] }
+alloy-network = "1"
+alloy-primitives = { version = "1", features = ["getrandom", "k256"] }
+alloy-provider = { version = "1", features = ["ws"] }
 alloy-rlp = "0.3.12"
-alloy-rpc-types = { version = "1.0.36", features = ["beacon", "eth"] }
-alloy-rpc-types-txpool = "1.0.36"
-alloy-serde = "1.0.36"
-alloy-signer = "1.0.36"
-alloy-signer-local = "1.0.36"
-alloy-sol-macro = { version = "1.0.36", features = ["json"] }
-alloy-sol-types = "1.0.36"
-alloy-transport-http = "1.0.36"
+alloy-rpc-types = { version = "1", features = ["beacon", "eth"] }
+alloy-rpc-types-txpool = "1"
+alloy-serde = "1"
+alloy-signer = "1"
+alloy-signer-local = "1"
+alloy-sol-macro = { version = "1", features = ["json"] }
+alloy-sol-types = "1"
+alloy-transport-http = "1"
 async-trait = "0.1.80"
 axum = { version = "0.8.1", features = ["tokio"] }
 backtrace = "0.3.74"
@@ -31,7 +31,7 @@ crossbeam-channel = "0.5.11"
 ecdsa = "0.16.9"
 eyre = "0.6.12"
 futures-util = "0.3.31"
-jsonrpsee = { version = "0.24", features = ["full"] }
+jsonrpsee = { version = "0.26", features = ["full"] }
 jsonwebtoken = "9"
 lazy_static = "1.5.0"
 libflate = "2.1.0"
@@ -43,12 +43,13 @@ pc-sequencer = { path = "crates/sequencer" }
 prometheus = "0.13.4"
 reqwest = { version = "0.12.4", features = ["blocking", "json"] }
 serde = { version = "1.0.203", features = ["derive", "rc"] }
-serde_json = "1.0.117"
+serde_json = "1"
 
 taiko_event_indexer = { git = "https://github.com/taikoxyz/taiko-mono.git", rev = "b11cec492e8f91a7e0aa41f76a906620e3618523", package = "event-indexer", version = "2.0.0" }
 taiko_rpc = { git = "https://github.com/taikoxyz/taiko-mono.git", rev = "b11cec492e8f91a7e0aa41f76a906620e3618523", package = "rpc", version = "2.0.0" }
+
 thiserror = "2.0.11"
-tokio = { version = "1.38.0", features = ["full"] }
+tokio = { version = "1.48.0", features = ["full"] }
 tokio-tungstenite = "0.26.2"
 toml = "0.8.14"
 tracing = "0.1.37"

@@ -8,6 +8,7 @@ mod blob;
 mod checks;
 mod fixed_signer;
 pub mod pacaya;
+pub mod shasta;
 pub use checks::get_and_validate_config;
 pub mod lookahead;
 use pacaya::{
