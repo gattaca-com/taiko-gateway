@@ -362,44 +362,47 @@ impl Sequencer {
             }
 
             SequencerState::Sorting(sort_data) if sort_data.should_seal() => {
-                if sort_data.num_txs() > 0 {
-                    let block_number = sort_data.block_info.block_number;
-                    if let Err(err) = self.seal_block(sort_data) {
-                        if let SequencerError::SoftBlock(status, err) = err {
-                            warn!(status, %err, "failed seal");
-                            self.tx_pool.clear_nonces();
-                            SequencerState::default()
-                        } else if err.is_nil_block() {
-                            error!(block_number, %err, "nil block on seal. is there a reorg?");
-                            self.tx_pool.clear_nonces();
-                            SequencerState::default()
-                        } else {
-                            error!(block_number, %err, "failed seal");
-                            panic!("failed seal block {}: {err}", block_number);
-                        }
-                    } else {
-                        // reset state for next block
-                        self.timings.last_tx_pool_check = Instant::now();
+                // if sort_data.num_txs() > 0 {
+                let block_number = sort_data.block_info.block_number;
+                if sort_data.num_txs() == 0 {
+                    warn!(block_number, "no valid txs to seal, producing empty block");
+                }
+                if let Err(err) = self.seal_block(sort_data) {
+                    if let SequencerError::SoftBlock(status, err) = err {
+                        warn!(status, %err, "failed seal");
+                        self.tx_pool.clear_nonces();
                         SequencerState::default()
+                    } else if err.is_nil_block() {
+                        error!(block_number, %err, "nil block on seal. is there a reorg?");
+                        self.tx_pool.clear_nonces();
+                        SequencerState::default()
+                    } else {
+                        error!(block_number, %err, "failed seal");
+                        panic!("failed seal block {}: {err}", block_number);
                     }
                 } else {
-                    debug!("exhausted active orders past target seal, resetting");
-                    // if we're here, all the orders were invalid, so the state nonces are
-                    // all for the actual state db (as opposed to ones we applied in the block),
-                    // use those to clear the txpool and restart the loop
-                    self.tx_pool.update_reset(sort_data.nonces);
-                    self.tx_pool.report_and_sanity_check(
-                        sort_data.block_info.block_number - 1,
-                        &self.simulator,
-                    );
-                    if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
-                        self.send_batch_to_proposer(
-                            "sealed last for this anchor (no active orders)",
-                            false,
-                        );
-                    }
+                    // reset state for next block
+                    self.timings.last_tx_pool_check = Instant::now();
                     SequencerState::default()
                 }
+                // } else {
+                //     debug!("exhausted active orders past target seal, resetting");
+                //     // if we're here, all the orders were invalid, so the state nonces are
+                //     // all for the actual state db (as opposed to ones we applied in the block),
+                //     // use those to clear the txpool and restart the loop
+                //     self.tx_pool.update_reset(sort_data.nonces);
+                //     self.tx_pool.report_and_sanity_check(
+                //         sort_data.block_info.block_number - 1,
+                //         &self.simulator,
+                //     );
+                //     if self.needs_anchor_refresh(&sort_data.block_info.anchor_params) {
+                //         self.send_batch_to_proposer(
+                //             "sealed last for this anchor (no active orders)",
+                //             false,
+                //         );
+                //     }
+                //     SequencerState::default()
+                // }
             }
 
             SequencerState::Sorting(mut sort_data) => {
