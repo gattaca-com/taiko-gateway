@@ -95,6 +95,7 @@ impl TxPool {
     }
 
     // update only state nonces
+    #[allow(dead_code)]
     pub fn update_reset(&mut self, state_nonces: SortingNonces) {
         if self.nonces.valid_block == state_nonces.valid_block() {
             // usual case while sorting, merge the caches
