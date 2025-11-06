@@ -43,9 +43,16 @@ pub async fn start_proposer(
         .disable_recommended_fillers()
         .on_http(taiko_config.rpc_url[0].clone());
 
+    let tx_send_provider = config
+        .l1
+        .send_tx_rpc_url
+        .clone()
+        .map(|url| ProviderBuilder::new().disable_recommended_fillers().on_http(url));
+
     let proposer = ProposerManager::new(
         proposer_config,
         includer,
+        tx_send_provider,
         l2_provider,
         taiko_config,
         config.gateway.l1_safe_lag,

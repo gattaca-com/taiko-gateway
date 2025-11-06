@@ -70,6 +70,7 @@ impl std::fmt::Debug for PendingProposal {
 pub struct ProposerManager {
     config: Arc<ProposerConfig>,
     client: Arc<L1Client>,
+    tx_send_provider: Option<AlloyProvider>,
     l2_provider: Arc<AlloyProvider>,
     taiko_config: Arc<TaikoConfig>,
     safe_l1_lag: u64,
@@ -78,9 +79,11 @@ pub struct ProposerManager {
 }
 
 impl ProposerManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: ProposerConfig,
         client: L1Client,
+        tx_send_provider: Option<AlloyProvider>,
         l2_provider: AlloyProvider,
         taiko_config: TaikoConfig,
         safe_l1_lag: u64,
@@ -90,6 +93,7 @@ impl ProposerManager {
         Self {
             config: config.into(),
             client: client.into(),
+            tx_send_provider,
             l2_provider: l2_provider.into(),
             taiko_config: taiko_config.into(),
             safe_l1_lag,
@@ -623,7 +627,10 @@ impl ProposerManager {
                 }
 
                 sent_memmpool = true;
-                let hash = self.client.send_tx(tx.clone()).await?;
+                let hash = match &self.tx_send_provider {
+                    None => self.client.send_tx(tx.clone()).await?,
+                    Some(provider) => *provider.send_tx_envelope(tx.clone()).await?.tx_hash(),
+                };
                 assert_eq!(tx_hash, hash);
             }
             if let Some(receipt) = self.client.get_tx_receipt(tx_hash).await? {

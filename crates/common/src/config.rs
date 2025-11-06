@@ -40,6 +40,7 @@ pub struct L1ChainConfig {
     pub rpc_url: Url,
     pub ws_url: Url,
     pub beacon_url: Url,
+    pub send_tx_rpc_url: Option<Url>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
