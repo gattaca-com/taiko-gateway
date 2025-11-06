@@ -41,6 +41,9 @@ pub struct L1ChainConfig {
     pub ws_url: Url,
     pub beacon_url: Url,
     pub send_tx_rpc_url: Option<Url>,
+
+    #[serde(default = "default_bool::<false>")]
+    pub use_cell_proof: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -268,6 +271,8 @@ pub struct ProposerConfig {
 
     pub builder_url: Option<Url>,
     pub builder_wait_receipt_blocks: u64,
+
+    pub use_cell_proof: bool,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
@@ -282,6 +287,7 @@ impl From<&StaticConfig> for ProposerConfig {
             min_priority_fee: fee_wei,
             builder_url: config.gateway.builder_url.clone(),
             builder_wait_receipt_blocks: config.gateway.builder_wait_receipt_blocks,
+            use_cell_proof: config.l1.use_cell_proof,
         }
     }
 }

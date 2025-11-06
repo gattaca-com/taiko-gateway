@@ -579,10 +579,11 @@ impl ProposerManager {
                     self.config.min_priority_fee,
                 )
                 .await?;
-            if true {
-                // TODO: implement switching logic. this is for fusaka transition.
+            if !self.config.use_cell_proof {
+                // Send as normal blob tx
                 (tx_blob.encoded_2718(), *tx_blob.tx_hash(), tx_blob.tx_type())
             } else {
+                // Send as EIP-7594 tx with cell proof
                 // https://github.com/alloy-rs/examples/blob/614f81e27ea2ac118fc73abdc9793917886479a6/examples/transactions/examples/send_eip7594_transaction.rs
                 let tx_7594 = tx_blob
                     .try_into_pooled()?
