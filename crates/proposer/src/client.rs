@@ -13,8 +13,10 @@ use alloy_rpc_types_txpool::TxpoolContentFrom;
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use eyre::{ensure, eyre, OptionExt};
-use pc_common::taiko::{
-    pacaya::decode_propose_batch_with_expected_last_block_id_call, TaikoL1Client,
+use pc_common::{
+    config::OsakaForkInfo,
+    taiko::{pacaya::decode_propose_batch_with_expected_last_block_id_call, TaikoL1Client},
+    utils::utcnow_sec,
 };
 use serde_json::json;
 use tracing::{error, info};
@@ -31,6 +33,7 @@ pub struct L1Client {
     taiko_client: TaikoL1Client,
     safe_lag: Duration,
     router_address: Address,
+    osaka_fork_info: Option<OsakaForkInfo>,
 }
 
 const _DEFAULT_GAS_LIMIT: u64 = 10_000_000;
@@ -47,12 +50,13 @@ impl L1Client {
         signer: PrivateKeySigner,
         safe_lag: Duration,
         router_address: Address,
+        osaka_fork_info: Option<OsakaForkInfo>,
     ) -> eyre::Result<Self> {
         let provider = ProviderBuilder::new().disable_recommended_fillers().connect_http(l1_rpc);
         let chain_id = provider.get_chain_id().await?;
         let taiko_client = TaikoL1Client::new(l1_contract, provider);
 
-        Ok(Self { chain_id, signer, taiko_client, safe_lag, router_address })
+        Ok(Self { chain_id, signer, taiko_client, safe_lag, router_address, osaka_fork_info })
     }
 
     pub fn provider(&self) -> &AlloyProvider {
@@ -212,11 +216,27 @@ impl L1Client {
                 }
             };
 
+        let blob_params = match &self.osaka_fork_info {
+            None => BlobParams::prague(),
+            Some(info) => {
+                let current_time = utcnow_sec();
+                if current_time >= info.bpo2_time {
+                    BlobParams::bpo2()
+                } else if current_time >= info.bpo1_time {
+                    BlobParams::bpo1()
+                } else if current_time >= info.osaka_time {
+                    BlobParams::osaka()
+                } else {
+                    BlobParams::prague()
+                }
+            }
+        };
+
         let blob_gas_fee = self
             .provider()
             .get_block_by_number(BlockNumberOrTag::Latest)
             .await?
-            .and_then(|block| block.header.next_block_blob_fee(BlobParams::prague()))
+            .and_then(|block| block.header.next_block_blob_fee(blob_params))
             .unwrap_or(DEFAULT_MAX_FEE_PER_BLOB_GAS);
 
         // add buffer
@@ -268,8 +288,14 @@ impl L1Client {
         Ok(signed.into())
     }
 
+    #[allow(dead_code)]
     pub async fn send_tx(&self, tx: TxEnvelope) -> eyre::Result<B256> {
         let pending = self.provider().send_tx_envelope(tx).await?;
+        Ok(*pending.tx_hash())
+    }
+
+    pub async fn send_raw_tx(&self, raw_tx: &[u8]) -> eyre::Result<B256> {
+        let pending = self.provider().send_raw_transaction(raw_tx).await?;
         Ok(*pending.tx_hash())
     }
 
@@ -352,6 +378,7 @@ mod tests {
             LocalSigner::random(),
             Duration::from_secs(10),
             l2_router_address,
+            None,
         )
         .await
         .unwrap();
