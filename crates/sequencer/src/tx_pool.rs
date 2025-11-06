@@ -16,7 +16,6 @@ pub struct TxPool {
     tx_lists: HashMap<Address, TxList>,
     // nonce cache
     nonces: StateNonces,
-    valid_orders: bool,
     // this includes duplicates and invalid nonces
     discarded_orders: u64,
 }
@@ -24,12 +23,7 @@ pub struct TxPool {
 impl TxPool {
     pub fn new() -> Self {
         // this should be big enough for all the users in a single block
-        Self {
-            tx_lists: HashMap::new(),
-            nonces: StateNonces::default(),
-            valid_orders: false,
-            discarded_orders: 0,
-        }
+        Self { tx_lists: HashMap::new(), nonces: StateNonces::default(), discarded_orders: 0 }
     }
 
     /// Inserts a tx in the pool, overwriting any existing tx with the same nonce
@@ -49,7 +43,6 @@ impl TxPool {
             }
         }
 
-        self.valid_orders = true;
         self.tx_lists.entry(sender).or_insert(TxList::new(sender)).put(tx);
     }
 
@@ -102,6 +95,7 @@ impl TxPool {
     }
 
     // update only state nonces
+    #[allow(dead_code)]
     pub fn update_reset(&mut self, state_nonces: SortingNonces) {
         if self.nonces.valid_block == state_nonces.valid_block() {
             // usual case while sorting, merge the caches
@@ -164,14 +158,6 @@ impl TxPool {
     pub fn clear_nonces(&mut self) {
         debug!("clearing state nonces");
         self.nonces.clear();
-    }
-
-    pub fn set_no_valid_orders(&mut self) {
-        self.valid_orders = false;
-    }
-
-    pub fn has_valid_orders(&self) -> bool {
-        self.valid_orders
     }
 
     pub fn report_and_sanity_check(&mut self, parent_block: u64, simulator: &SimulatorClient) {

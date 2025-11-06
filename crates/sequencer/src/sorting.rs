@@ -66,7 +66,7 @@ pub struct SortData {
     max_block_skips: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ActiveOrders {
     tx_lists: VecDeque<TxList>,
     /// Number of all pending txs in tx lists
