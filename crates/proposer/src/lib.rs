@@ -36,6 +36,7 @@ pub async fn start_proposer(
         proposer_signer,
         proposer_config.l1_safe_lag,
         config.l2.router_contract,
+        config.l1.osaka_fork_info.clone(),
     )
     .await?;
 

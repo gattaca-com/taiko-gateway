@@ -564,7 +564,7 @@ impl ProposerManager {
 
         *last_used_nonce = nonce;
 
-        let (tx, tx_hash, tx_type) = if let Some(sidecar) = sidecar {
+        let (tx, tx_hash, tx_type, sidecar_type) = if let Some(sidecar) = sidecar {
             debug!(nonce, blobs = sidecar.blobs.len(), "building blob tx");
             let tx_blob = self
                 .client
@@ -579,9 +579,9 @@ impl ProposerManager {
                     self.config.min_priority_fee,
                 )
                 .await?;
-            if !self.config.use_cell_proof {
+            if self.config.osaka_fork_info.is_none() || !self.config.osaka_fork_info.as_ref().unwrap().is_osaka_active() {
                 // Send as normal blob tx
-                (tx_blob.encoded_2718(), *tx_blob.tx_hash(), tx_blob.tx_type())
+                (tx_blob.encoded_2718(), *tx_blob.tx_hash(), tx_blob.tx_type(), "EIP-4844")
             } else {
                 // Send as EIP-7594 tx with cell proof
                 // https://github.com/alloy-rs/examples/blob/614f81e27ea2ac118fc73abdc9793917886479a6/examples/transactions/examples/send_eip7594_transaction.rs
@@ -593,7 +593,7 @@ impl ProposerManager {
                         })
                     })
                     .inspect_err(|e| error!(%e, "failed to convert sidecar to 7594"))?;
-                (tx_7594.encoded_2718(), *tx_7594.tx_hash(), tx_7594.tx_type())
+                (tx_7594.encoded_2718(), *tx_7594.tx_hash(), tx_7594.tx_type(), "EIP-7594")
             }
         } else {
             let tx_calldata = self
@@ -607,10 +607,10 @@ impl ProposerManager {
                     self.config.min_priority_fee,
                 )
                 .await?;
-            (tx_calldata.encoded_2718(), *tx_calldata.tx_hash(), tx_calldata.tx_type())
+            (tx_calldata.encoded_2718(), *tx_calldata.tx_hash(), tx_calldata.tx_type(), "None")
         };
 
-        info!(nonce, bump_fees, "type" = %tx_type, %tx_hash, "sending blocks proposal tx");
+        info!(nonce, bump_fees, "type" = %tx_type, "sidecar" = %sidecar_type, %tx_hash, "sending blocks proposal tx");
 
         let start = Instant::now();
 

@@ -7,7 +7,7 @@ use eyre::ensure;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{proposer::BLOBS_SAFE_SIZE, taiko::BaseFeeConfig};
+use crate::{proposer::BLOBS_SAFE_SIZE, taiko::BaseFeeConfig, utils::utcnow_sec};
 
 /// Config to deserialize toml config file
 #[derive(Debug, Deserialize, Serialize)]
@@ -41,9 +41,21 @@ pub struct L1ChainConfig {
     pub ws_url: Url,
     pub beacon_url: Url,
     pub send_tx_rpc_url: Option<Url>,
+    pub osaka_fork_info: Option<OsakaForkInfo>,
+}
 
-    #[serde(default = "default_bool::<false>")]
-    pub use_cell_proof: bool,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OsakaForkInfo {
+    pub osaka_time: u64,
+    pub bpo1_time: u64,
+    pub bpo2_time: u64,
+}
+
+impl OsakaForkInfo {
+    pub fn is_osaka_active(&self) -> bool {
+        let time_now = utcnow_sec();
+        time_now >= self.osaka_time
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -272,7 +284,7 @@ pub struct ProposerConfig {
     pub builder_url: Option<Url>,
     pub builder_wait_receipt_blocks: u64,
 
-    pub use_cell_proof: bool,
+    pub osaka_fork_info: Option<OsakaForkInfo>,
 }
 
 impl From<&StaticConfig> for ProposerConfig {
@@ -287,7 +299,7 @@ impl From<&StaticConfig> for ProposerConfig {
             min_priority_fee: fee_wei,
             builder_url: config.gateway.builder_url.clone(),
             builder_wait_receipt_blocks: config.gateway.builder_wait_receipt_blocks,
-            use_cell_proof: config.l1.use_cell_proof,
+            osaka_fork_info: config.l1.osaka_fork_info.clone(),
         }
     }
 }
