@@ -9,6 +9,7 @@ publish = false
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true
 alloy-provider.workspace = true
+alloy-network.workspace = true
 alloy-rlp.workspace = true
 alloy-rpc-types.workspace = true
 alloy-eips.workspace = true

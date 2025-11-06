@@ -18,6 +18,7 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn, Instrument};
 mod error;
 mod server;
+use alloy_network::TransactionResponse;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -113,7 +114,8 @@ async fn subscribe_mempool(ws_url: Url, mempool_tx: Sender<Order>) -> eyre::Resu
 
                 MempoolMetrics::tx_received();
                 // debug!(hash = %tx.inner.tx_hash(), "received from mempool");
-                let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from));
+                let tx_from = tx.from();
+                let _ = mempool_tx.send(Order::new_with_sender(tx.inner.into_inner(), tx_from));
             }
 
             Message::Ping(bytes) => {
@@ -138,14 +140,15 @@ async fn subscribe_mempool(ws_url: Url, mempool_tx: Sender<Order>) -> eyre::Resu
 }
 
 async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<()> {
-    let provider = ProviderBuilder::new().on_http(rpc_url);
+    let provider = ProviderBuilder::new().connect_http(rpc_url);
     let txpool: TxpoolContent = provider.client().request_noparams("txpool_content").await?;
 
     let mut count = 0;
     for txs in txpool.pending.into_values() {
         for tx in txs.into_values() {
             // debug!(hash = %tx.inner.tx_hash(), "pending txpool");
-            let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from));
+            let tx_from = tx.from();
+            let _ = mempool_tx.send(Order::new_with_sender(tx.inner.into_inner(), tx_from));
             count += 1;
         }
     }
@@ -153,7 +156,8 @@ async fn fetch_txpool(rpc_url: Url, mempool_tx: Sender<Order>) -> eyre::Result<(
     for txs in txpool.queued.into_values() {
         for tx in txs.into_values() {
             //debug!(hash = %tx.inner.tx_hash(), "queued txpool");
-            let _ = mempool_tx.send(Order::new_with_sender(tx.inner, tx.from));
+            let tx_from = tx.from();
+            let _ = mempool_tx.send(Order::new_with_sender(tx.inner.into_inner(), tx_from));
             count += 1;
         }
     }
@@ -184,6 +188,6 @@ mod tests {
     fn test_decode() {
         let msg = json!({"jsonrpc":"2.0","method":"eth_subscription","params":{"subscription":"0xc87874441f89ee77d2146fbbc527ea67","result":{"blockHash":null,"blockNumber":null,"from":"0x8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4","gas":"0x5208","gasPrice":"0x5f5e100","maxFeePerGas":"0x5f5e100","maxPriorityFeePerGas":"0x1","hash":"0x707ba93a2e28a7aad8c4f3f8b950a4125c0665bd1d5e20b05fe0ed76d0dbc712","input":"0x","nonce":"0x5a","to":"0x8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4","transactionIndex":null,"value":"0x1","type":"0x2","accessList":[],"chainId":"0x28c62","v":"0x0","r":"0x3b5f60e7be4d4a4f70b95f03475f789f6898521c9efe4adf07f8e4c0e358dea5","s":"0x7b7b4cde4a0a5b12fff64672620566295481c42a7836d4091a7fda58cbea7966","yParity":"0x0"}}});
         let tx: Transaction = serde_json::from_value::<TxMessage>(msg).unwrap().params.result;
-        assert_eq!(tx.from, address!("8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4"));
+        assert_eq!(tx.from(), address!("8cb1d0e5b02e71b6c783ba87fe005a6f2056f5a4"));
     }
 }

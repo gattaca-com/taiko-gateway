@@ -29,7 +29,7 @@ pub async fn start_lookahead_loop(
     config: LookaheadConfig,
     last_block_number: Arc<AtomicU64>,
 ) -> eyre::Result<LookaheadHandle> {
-    let l1_provider = ProviderBuilder::new().disable_recommended_fillers().on_http(l1_rpc);
+    let l1_provider = ProviderBuilder::new().disable_recommended_fillers().connect_http(l1_rpc);
     let whitelist = PreconfWhitelist::new(l2_chain_config.whitelist_contract, l1_provider.clone());
     let wrapper = TaikoWrapper::new(l2_chain_config.wrapper_contract, l1_provider.clone());
     let router = PreconfRouter::new(l2_chain_config.router_contract, l1_provider);
@@ -42,15 +42,15 @@ pub async fn start_lookahead_loop(
         loop {
             match wrapper.preconfRouter().call().await {
                 Ok(address) => {
-                    if address._0 != current_router {
-                        if address._0 == Address::ZERO {
+                    if address != current_router {
+                        if address == Address::ZERO {
                             warn!("preconfs are now disabled in the wrapper");
                         } else {
-                            warn!(router = %address._0, "preconfs are now enabled in the wrapper");
+                            warn!(router = %address, "preconfs are now enabled in the wrapper");
                         }
 
-                        current_router = address._0;
-                        preconfs_enabled.store(address._0 != Address::ZERO, Ordering::Relaxed);
+                        current_router = address;
+                        preconfs_enabled.store(address != Address::ZERO, Ordering::Relaxed);
                     }
                 }
                 Err(err) => {
@@ -82,11 +82,8 @@ pub async fn start_lookahead_loop(
 
             match router.getConfig().call().await {
                 Ok(router_config) => {
-                    let config_handover = router_config
-                        ._0
-                        .handOverSlots
-                        .try_into()
-                        .expect("handover slot is too large");
+                    let config_handover =
+                        router_config.handOverSlots.try_into().expect("handover slot is too large");
                     if current_handover != config_handover {
                         warn!(
                             previous = current_handover,
@@ -113,7 +110,7 @@ pub async fn start_lookahead_loop(
         let first_slot = beacon_handle.slot_epoch_start(current_epoch);
         let last_block = whitelist
             .provider()
-            .get_block(alloy_eips::BlockId::latest(), false.into())
+            .get_block(alloy_eips::BlockId::latest())
             .await?
             .expect("missing last block in lookahead!");
         let last_slot = beacon_handle.slot_for_timestamp(last_block.header.timestamp);
@@ -131,11 +128,10 @@ pub async fn start_lookahead_loop(
         tokio::time::sleep(Duration::from_secs(12)).await;
     }
 
-    let curr = whitelist.getOperatorForCurrentEpoch().call().await?._0;
+    let curr = whitelist.getOperatorForCurrentEpoch().call().await?;
     // if we're in the beginning of the epoch this might fail and will be updated next, so just use
     // default
-    let next_operator =
-        whitelist.getOperatorForNextEpoch().call().await.map(|res| res._0).unwrap_or_default();
+    let next_operator = whitelist.getOperatorForNextEpoch().call().await.unwrap_or_default();
 
     let lookahead = Arc::new(RwLock::new(Lookahead {
         curr,
@@ -169,7 +165,7 @@ pub async fn start_lookahead_loop(
             {
                 debug!(slot_in_epoch, current_slot, current_epoch, last_updated_epoch, block_number, "updating lookahead");
                 let current_operator = match whitelist.getOperatorForCurrentEpoch().call().await {
-                    Ok(res) => res._0,
+                    Ok(res) => res,
                     Err(err) => {
                         if let Some(err) =
                             extract_revert_reason::<PreconfWhitelistErrors>(&err.to_string())
@@ -195,7 +191,7 @@ pub async fn start_lookahead_loop(
                 };
 
                 let next_operator = match whitelist.getOperatorForNextEpoch().call().await {
-                    Ok(res) => res._0,
+                    Ok(res) => res,
                     Err(err) => {
                         if let Some(err) =
                             extract_revert_reason::<PreconfWhitelistErrors>(&err.to_string())

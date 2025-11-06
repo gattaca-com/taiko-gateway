@@ -8,7 +8,7 @@ use alloy_eips::{eip7840::BlobParams, BlockNumberOrTag};
 use alloy_network::TransactionBuilder;
 use alloy_primitives::{Address, Bytes, B256, U256};
 use alloy_provider::{Provider, ProviderBuilder, RootProvider};
-use alloy_rpc_types::{BlockTransactionsKind, TransactionReceipt, TransactionRequest};
+use alloy_rpc_types::{TransactionReceipt, TransactionRequest};
 use alloy_rpc_types_txpool::TxpoolContentFrom;
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
@@ -48,7 +48,7 @@ impl L1Client {
         safe_lag: Duration,
         router_address: Address,
     ) -> eyre::Result<Self> {
-        let provider = ProviderBuilder::new().disable_recommended_fillers().on_http(l1_rpc);
+        let provider = ProviderBuilder::new().disable_recommended_fillers().connect_http(l1_rpc);
         let chain_id = provider.get_chain_id().await?;
         let taiko_client = TaikoL1Client::new(l1_contract, provider);
 
@@ -123,12 +123,12 @@ impl L1Client {
 
         let gas_limit = self
             .provider()
-            .estimate_gas(&tx)
+            .estimate_gas(tx)
             .await
             .map_err(|err| eyre!(format!("failed gas estimation: {err}")))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
-            match self.provider().estimate_eip1559_fees(None).await {
+            match self.provider().estimate_eip1559_fees().await {
                 Ok(estimate) => (estimate.max_fee_per_gas, estimate.max_priority_fee_per_gas),
                 Err(err) => {
                     error!(%err,"failed to estimate eip1559 fees");
@@ -199,12 +199,12 @@ impl L1Client {
 
         let gas_limit = self
             .provider()
-            .estimate_gas(&tx)
+            .estimate_gas(tx)
             .await
             .map_err(|err| eyre!("failed gas estimation: {err}"))?;
 
         let (max_fee_per_gas, max_priority_fee_per_gas) =
-            match self.provider().estimate_eip1559_fees(None).await {
+            match self.provider().estimate_eip1559_fees().await {
                 Ok(estimate) => (estimate.max_fee_per_gas, estimate.max_priority_fee_per_gas),
                 Err(err) => {
                     error!(%err,"failed to estimate eip1559 fees");
@@ -214,7 +214,7 @@ impl L1Client {
 
         let blob_gas_fee = self
             .provider()
-            .get_block_by_number(BlockNumberOrTag::Latest, BlockTransactionsKind::Hashes)
+            .get_block_by_number(BlockNumberOrTag::Latest)
             .await?
             .and_then(|block| block.header.next_block_blob_fee(BlobParams::prague()))
             .unwrap_or(DEFAULT_MAX_FEE_PER_BLOB_GAS);

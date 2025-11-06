@@ -53,7 +53,7 @@ impl SimulatorClient {
             .expect("failed building simulator client");
 
         let provider =
-            ProviderBuilder::new().disable_recommended_fillers().on_http(sim_url.clone());
+            ProviderBuilder::new().disable_recommended_fillers().connect_http(sim_url.clone());
         let taiko_l2 = TaikoL2::new(config.l2_contract, provider);
 
         Self { runtime, config, client, taiko_l2, sim_tx, sim_url }

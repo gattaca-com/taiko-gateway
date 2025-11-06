@@ -1,7 +1,7 @@
 use std::{io::Write, sync::Arc, time::Instant};
 
 use alloy_consensus::{BlobTransactionSidecar, TxEnvelope};
-use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK;
+use alloy_eips::eip4844::MAX_BLOBS_PER_BLOCK_DENCUN;
 use alloy_primitives::{aliases::U96, Address, Bytes, B256};
 use alloy_sol_types::{SolCall, SolValue};
 use libflate::zlib::Encoder as zlibEncoder;
@@ -73,7 +73,7 @@ pub fn propose_batch_blobs(
     compressed: Bytes,
 ) -> (Bytes, BlobTransactionSidecar) {
     assert!(
-        compressed.len() / MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK,
+        compressed.len() / MAX_BLOB_DATA_SIZE <= MAX_BLOBS_PER_BLOCK_DENCUN,
         "too many bytes to encode in blobs {}",
         compressed.len()
     );
@@ -118,9 +118,9 @@ pub fn propose_batch_blobs(
 pub fn decode_propose_batch_with_expected_last_block_id_call(
     data: &[u8],
 ) -> eyre::Result<(u64, u64, u64)> {
-    let call = proposeBatchWithExpectedLastBlockIdCall::abi_decode(data, true)?;
-    let (_, params) = <(Bytes, Bytes)>::abi_decode_params(&call._params, true)?;
-    let batch_params = BatchParams::abi_decode(&params, true)?;
+    let call = proposeBatchWithExpectedLastBlockIdCall::abi_decode(data)?;
+    let (_, params) = <(Bytes, Bytes)>::abi_decode_params(&call._params)?;
+    let batch_params = BatchParams::abi_decode(&params)?;
 
     let n_blocks = batch_params.blocks.len();
     let last_block: u64 = call._expectedLastBlockId.try_into().unwrap();

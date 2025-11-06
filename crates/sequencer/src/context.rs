@@ -8,6 +8,7 @@ use std::{
 };
 
 use alloy_consensus::Transaction;
+use alloy_network::TransactionResponse;
 use alloy_primitives::Address;
 use alloy_rpc_types::{Block, Header};
 use alloy_sol_types::SolCall;
@@ -190,14 +191,14 @@ impl SequencerContext {
             let block_transactions =
                 block.transactions.as_transactions().context("block has txs")?;
             let block_anchor = block_transactions.first().context("block has anchor tx")?;
-            assert_eq!(block_anchor.from, GOLDEN_TOUCH_ADDRESS);
+            assert_eq!(block_anchor.from(), GOLDEN_TOUCH_ADDRESS);
 
             let anchor_nonce = block_anchor.nonce();
             let parent_params =
                 ParentParams::from_header_and_anchor_nonce(&block.header, anchor_nonce);
             self.l2_headers.push_back(parent_params);
 
-            let anchor_call = anchorV3Call::abi_decode(block_anchor.input(), true)?;
+            let anchor_call = anchorV3Call::abi_decode(block_anchor.input())?;
             self.parent_anchor_block_id = anchor_call._anchorBlockId;
 
             Ok(())

@@ -8,25 +8,25 @@ rust-version = "1.84.0"
 edition = "2021"
 
 [workspace.dependencies]
-alloy-consensus = { version = "0.11.0", features = ["k256"] }
-alloy-contract = "0.11.0"
-alloy-eips = { version = "0.11.0", features = ["kzg"] }
-alloy-network = "0.11.0"
-alloy-primitives = { version = "0.8.19", features = ["getrandom", "k256"] }
-alloy-provider = { version = "0.11.0", features = ["ws"] }
-alloy-rlp = "0.3.9"
-alloy-rpc-types = { version = "0.11.0", features = ["beacon", "eth"] }
-alloy-rpc-types-txpool = "0.11.0"
-alloy-serde = "0.11.0"
-alloy-signer = "0.11.0"
-alloy-signer-local = "0.11.0"
-alloy-sol-macro = { version = "0.8.19", features = ["json"] }
-alloy-sol-types = "0.8.19"
-alloy-transport-http = "0.11.0"
+alloy-consensus = { version = "1.0.36", features = ["k256"] }
+alloy-contract = "1.0.36"
+alloy-eips = { version = "1.0.36", features = ["kzg"] }
+alloy-network = "1.0.36"
+alloy-primitives = { version = "1.0.36", features = ["getrandom", "k256"] }
+alloy-provider = { version = "1.0.36", features = ["ws"] }
+alloy-rlp = "0.3.12"
+alloy-rpc-types = { version = "1.0.36", features = ["beacon", "eth"] }
+alloy-rpc-types-txpool = "1.0.36"
+alloy-serde = "1.0.36"
+alloy-signer = "1.0.36"
+alloy-signer-local = "1.0.36"
+alloy-sol-macro = { version = "1.0.36", features = ["json"] }
+alloy-sol-types = "1.0.36"
+alloy-transport-http = "1.0.36"
 async-trait = "0.1.80"
 axum = { version = "0.8.1", features = ["tokio"] }
 backtrace = "0.3.74"
-c-kzg = { version = "1.0.3", default-features = false }
+c-kzg = { version = "2", default-features = false }
 crossbeam-channel = "0.5.11"
 ecdsa = "0.16.9"
 eyre = "0.6.12"
@@ -50,8 +50,8 @@ tokio-tungstenite = "0.26.2"
 toml = "0.8.14"
 tracing = "0.1.37"
 tracing-appender = "0.2.3"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-loki = "0.2.6"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 url = { version = "2.5.0", features = ["serde"] }
 
 [profile.release]

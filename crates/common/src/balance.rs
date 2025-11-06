@@ -31,20 +31,18 @@ sol!(
     "../../abi/ERC20.abi.json"
 );
 
-// TODO: update alloy version we won't need this ugly type anymore
-macro_rules! jf {
-    ($jf:ty) => {
-        $jf
-    };
-    ($jf1:ty, $($jf2:ty), +) => {
-        JoinFill<$jf1, jf!($($jf2),+)>
-    };
-}
-type RecommendedFillers = jf!(Identity, GasFiller, BlobGasFiller, NonceFiller, ChainIdFiller);
-type FillersWithWallet = jf!(RecommendedFillers, WalletFiller<EthereumWallet>);
-type RecommendedFillersType = FillProvider<FillersWithWallet, RootProvider>;
-type TaikoL1InstanceType = TaikoL1Instance<(), RecommendedFillersType>;
-type ERC20InstanceType = ERC20Instance<(), RecommendedFillersType>;
+type DefaultFillerType = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    RootProvider,
+>;
+type TaikoL1InstanceType = TaikoL1Instance<DefaultFillerType>;
+type ERC20InstanceType = ERC20Instance<DefaultFillerType>;
 
 #[derive(Debug, Clone)]
 pub struct BalanceManager {
@@ -66,7 +64,7 @@ impl BalanceManager {
         gateway_config: &GatewayConfig,
     ) -> Self {
         let wallet = EthereumWallet::new(operator.clone());
-        let l1_provider = ProviderBuilder::new().wallet(wallet).on_http(l1_rpc.clone());
+        let l1_provider = ProviderBuilder::new().wallet(wallet).connect_http(l1_rpc.clone());
         Self {
             l1_contract,
             operator,
@@ -134,7 +132,7 @@ impl BalanceManager {
     }
 
     pub async fn get_token_balance(&self) -> eyre::Result<U256> {
-        Ok(self.erc20.balanceOf(self.operator.address()).call().await?._0)
+        Ok(self.erc20.balanceOf(self.operator.address()).call().await?)
     }
 
     pub async fn approve_max_allowance(&self) -> eyre::Result<B256> {
@@ -142,7 +140,7 @@ impl BalanceManager {
     }
 
     pub async fn get_allowance(&self) -> eyre::Result<U256> {
-        Ok(self.erc20.allowance(self.operator.address(), self.l1_contract).call().await?._0)
+        Ok(self.erc20.allowance(self.operator.address(), self.l1_contract).call().await?)
     }
 
     pub async fn get_eth_balance(&self, address: Address) -> eyre::Result<U256> {
@@ -150,7 +148,7 @@ impl BalanceManager {
     }
 
     pub async fn get_contract_balance(&self) -> eyre::Result<U256> {
-        Ok(self.taiko_l1.bondBalanceOf(self.operator.address()).call().await?._0)
+        Ok(self.taiko_l1.bondBalanceOf(self.operator.address()).call().await?)
     }
 
     pub async fn deposit_bond(&self, amount: U256) -> eyre::Result<B256> {

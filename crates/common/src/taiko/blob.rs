@@ -1,6 +1,6 @@
 use alloy_consensus::BlobTransactionSidecar;
 use alloy_eips::eip4844::env_settings::EnvKzgSettings;
-use c_kzg::{KzgCommitment, KzgProof, BYTES_PER_BLOB};
+use c_kzg::BYTES_PER_BLOB;
 
 // panic if this fails
 pub fn blobs_to_sidecar(blobs: Vec<c_kzg::Blob>) -> BlobTransactionSidecar {
@@ -10,10 +10,12 @@ pub fn blobs_to_sidecar(blobs: Vec<c_kzg::Blob>) -> BlobTransactionSidecar {
     let mut proofs = Vec::with_capacity(blobs.len());
 
     for blob in blobs.iter() {
-        let commitment = KzgCommitment::blob_to_kzg_commitment(blob, kzg_settings)
+        let commitment = kzg_settings
+            .blob_to_kzg_commitment(blob)
             .expect("failed to compute commitment")
             .to_bytes();
-        let proof = KzgProof::compute_blob_kzg_proof(blob, &commitment, kzg_settings)
+        let proof = kzg_settings
+            .compute_blob_kzg_proof(blob, &commitment)
             .expect("failed to compute proof")
             .to_bytes();
         commitments.push(commitment);

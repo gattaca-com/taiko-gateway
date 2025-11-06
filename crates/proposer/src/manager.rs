@@ -8,9 +8,10 @@ use std::{
 
 use alloy_consensus::{BlobTransactionSidecar, Transaction};
 use alloy_eips::{BlockId, Encodable2718};
+use alloy_network::TransactionResponse;
 use alloy_primitives::{hex, Bytes, B256};
 use alloy_provider::Provider;
-use alloy_rpc_types::{Block, BlockTransactionsKind};
+use alloy_rpc_types::Block;
 use alloy_sol_types::SolCall;
 use eyre::{bail, ensure, eyre, OptionExt};
 use pc_common::{
@@ -167,11 +168,11 @@ impl ProposerManager {
                 .ok_or_eyre(format!("missing anchor tx in block {bn}"))?;
 
             ensure!(
-                anchor_tx.from == GOLDEN_TOUCH_ADDRESS,
+                anchor_tx.from() == GOLDEN_TOUCH_ADDRESS,
                 "expected anchor tx to be from golden touch!"
             );
 
-            let anchor_data = TaikoL2::anchorV3Call::abi_decode(anchor_tx.input(), true)?;
+            let anchor_data = TaikoL2::anchorV3Call::abi_decode(anchor_tx.input())?;
             let anchor_block_id = anchor_data._anchorBlockId;
             to_propose.entry(anchor_block_id).or_default().push(block);
         }
@@ -179,7 +180,7 @@ impl ProposerManager {
         let l1_block = self
             .client
             .provider()
-            .get_block(BlockId::latest(), BlockTransactionsKind::Hashes)
+            .get_block(BlockId::latest())
             .await?
             .ok_or_eyre("missing last block")?;
 
@@ -188,7 +189,8 @@ impl ProposerManager {
         // the parent of the first block in the first batch
         let l2_parent = self
             .l2_provider
-            .get_block(BlockId::number(origin), BlockTransactionsKind::Full)
+            .get_block(BlockId::number(origin))
+            .full()
             .await?
             .ok_or_eyre("missing last block")?;
 
@@ -200,12 +202,12 @@ impl ProposerManager {
             .ok_or_eyre(format!("missing anchor tx in block {origin}"))?;
 
         ensure!(
-            l2_parent_anchor.from == GOLDEN_TOUCH_ADDRESS,
+            l2_parent_anchor.from() == GOLDEN_TOUCH_ADDRESS,
             "expected anchor tx to be from golden touch!"
         );
 
         let mut l2_parent_anchor_block_id =
-            TaikoL2::anchorV3Call::abi_decode(l2_parent_anchor.input(), true)?._anchorBlockId;
+            TaikoL2::anchorV3Call::abi_decode(l2_parent_anchor.input())?._anchorBlockId;
 
         // check if any batch will reorg
         let mut will_reorg = false;
@@ -294,7 +296,7 @@ impl ProposerManager {
             for (bn, block) in to_verify {
                 let new_block = self
                     .l2_provider
-                    .get_block_by_number(bn.into(), BlockTransactionsKind::Hashes)
+                    .get_block_by_number(bn.into())
                     .await?
                     .ok_or(eyre!("missing proposed block {bn}"))?;
 
@@ -315,7 +317,7 @@ impl ProposerManager {
         let l1_block = self
             .client
             .provider()
-            .get_block(BlockId::number(safe_l1_head), BlockTransactionsKind::Hashes)
+            .get_block(BlockId::number(safe_l1_head))
             .await?
             .ok_or_eyre("missing last block")?;
 
@@ -698,7 +700,8 @@ async fn fetch_n_blocks(
 
     for bn in start..=end {
         let block = provider
-            .get_block_by_number(bn.into(), BlockTransactionsKind::Full)
+            .get_block_by_number(bn.into())
+            .full()
             .await?
             .ok_or_else(|| eyre!("failed to fetch block {bn} from rpc"))?;
         blocks.push(block.into());
@@ -745,8 +748,11 @@ fn request_from_blocks(
         let txs = block
             .transactions
             .into_transactions()
-            .filter(|tx| tx.from != GOLDEN_TOUCH_ADDRESS)
-            .map(|tx| Order::new_with_sender(tx.inner, tx.from))
+            .filter(|tx| tx.from() != GOLDEN_TOUCH_ADDRESS)
+            .map(|tx| {
+                let from = tx.from();
+                Order::new_with_sender(tx.inner.into_inner(), from)
+            })
             .collect::<Vec<_>>();
 
         let mut new_tx_list = cur_params.all_tx_list.clone();
