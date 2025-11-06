@@ -13,9 +13,11 @@ use alloy_rpc_types_txpool::TxpoolContentFrom;
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use eyre::{ensure, eyre, OptionExt};
-use pc_common::{config::OsakaForkInfo, taiko::{
-    TaikoL1Client, pacaya::decode_propose_batch_with_expected_last_block_id_call
-}, utils::utcnow_sec};
+use pc_common::{
+    config::OsakaForkInfo,
+    taiko::{pacaya::decode_propose_batch_with_expected_last_block_id_call, TaikoL1Client},
+    utils::utcnow_sec,
+};
 use serde_json::json;
 use tracing::{error, info};
 use url::Url;

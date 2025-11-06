@@ -579,7 +579,9 @@ impl ProposerManager {
                     self.config.min_priority_fee,
                 )
                 .await?;
-            if self.config.osaka_fork_info.is_none() || !self.config.osaka_fork_info.as_ref().unwrap().is_osaka_active() {
+            if self.config.osaka_fork_info.is_none() ||
+                !self.config.osaka_fork_info.as_ref().unwrap().is_osaka_active()
+            {
                 // Send as normal blob tx
                 (tx_blob.encoded_2718(), *tx_blob.tx_hash(), tx_blob.tx_type(), "EIP-4844")
             } else {
