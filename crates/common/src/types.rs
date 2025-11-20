@@ -58,69 +58,84 @@ pub enum FailReason {
     UnderpricedTipCap { sent: u128, queued: u128 },
     UnderpricedBlobFeeCap { sent: u128, queued: u128 },
     UnderpricedGasFeeCap { sent: u128, queued: u128 },
+    UnderpricedUnknown,
 }
 
 impl FailReason {
     pub fn try_extract(input: &str) -> Option<Self> {
         let lower = input.to_lowercase();
 
-        if !lower.contains("replacement transaction underpriced") {
+        let is_underpriced = lower.contains("replacement transaction underpriced");
+        if !is_underpriced {
             return None;
         }
 
         if let Some(after) = lower.split("new tx gas tip cap ").nth(1) {
-            let parts: Vec<&str> = after.split(" <= ").collect();
+            let parts: Vec<&str> = after.split(" <").collect();
             if parts.len() != 2 {
                 return None;
             }
 
-            let sent = parts[0].trim().parse::<u128>().ok()?;
-
-            let queued_str = parts[1].split_whitespace().next()?;
-            let queued = queued_str.parse::<u128>().ok()?;
+            let sent = extract_first_u128(parts[0])?;
+            let queued = extract_first_u128(parts[1])?;
 
             return Some(FailReason::UnderpricedTipCap { sent, queued });
         }
 
         if let Some(after) = lower.split("new tx blob gas fee cap ").nth(1) {
-            let parts: Vec<&str> = after.split(" <= ").collect();
+            let parts: Vec<&str> = after.split(" <").collect();
             if parts.len() != 2 {
                 return None;
             }
 
-            let sent = parts[0].trim().parse::<u128>().ok()?;
-
-            let queued_str = parts[1].split_whitespace().next()?;
-            let queued = queued_str.parse::<u128>().ok()?;
+            let sent = extract_first_u128(parts[0])?;
+            let queued = extract_first_u128(parts[1])?;
 
             return Some(FailReason::UnderpricedBlobFeeCap { sent, queued });
         }
 
         if let Some(after) = lower.split("new tx gas fee cap ").nth(1) {
-            let parts: Vec<&str> = if after.contains(" <= ") {
-                after.split(" <= ").collect()
-            } else {
-                after.split(" < ").collect()
-            };
+            let parts: Vec<&str> = after.split(" <").collect();
             if parts.len() != 2 {
                 return None;
             }
 
-            let sent = parts[0].trim().parse::<u128>().ok()?;
+            println!("Parts: {:?}", parts);
 
-            let queued_str = parts[1].split_whitespace().next()?;
-            let queued = queued_str.parse::<u128>().ok()?;
+            let sent = extract_first_u128(parts[0])?;
+            let queued = extract_first_u128(parts[1])?;
 
             return Some(FailReason::UnderpricedGasFeeCap { sent, queued });
+        }
+
+        if is_underpriced {
+            return Some(FailReason::UnderpricedUnknown);
         }
 
         None
     }
 }
 
+fn extract_first_u128(s: &str) -> Option<u128> {
+    let start = s.find(|c: char| c.is_ascii_digit())?;
+    let remainder = &s[start..];
+        let end = remainder
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(remainder.len());
+    remainder[..end].parse::<u128>().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_extract_first_u128() {
+        assert_eq!(extract_first_u128("abc 12/2"), Some(12));
+        assert_eq!(extract_first_u128("12"), Some(12));
+        assert_eq!(extract_first_u128("<= 12"), Some(12));
+        assert_eq!(extract_first_u128("12 3"), Some(12));
+    }
 
     #[test]
     fn test_extract_fail_reason() {
@@ -134,6 +149,13 @@ mod tests {
         let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx blob gas fee cap 1 <= 2 queued";
         let result = FailReason::try_extract(input).unwrap();
         assert_eq!(FailReason::UnderpricedBlobFeeCap { sent: 1, queued: 2 }, result);
+    }
+
+    #[test]
+    fn test_extract_fail_reason_blob_fee_cap_new() {
+        let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx blob gas fee cap 1706792664 < 1321739451 queued + 100% replacement penalty";
+        let result = FailReason::try_extract(input).unwrap();
+        assert_eq!(FailReason::UnderpricedBlobFeeCap { sent: 1706792664, queued: 1321739451 }, result);
     }
 
     #[test]

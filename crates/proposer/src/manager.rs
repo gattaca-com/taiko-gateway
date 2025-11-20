@@ -506,6 +506,10 @@ impl ProposerManager {
                         gas_fee_cap = Some(2 * queued);
                         continue;
                     }
+                    FailReason::UnderpricedUnknown => {
+                        warn!(err_str, "Underpriced tx, without details");
+                        continue;
+                    }
                 }
             } else {
                 err_str
