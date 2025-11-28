@@ -100,8 +100,6 @@ impl FailReason {
                 return None;
             }
 
-            println!("Parts: {:?}", parts);
-
             let sent = extract_first_u128(parts[0])?;
             let queued = extract_first_u128(parts[1])?;
 
