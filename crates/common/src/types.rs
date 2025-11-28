@@ -117,9 +117,7 @@ impl FailReason {
 fn extract_first_u128(s: &str) -> Option<u128> {
     let start = s.find(|c: char| c.is_ascii_digit())?;
     let remainder = &s[start..];
-        let end = remainder
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(remainder.len());
+    let end = remainder.find(|c: char| !c.is_ascii_digit()).unwrap_or(remainder.len());
     remainder[..end].parse::<u128>().ok()
 }
 
@@ -153,7 +151,10 @@ mod tests {
     fn test_extract_fail_reason_blob_fee_cap_new() {
         let input = "server returned an error response: error code -32000: replacement transaction underpriced: new tx blob gas fee cap 1706792664 < 1321739451 queued + 100% replacement penalty";
         let result = FailReason::try_extract(input).unwrap();
-        assert_eq!(FailReason::UnderpricedBlobFeeCap { sent: 1706792664, queued: 1321739451 }, result);
+        assert_eq!(
+            FailReason::UnderpricedBlobFeeCap { sent: 1706792664, queued: 1321739451 },
+            result
+        );
     }
 
     #[test]
