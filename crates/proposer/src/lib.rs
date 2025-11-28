@@ -36,6 +36,7 @@ pub async fn start_proposer(
         proposer_signer,
         proposer_config.l1_safe_lag,
         config.l2.router_contract,
+        config.l1.osaka_fork_info.clone(),
     )
     .await?;
 
@@ -48,12 +49,6 @@ pub async fn start_proposer(
         .send_tx_rpc_url
         .clone()
         .map(|url| ProviderBuilder::new().disable_recommended_fillers().connect_http(url));
-
-    let tx_send_provider = config
-        .l1
-        .send_tx_rpc_url
-        .clone()
-        .map(|url| ProviderBuilder::new().disable_recommended_fillers().on_http(url));
 
     let proposer = ProposerManager::new(
         proposer_config,

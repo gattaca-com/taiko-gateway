@@ -143,13 +143,17 @@ pub async fn start_lookahead_loop(
 
     spawn(async move {
         let mut last_log_slot = 0;
+        let mut last_log_current_operator = Address::ZERO;
+        let mut last_log_next_operator = Address::ZERO;
 
         let mut last_updated_epoch = 0;
-        let mut last_updated_block = 0;
         let mut last_updated_slot = 0;
 
+        let mut current_operator = Address::ZERO;
+        let mut next_operator = Address::ZERO;
+
         loop {
-            tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 3)).await;
+            tokio::time::sleep(Duration::from_secs(beacon_handle.seconds_per_slot / 2)).await;
 
             let block_number = last_block_number.load(Ordering::Relaxed);
             let current_slot = beacon_handle.current_slot();
@@ -159,12 +163,10 @@ pub async fn start_lookahead_loop(
             // only update once per epoch, late enough, and check there has been at least a block in
             // this epoch
 
-            let last_lookahead = if last_updated_epoch != current_epoch &&
-                slot_in_epoch > beacon_handle.slots_per_epoch / 2 &&
-                block_number != last_updated_block
+            let last_lookahead = if slot_in_epoch > 2
             {
                 debug!(slot_in_epoch, current_slot, current_epoch, last_updated_epoch, block_number, "updating lookahead");
-                let current_operator = match whitelist.getOperatorForCurrentEpoch().call().await {
+                current_operator = match whitelist.getOperatorForCurrentEpoch().call().await {
                     Ok(res) => res,
                     Err(err) => {
                         if let Some(err) =
@@ -190,7 +192,7 @@ pub async fn start_lookahead_loop(
                     }
                 };
 
-                let next_operator = match whitelist.getOperatorForNextEpoch().call().await {
+                next_operator = match whitelist.getOperatorForNextEpoch().call().await {
                     Ok(res) => res,
                     Err(err) => {
                         if let Some(err) =
@@ -217,7 +219,6 @@ pub async fn start_lookahead_loop(
                 };
 
                 last_updated_epoch = current_epoch;
-                last_updated_block = block_number;
                 last_updated_slot = current_slot;
 
                 {
@@ -240,6 +241,16 @@ pub async fn start_lookahead_loop(
 
                 info!(slot_in_epoch, current_slot, last_updated_slot, current_epoch, last_updated_epoch, %current_operator, %next_operator);
                 last_log_slot = current_slot;
+            }
+
+            if last_log_current_operator != current_operator {
+                info!(%last_lookahead.curr, "current operator changed");
+                last_log_current_operator = current_operator;
+            }
+
+            if last_log_next_operator != next_operator {
+                info!(%last_lookahead.next, "next operator changed");
+                last_log_next_operator = next_operator;
             }
         }
     }.in_current_span());
